@@ -1,0 +1,5 @@
+product_id,art_id_to,ref_type
+# Spalten: product_id, art_id_to, ref_type (optional, default: similar)
+# Fügt Crossselling-Links hinzu.
+# Beispiel:
+# NDW2000379997,NDW4000375923,similar

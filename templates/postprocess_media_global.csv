@@ -1,0 +1,13 @@
+supplier,description_pattern,source_pattern,mime_type_pattern,new_purpose
+# Globale MIME-Regeln (wirken auf alle passenden Artikel, unabhängig von product_id)
+# Patterns: * = Wildcard (Glob), leer = passt immer
+# Nordwest: Handsatzseite → others
+Nordwest Arbeitsschutz,Handsatzseite,,, others
+Nordwest Werkstatt,Handsatzseite,,,others
+Nordwest Werkzeugtechnik,Handsatzseite,,,others
+# Nordwest: T_*.pdf → override_generated_product_datasheet
+Nordwest Arbeitsschutz,,T_*,*pdf,override_generated_product_datasheet
+Nordwest Werkstatt,,T_*,*pdf,override_generated_product_datasheet
+Nordwest Werkzeugtechnik,,T_*,*pdf,override_generated_product_datasheet
+# Büroring: Produktdatenblatt*.pdf → override_generated_product_datasheet
+Büroring,Produktdatenblatt*,,*pdf,override_generated_product_datasheet

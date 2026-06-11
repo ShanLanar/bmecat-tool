@@ -1,0 +1,5 @@
+product_id,catalog_group_id,catalog_sub_group_id
+# Spalten: product_id, catalog_group_id, catalog_sub_group_id
+# Überschreibt die Kategorie aus der Datenbank.
+# Beispiel:
+# NDW2000379997,AS,NDWEinwegoverall

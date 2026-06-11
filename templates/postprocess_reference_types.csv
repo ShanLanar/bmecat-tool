@@ -1,0 +1,5 @@
+from_type,to_type
+# Remappt Referenztypen vor dem Export
+consists_of,others
+accessories,others
+followup,others

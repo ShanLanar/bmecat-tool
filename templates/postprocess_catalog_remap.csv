@@ -1,0 +1,7 @@
+supplier,source_group_id,target_group_id
+# Export-Zeit-Kategorie-Remapping
+# source_group_id: Katalogknoten wie er in der DB steht
+# target_group_id: Katalogknoten der stattdessen im Export erscheint
+# supplier: leer = gilt für alle Lieferanten
+# Beispiel: alle Artikel unter NDWHandschuhe → NDWArbeitshandschuhe
+# Nordwest Arbeitsschutz,NDWHandschuhe,NDWArbeitshandschuhe

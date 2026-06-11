@@ -1,0 +1,8 @@
+supplier_name,priority
+# Niedrigere Zahl = höhere Priorität bei EAN-Konflikten
+# Bei gleicher EAN: Artikel mit niedrigerem priority-Wert wird behalten
+Büroring,1
+Softcarrier,2
+Nordwest Arbeitsschutz,3
+Nordwest Werkstatt,4
+Nordwest Werkzeugtechnik,5

@@ -1,0 +1,6 @@
+supplier,aid_suffix
+# Spalten: supplier, aid_suffix
+# Hängt den Suffix an SUPPLIER_AID im Export an.
+# Beispiel:
+# Büroring,-BRG
+# Softcarrier,-SOC

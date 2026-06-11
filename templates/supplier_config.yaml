@@ -1,0 +1,80 @@
+# supplier_config.yaml – Zentrale Lieferantenkonfiguration
+#
+# Alle Lieferanten-spezifischen Einstellungen an einem Ort.
+# Wird von lib/supplier_config.py geladen.
+# config.py/CONNECTIONS bleibt als Fallback bestehen.
+#
+# Felder pro Lieferant:
+#   enabled:        true/false – Lieferant aktiv
+#   prefix:         Kategorie-Präfix (BRG, NDW, SOC)
+#   min_articles:   Minimum-Artikelzahl (blockiert Upload wenn unterschritten)
+#   connection_key: Schlüssel in config.py CONNECTIONS (Fallback für Credentials)
+#   xml_files:      Liste der XML-Ausgabedateien
+#   task_module:    Python-Modulpfad des Task-Handlers
+
+suppliers:
+
+  bueroring:
+    enabled: true
+    label: "Büroring"
+    prefix: "BRG"
+    db_supplier_name: "Büroring"
+    db_supplier_alt_aid: ""
+    min_articles: 20000
+    connection_key: "bueroring"
+    xml_files:
+      - "bueroring_merged.xml"
+    task_module: "tasks.bueroring"
+    atp_zip_pattern: "102_atp*.zip"
+
+  softcarrier:
+    enabled: true
+    label: "Softcarrier"
+    prefix: "SOC"
+    db_supplier_name: "Softcarrier"
+    db_supplier_alt_aid: ""
+    min_articles: 60000
+    connection_key: "softcarrier"
+    xml_files:
+      - "soft-carrier_merge.xml"
+    task_module: "tasks.softcarrier"
+
+  nordwest:
+    enabled: true
+    label: "Nordwest"
+    prefix: "NDW"
+    db_supplier_names:
+      arbeitsschutz.xml:   "Nordwest Arbeitsschutz"
+      werkstatt.xml:       "Nordwest Werkstatt"
+      werkzeugtechnik.xml: "Nordwest Werkzeugtechnik"
+    db_supplier_alt_aids:
+      arbeitsschutz.xml:   "PC00"
+      werkstatt.xml:       "PC01"
+      werkzeugtechnik.xml: "PC02"
+    min_articles: 55000
+    connection_key: "nordwest"
+    xml_files:
+      - "arbeitsschutz.xml"
+      - "werkstatt.xml"
+      - "werkzeugtechnik.xml"
+    task_module: "tasks.nordwest"
+
+  systeam:
+    enabled: false   # Keine Preise → deaktiviert
+    label: "Systeam"
+    prefix: "SYS"
+    min_articles: 1000
+    connection_key: "systeam"
+    xml_files:
+      - "systeam.xml"
+    task_module: "tasks.systeam"
+
+  soennecken:
+    enabled: false   # Kein Datenlieferant mehr → deaktiviert
+    label: "Soennecken"
+    prefix: "SOE"
+    min_articles: 1000
+    connection_key: "soennecken"
+    xml_files:
+      - "soennecken.xml"
+    task_module: "tasks.soennecken"

@@ -1,0 +1,1171 @@
+#!/usr/bin/env python3
+# main.py – BMEcat Download-Tool  (GUI)
+#
+# Abhängigkeiten: pip install paramiko
+# Python ≥ 3.9, tkinter ist Bestandteil der Standardinstallation
+
+import sys
+import os
+import threading
+import logging
+import datetime
+from pathlib import Path
+
+import tkinter as tk
+from tkinter import ttk, messagebox, scrolledtext
+
+# ── Projektpfad ────────────────────────────────────────────────────────────────
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# User-Overrides so früh wie möglich anwenden
+from lib.config_editor import apply_overrides
+apply_overrides()
+
+import config
+from lib.ftp_client import _fmt_size
+from lib.utils import VERSION
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+log = logging.getLogger("main")
+
+
+# ── Themes ────────────────────────────────────────────────────────────────────
+
+# Themes aus design.py importieren
+from lib.design import THEMES
+
+_current_theme = "Classic"
+
+def _T(key: str) -> str:
+    """Gibt den Farbwert für den aktuellen Theme zurück."""
+    return THEMES[_current_theme][key]
+
+# Shorthand-Konstanten – werden beim Theme-Wechsel neu gesetzt
+def _update_globals():
+    global BG, BG2, BG3, ACCENT, ACCENT_H, GREEN, RED, YELLOW, ORANGE
+    global FG, FG_DIM, FG_INPUT, FG_BODY, FG_DIM_BODY, BORDER, LOG_BG, LOG_FG
+    t = THEMES[_current_theme]
+    BG          = t["BG"];      BG2       = t["BG2"];   BG3       = t["BG3"]
+    ACCENT      = t["ACCENT"];  ACCENT_H  = t["ACCENT_H"]
+    GREEN       = t["GREEN"];   RED       = t["RED"];   YELLOW    = t["YELLOW"]
+    ORANGE      = t["ORANGE"];  FG        = t["FG"];    FG_DIM    = t["FG_DIM"]
+    FG_INPUT    = t["FG_INPUT"]; FG_BODY  = t["FG_BODY"]
+    FG_DIM_BODY = t["FG_DIM_BODY"]
+    BORDER      = t["BORDER"];  LOG_BG    = t["LOG_BG"]; LOG_FG   = t["LOG_FG"]
+
+_update_globals()
+
+FONT_MAIN = ("Segoe UI", 10)
+FONT_MONO = ("Consolas", 9)
+FONT_HEAD = ("Segoe UI Semibold", 11)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Task-Definitionen
+# ──────────────────────────────────────────────────────────────────────────────
+
+TASKS = [
+    # ── Vorbereitung ──────────────────────────────────────────────────────────
+    {
+        "id":      "cleanup",
+        "name":    "Aufräumen",
+        "desc":    "Alte XML/CSV/ZIP in in_BME und JPGs in in2 löschen",
+        "fn":      "tasks.cleanup:run",
+        "default": True,
+        "group":   "Vorbereitung",
+    },
+
+    {
+        "id":      "parallel_download",
+        "name":    "Alle Downloads (parallel)",
+        "desc":    "Büroring + Softcarrier + Nordwest gleichzeitig herunterladen (~3 Min Ersparnis)",
+        "fn":      "tasks.parallel_download:run",
+        "default": False,
+        "group":   "Vorbereitung",
+    },
+    # ── Büroring ──────────────────────────────────────────────────────────────
+    {
+        "id":      "bueroring",
+        "name":    "Büroring – Komplett",
+        "desc":    "Download + Merge + Keywords + Bestand+Preis + Brickfox-Upload",
+        "fn":      "tasks.bueroring:run",
+        "default": True,
+        "group":   "Büroring",
+    },
+    {
+        "id":      "bueroring_bilder",
+        "name":    "Büroring – Bilder + Dokumente",
+        "desc":    "Bilder und Dokumente herunterladen und entpacken (nicht täglich nötig)",
+        "fn":      "tasks.bueroring:run_bilder_dokumente",
+        "default": False,
+        "group":   "Büroring",
+    },
+    {
+        "id":      "bmecat_merge",
+        "name":    "Büroring – Merge (manuell)",
+        "desc":    "Merge + Keywords ohne Download (Fallback)",
+        "fn":      "tasks.bmecat_merge:run",
+        "default": False,
+        "group":   "Büroring",
+    },
+
+    # ── Softcarrier ───────────────────────────────────────────────────────────
+    {
+        "id":      "softcarrier",
+        "name":    "Softcarrier – Komplett",
+        "desc":    "Download + Merge (Features/GPSR) + Brickfox-Upload (ohne Bilder)",
+        "fn":      "tasks.softcarrier:run",
+        "default": True,
+        "group":   "Softcarrier",
+    },
+    {
+        "id":      "softcarrier_merge",
+        "name":    "Softcarrier – Merge (manuell)",
+        "desc":    "TAB-Features + GPSR ohne Download (Fallback)",
+        "fn":      "tasks.softcarrier_merge:run",
+        "default": False,
+        "group":   "Softcarrier",
+    },
+
+    # ── Nordwest ──────────────────────────────────────────────────────────────
+    {
+        "id":      "nordwest",
+        "name":    "Nordwest – Komplett",
+        "desc":    "Download + UDX-Konvertierung + KIP-CSV + Brickfox-Upload",
+        "fn":      "tasks.nordwest:run",
+        "default": True,
+        "group":   "Nordwest",
+    },
+
+    # ── Systeam ───────────────────────────────────────────────────────────────
+    {
+        "id":      "systeam",
+        "name":    "Systeam – Download",
+        "desc":    "BMECAT_137942.ZIP herunterladen und entpacken",
+        "fn":      "tasks.systeam:run",
+        "default": False,
+        "group":   "Systeam",
+    },
+
+    # ── Soennecken ────────────────────────────────────────────────────────────
+    {
+        "id":      "soennecken",
+        "name":    "Soennecken – Download",
+        "desc":    "BMEcat-XML + Bilder-Archiv herunterladen",
+        "fn":      "tasks.others:run_soennecken",
+        "default": False,
+        "group":   "Soennecken",
+    },
+
+    # ── Bilder (nach allen XML-Uploads) ───────────────────────────────────────
+    {
+        "id":      "softcarrier_bilder",
+        "name":    "Softcarrier – Bilder (Delta)",
+        "desc":    "Nur geänderte Bilder auf Allago + OfficeXL hochladen",
+        "fn":      "tasks.softcarrier:run_bilder",
+        "default": True,
+        "group":   "Bilder",
+    },
+
+    # ── Extras ────────────────────────────────────────────────────────────────
+    {
+        "id":      "fname_analyse",
+        "name":    "FNAME-Analyse",
+        "desc":    "Alle FNAMEs aus XMLs extrahieren, Kollisionen prüfen, fname_alle.csv erzeugen",
+        "fn":      "analyse_fnames:run",
+        "default": False,
+        "group":   "Extras",
+    },
+    {
+        "id":      "bestandsdaten",
+        "name":    "Bestandsdaten (nur CSV)",
+        "desc":    "Availability-CSV aus br-bestand.csv erzeugen (kein FTP)",
+        "fn":      "tasks.others:run_bestandsdaten_only",
+        "default": False,
+        "group":   "Extras",
+    },
+    {
+        "id":      "cleanup_logs",
+        "name":    "Alte Logs löschen",
+        "desc":    "Logs + Export-CSVs älter als 30 Tage entfernen",
+        "fn":      "tasks.cleanup:cleanup_logs",
+        "default": False,
+        "group":   "Extras",
+    },
+    {
+        "id":      "sanity_check",
+        "name":    "Artikel-Sanity-Check",
+        "desc":    "Datenqualität prüfen + Cross-Supplier-Vergleich (EAN/Lücken/Bilder)",
+        "fn":      "lib.sanity_check:run_sanity_check",
+        "default": False,
+        "group":   "Extras",
+    },
+    {
+        "id":      "dashboard",
+        "name":    "Cross-Filling Dashboard",
+        "desc":    "HTML-Dashboard aus letztem Sanity-Report aktualisieren",
+        "fn":      "lib.dashboard:run_dashboard_task",
+        "default": False,
+        "group":   "Extras",
+    },
+    {
+        "id":      "trend_report",
+        "name":    "Lauf-Trend-Report",
+        "desc":    "Laufzeit und Fehler der letzten 30 Läufe visualisieren",
+        "fn":      "lib.dashboard:run_trend_task",
+        "default": False,
+        "group":   "Extras",
+    },
+    {
+        "id":      "ki_anreicherung",
+        "name":    "KI-Anreicherung",
+        "desc":    "Artikeldaten mit Claude-KI verbessern (erfordert AI_ENRICHMENT aktiviert)",
+        "fn":      "lib.ai_enrichment:run_ai_enrichment_task",
+        "default": False,
+        "group":   "Extras",
+    },
+]
+
+# ── Hilfsfunktion: Task importieren und aufrufen ──────────────────────────────
+
+def _call_task(fn_spec: str, progress_cb, file_progress_cb=None):
+    module_path, func_name = fn_spec.rsplit(":", 1)
+    import importlib
+    mod = importlib.import_module(module_path)
+    fn  = getattr(mod, func_name)
+    # Tasks die file_progress_cb nicht kennen, bekommen es nicht übergeben
+    import inspect
+    sig = inspect.signature(fn)
+    if "file_progress_cb" in sig.parameters:
+        fn(progress_cb=progress_cb, file_progress_cb=file_progress_cb)
+    else:
+        fn(progress_cb=progress_cb)
+
+
+def run_bestandsdaten_only(progress_cb=None):
+    from lib.bestandsdaten import erstelle_bestandsdaten
+    p      = progress_cb or (lambda m, **kw: None)
+    in_bme = config.DIRS["in_bme"]
+    csv_in = os.path.join(in_bme, "br-bestand.csv")
+
+    if not os.path.exists(csv_in):
+        p("br-bestand.csv nicht gefunden – lade von Büroring nach ...")
+        from lib.ftp_client import make_client
+        from config import CONNECTIONS, TOOLS
+        seven_z = TOOLS["7zip"]
+        client  = make_client(CONNECTIONS["bueroring"])
+        client.connect()
+        try:
+            client.download("downloads/bueroforum/br-bestand.zip",
+                            in_bme, progress_cb=p)
+        finally:
+            client.disconnect()
+        zip_path = os.path.join(in_bme, "br-bestand.zip")
+        if os.path.exists(zip_path):
+            import subprocess
+            subprocess.run([seven_z, "e", zip_path, f"-o{in_bme}", "-y"],
+                           capture_output=True, timeout=120)
+            os.remove(zip_path)
+
+    out = os.path.join(in_bme, config.AVAILABILITY_FILE)
+    erstelle_bestandsdaten(in_bme, out, progress_cb=p)
+
+    # ATP-Merge: Lagerbestände aus OBS-Archiv einspielen
+    try:
+        from lib.atp import run_atp_merge
+        p("ATP-Bestandsdaten: Suche neueste Archiv-Datei ...")
+        run_atp_merge(out, progress_cb=p)
+    except Exception as e:
+        p(f"ATP-Merge übersprungen: {e}", tag="warn")
+
+    # Mindest-Abgleich → 32WQS_conditionsfile.csv
+    try:
+        from lib.mindest_abgleich import run_mindest_abgleich
+        run_mindest_abgleich(out, progress_cb=p)
+    except Exception as e:
+        p(f"Mindest-Abgleich übersprungen: {e}", tag="warn")
+
+
+# Patch cleanup_logs (Signatur vereinheitlichen)
+import tasks.cleanup as _cleanup_mod
+_orig_cleanup_logs = _cleanup_mod.cleanup_logs
+def _cleanup_logs_wrapped(progress_cb=None):
+    _orig_cleanup_logs(max_days=30, progress_cb=progress_cb)
+_cleanup_mod.cleanup_logs = _cleanup_logs_wrapped
+
+# Patch others
+import tasks.others as _others_mod
+_others_mod.run_bestandsdaten_only = run_bestandsdaten_only
+
+
+# ── Config-Validierung ────────────────────────────────────────────────────────
+
+def _validate_config() -> list:
+    """
+    Prüft ob alle benötigten Config-Keys vorhanden sind.
+    Gibt eine Liste von Warnungen zurück (leer = alles OK).
+    """
+    problems = []
+
+    # Verzeichnisse
+    required_dirs = ["in_bme", "in", "in2", "logs"]
+    for key in required_dirs:
+        if key not in config.DIRS:
+            problems.append(f"DIRS['{key}'] fehlt")
+
+    # Tools
+    if "7zip" not in config.TOOLS:
+        problems.append("TOOLS['7zip'] fehlt")
+    elif not os.path.exists(config.TOOLS["7zip"]):
+        problems.append(f"7-Zip nicht gefunden: {config.TOOLS['7zip']}")
+
+    # Verbindungen
+    required_conns = ["bueroring", "softcarrier", "nordwest", "brickfox_bmecat"]
+    for key in required_conns:
+        if key not in config.CONNECTIONS:
+            problems.append(f"CONNECTIONS['{key}'] fehlt")
+        else:
+            conn = config.CONNECTIONS[key]
+            for field in ("host", "user", "password"):
+                if not conn.get(field):
+                    problems.append(f"CONNECTIONS['{key}']['{field}'] fehlt oder leer")
+
+    return problems
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# GUI
+# ──────────────────────────────────────────────────────────────────────────────
+
+class App(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title(f"BMEcat Download-Tool v{VERSION}")
+        self.resizable(True, True)
+        self.geometry("980x700")
+        self.minsize(800, 520)
+
+        self._running = False
+        self._thread  = None
+        self._checks: dict = {}
+        self._theme   = _current_theme
+        self._widget_refs: dict = {}   # für Tutorial-Highlighting
+        self._tutorial = None
+
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._build_ui()
+        self._ensure_dirs()
+        self._append_log(f"BMEcat Download-Tool v{VERSION} bereit.", tag="ok")
+        self._startup_checks()
+
+    # ── Verzeichnisse anlegen ─────────────────────────────────────────────────
+    def _ensure_dirs(self):
+        for d in config.DIRS.values():
+            try:
+                Path(d).mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
+
+    # ── Startup-Prüfungen ─────────────────────────────────────────────────────
+    def _startup_checks(self):
+        """Prüft Dependencies, Config-Migration und letzten Lauf-Zeitpunkt beim Start."""
+        # 0. Erstinstall: fehlende Templates nach BASE_DIR kopieren
+        try:
+            from lib.first_run import initialize
+            initialize(config.BASE_DIR, progress_cb=self._append_log)
+        except Exception:
+            pass
+
+        # 1. Config-Migration
+        try:
+            from lib.config_migration import migrate
+            user_cfg = os.path.join(os.path.dirname(__file__), "config_user.json")
+            migrate(user_cfg, progress_cb=self._append_log)
+        except Exception:
+            pass
+
+        # 1. Dependencies
+        from lib.utils import check_dependencies
+        missing = check_dependencies()
+        if missing:
+            self._append_log(
+                f"⚠ Fehlende Pakete: {', '.join(missing)} "
+                f"– bitte installieren: pip install {' '.join(missing)}",
+                tag="err")
+
+        # 2. Heartbeat: letzter Lauf-Report
+        try:
+            import glob as _gl
+            log_dir = config.DIRS.get("logs", "")
+            reports = sorted(_gl.glob(os.path.join(log_dir, "lauf_*.json")))
+            if reports:
+                last = os.path.getmtime(reports[-1])
+                hours_ago = (datetime.datetime.now().timestamp() - last) / 3600
+                if hours_ago > 25:
+                    self._append_log(
+                        f"⚠ Letzter Lauf: vor {hours_ago:.0f} Stunden "
+                        f"({os.path.basename(reports[-1])})",
+                        tag="warn")
+        except Exception:
+            pass
+
+    # ── UI aufbauen ───────────────────────────────────────────────────────────
+    def _build_ui(self):
+        self.configure(bg=BG)
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(1, weight=1)
+
+        # ── Kopfzeile ─────────────────────────────────────────────────────────
+        from lib.design import FONT_HEAD_L, FONT_UI_SM, add_hover, darken, lighten
+
+        self._header = tk.Frame(self, bg=BG2, pady=0, padx=0)
+        self._header.grid(row=0, column=0, sticky="ew")
+        self._header.columnconfigure(1, weight=1)
+
+        # Hauptzeile
+        header_inner = tk.Frame(self._header, bg=BG2, pady=10, padx=16)
+        header_inner.pack(fill="x")
+        header_inner.columnconfigure(1, weight=1)
+        header = header_inner
+
+        # Logo-Bereich
+        logo_frame = tk.Frame(header, bg=BG2)
+        logo_frame.grid(row=0, column=0, sticky="w")
+        self._title_lbl = tk.Label(
+            logo_frame,
+            text="BMEcat",
+            font=("Segoe UI Semibold", 15), bg=BG2, fg=ACCENT)
+        self._title_lbl.pack(side="left")
+        tk.Label(
+            logo_frame,
+            text=f" Download-Tool  v{VERSION}",
+            font=("Segoe UI", 12), bg=BG2, fg=FG_DIM).pack(side="left")
+
+        hbf = tk.Frame(header, bg=BG2)
+        hbf.grid(row=0, column=2, sticky="e")
+        self._hbf = hbf
+
+        from lib.tutorial import ToolTip, BUTTON_TIPS
+
+        def _ghost_btn(parent, text, cmd, tip=""):
+            b = tk.Button(parent, text=text, command=cmd,
+                          font=FONT_UI_SM, bg=BG2, fg=FG_DIM,
+                          activebackground=lighten(BG2, 10),
+                          activeforeground=FG,
+                          relief="flat", bd=0, cursor="hand2",
+                          padx=10, pady=5)
+            add_hover(b, BG2, lighten(BG2, 10), FG_DIM, FG)
+            b.pack(side="left", padx=2)
+            if tip: ToolTip(b, tip)
+            return b
+
+        conn_btn = _ghost_btn(hbf, "Verbindungstest",
+                              self._open_conn_test, BUTTON_TIPS["Verbindungstest"])
+        self._widget_refs["conn_test_btn"] = conn_btn
+
+        cfg_btn  = _ghost_btn(hbf, "Konfiguration",
+                              self._open_config,    BUTTON_TIPS["Konfiguration"])
+        self._widget_refs["config_btn"] = cfg_btn
+
+        sch_btn  = _ghost_btn(hbf, "Scheduler",
+                              self._open_scheduler, BUTTON_TIPS["Scheduler"])
+        self._widget_refs["scheduler_btn"] = sch_btn
+
+        # Theme-Umschalter
+        theme_lbl = "◑ Classic" if self._theme == "ABE" else "◑ ABE"
+        self._theme_btn = tk.Button(
+            hbf, text=theme_lbl, command=self._toggle_theme,
+            font=FONT_UI_SM, bg=BG2, fg=FG_DIM,
+            activebackground=lighten(BG2, 10), activeforeground=FG,
+            relief="flat", bd=0, cursor="hand2", padx=10, pady=5)
+        add_hover(self._theme_btn, BG2, lighten(BG2, 10), FG_DIM, FG)
+        self._theme_btn.pack(side="left", padx=2)
+        ToolTip(self._theme_btn, "Zwischen Classic (dunkel) und ABE wechseln.")
+
+        # Tutorial-Button
+        tut_bg = ACCENT
+        tut_btn = tk.Button(
+            hbf, text="?", command=self._start_tutorial,
+            font=("Segoe UI Semibold", 9), bg=tut_bg, fg="#ffffff",
+            activebackground=darken(tut_bg, 15), activeforeground="#ffffff",
+            relief="flat", bd=0, cursor="hand2", padx=10, pady=5, width=2)
+        add_hover(tut_btn, tut_bg, darken(tut_bg, 15))
+        tut_btn.pack(side="left", padx=(6, 0))
+        ToolTip(tut_btn, BUTTON_TIPS["?"])
+
+        self._status_lbl = tk.Label(
+            header, text="●  Bereit", font=("Segoe UI", 9),
+            bg=BG2, fg=GREEN)
+        self._status_lbl.grid(row=0, column=3, sticky="e", padx=(16, 0))
+
+        # Akzentlinie am unteren Header-Rand
+        tk.Frame(self._header, bg=ACCENT, height=2).pack(fill="x")
+
+        # ── Hauptbereich: Notebook mit Reitern ───────────────────────────────
+        self._notebook = ttk.Notebook(self)
+        self._notebook.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
+
+        from lib.design import apply_notebook_style, THEMES
+        apply_notebook_style(self._notebook, THEMES[self._theme], "BME.TNotebook")
+
+        # Tab 1: BMECat-Verarbeitung
+        body = tk.Frame(self._notebook, bg=BG)
+        self._notebook.add(body, text="  BMECat-Verarbeitung  ")
+        body.columnconfigure(1, weight=1)
+        body.rowconfigure(1, weight=1)
+
+        # ── Linke Spalte: Task-Auswahl (scrollbar) ───────────────────────────
+        left_outer = tk.Frame(body, bg=BG2)
+        left_outer.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(0, 10))
+        left_outer.rowconfigure(1, weight=1)
+
+        tk.Label(left_outer, text="Aufgaben", font=FONT_HEAD,
+                 bg=BG2, fg=FG, padx=12).grid(row=0, column=0, columnspan=2,
+                                               sticky="w", pady=(10, 4))
+
+        canvas = tk.Canvas(left_outer, bg=BG2, highlightthickness=0, width=224)
+        canvas.grid(row=1, column=0, sticky="ns")
+
+        vsb = ttk.Scrollbar(left_outer, orient="vertical", command=canvas.yview)
+        vsb.grid(row=1, column=1, sticky="ns")
+        canvas.configure(yscrollcommand=vsb.set)
+
+        left = tk.Frame(canvas, bg=BG2, padx=12)
+        canvas_win = canvas.create_window((0, 0), window=left, anchor="nw")
+
+        def _on_frame_configure(e):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        left.bind("<Configure>", _on_frame_configure)
+
+        def _on_canvas_configure(e):
+            canvas.itemconfig(canvas_win, width=e.width)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        def _on_mousewheel(e):
+            canvas.yview_scroll(-1 * (e.delta // 120), "units")
+        canvas.bind("<MouseWheel>", _on_mousewheel)
+        left.bind("<MouseWheel>", _on_mousewheel)
+
+        from lib.tutorial import ToolTip, TASK_TIPS
+        from lib.design import add_hover, lighten, FONT_UI, FONT_UI_SM, FONT_CAP
+        current_group = None
+        for task in TASKS:
+            grp = task.get("group", "")
+            if grp != current_group:
+                current_group = grp
+                # Gruppen-Separator
+                sep_frm = tk.Frame(left, bg=BG2)
+                sep_frm.pack(fill="x", pady=(10, 2))
+                sep_frm.bind("<MouseWheel>", _on_mousewheel)
+                tk.Frame(sep_frm, bg=BORDER, height=1).pack(fill="x", pady=(0, 4))
+                lbl = tk.Label(sep_frm, text=grp.upper(),
+                               font=("Segoe UI", 7, "bold"),
+                               bg=BG2, fg=FG_DIM, padx=2)
+                lbl.pack(anchor="w")
+                lbl.bind("<MouseWheel>", _on_mousewheel)
+
+            var = tk.BooleanVar(value=task.get("default", True))
+            self._checks[task["id"]] = var
+
+            # Task-Karte mit Hover
+            row_h = lighten(BG2, 8)
+            row = tk.Frame(left, bg=BG2, pady=2, padx=2)
+            row.pack(fill="x", pady=1)
+            row.bind("<MouseWheel>", _on_mousewheel)
+            add_hover(row, BG2, row_h)
+
+            cb = tk.Checkbutton(
+                row, text=task["name"], variable=var,
+                font=FONT_UI, bg=BG2, fg=FG,
+                selectcolor=BG3, activebackground=row_h, activeforeground=FG,
+                cursor="hand2", relief="flat", bd=0)
+            cb.pack(anchor="w")
+            cb.bind("<MouseWheel>", _on_mousewheel)
+            row.bind("<Enter>", lambda e, c=cb, h=row_h:
+                     c.config(bg=h, activebackground=h))
+            row.bind("<Leave>", lambda e, c=cb:
+                     c.config(bg=BG2, activebackground=BG2))
+            tip = TASK_TIPS.get(task["id"])
+            if tip: ToolTip(cb, tip)
+
+            dl = tk.Label(row, text=task["desc"], font=FONT_CAP,
+                          bg=BG2, fg=FG_DIM, wraplength=195, justify="left")
+            dl.pack(anchor="w", padx=(22, 0), pady=(0, 1))
+            dl.bind("<MouseWheel>", _on_mousewheel)
+            add_hover(dl, BG2, row_h)
+
+        self._widget_refs["task_list"] = left
+
+        ttk.Separator(left, orient="horizontal").pack(fill="x", pady=8)
+
+        bf = tk.Frame(left, bg=BG2)
+        bf.pack(anchor="w", pady=(0, 10))
+        bf.bind("<MouseWheel>", _on_mousewheel)
+        from lib.tutorial import ToolTip, BUTTON_TIPS
+        alle_btn = self._mk_btn(bf, "Alle", self._select_all, small=True)
+        alle_btn.pack(side="left", padx=2)
+        ToolTip(alle_btn, BUTTON_TIPS["Alle"])
+        keine_btn = self._mk_btn(bf, "Keine", self._deselect_all, small=True)
+        keine_btn.pack(side="left", padx=2)
+        ToolTip(keine_btn, BUTTON_TIPS["Keine"])
+        std_btn = self._mk_btn(bf, "Standard", self._select_default, small=True)
+        std_btn.pack(side="left", padx=2)
+        ToolTip(std_btn, BUTTON_TIPS["Standard"])
+        self._widget_refs["sel_buttons"] = bf
+
+        # ── Rechte Seite oben: Basispfad ──────────────────────────────────────
+        top_right = tk.Frame(body, bg=BG)
+        top_right.grid(row=0, column=1, sticky="ew", pady=(0, 6))
+        top_right.columnconfigure(1, weight=1)
+
+        tk.Label(top_right, text="Basispfad:", font=FONT_MAIN,
+                 bg=BG, fg=FG_DIM_BODY).grid(row=0, column=0, padx=(0, 6))
+        self._path_var = tk.StringVar(value=config.BASE_DIR)
+        tk.Entry(top_right, textvariable=self._path_var,
+                 font=FONT_MONO, bg=BG2, fg=FG,
+                 insertbackground=FG, relief="flat", bd=4,
+                 ).grid(row=0, column=1, sticky="ew")
+        self._mk_btn(top_right, "Oeffnen", self._open_basedir, small=True
+                     ).grid(row=0, column=2, padx=(6, 0))
+
+        # ── Log-Fenster ───────────────────────────────────────────────────────
+        log_bg = LOG_BG
+        log_fg = LOG_FG
+        self._log_txt = scrolledtext.ScrolledText(
+            body, font=FONT_MONO, bg=log_bg, fg=log_fg,
+            insertbackground=log_fg, relief="flat", bd=0,
+            state="disabled", wrap="word",
+        )
+        self._log_txt.grid(row=1, column=1, sticky="nsew")
+        self._log_txt.tag_config("ok",   foreground=GREEN)
+        self._log_txt.tag_config("err",  foreground=RED)
+        self._log_txt.tag_config("warn", foreground=YELLOW)
+        self._log_txt.tag_config("dim",  foreground=FG_DIM)
+        self._log_txt.tag_config("info", foreground=ORANGE)
+        self._widget_refs["log_area"] = self._log_txt
+
+        # ── Fortschrittsbereich ───────────────────────────────────────────────
+        prog_frame = tk.Frame(body, bg=BG)
+        prog_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        prog_frame.columnconfigure(0, weight=1)
+        self._file_lbl  = tk.Label(prog_frame, text="", font=FONT_MONO,
+                                   bg=BG, fg=FG_DIM_BODY, anchor="w")
+        self._file_lbl.grid(row=0, column=0, sticky="ew")
+        self._speed_lbl = tk.Label(prog_frame, text="", font=FONT_MONO,
+                                   bg=BG, fg=FG_DIM_BODY, anchor="e")
+        self._speed_lbl.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        self._progress  = ttk.Progressbar(prog_frame, mode="determinate",
+                                          maximum=100, value=0)
+        self._progress.grid(row=1, column=0, columnspan=2, sticky="ew")
+
+        # ── Tab 2: Viewer / Export ────────────────────────────────────────────
+        _tab2 = tk.Frame(self._notebook, bg=BG)
+        self._notebook.add(_tab2, text="  Viewer / Export  ")
+        from lib.viewer_tab import ViewerTab
+        self._viewer_tab = ViewerTab(
+            _tab2, self,
+            dict(BG=BG, BG2=BG2, BG3=BG3, FG=FG, FG_DIM=FG_DIM,
+                 FG_INPUT=FG_INPUT,
+                 ACCENT=ACCENT, GREEN=GREEN, RED=RED, YELLOW=YELLOW, ORANGE=ORANGE))
+
+
+        _tab3 = tk.Frame(self._notebook, bg=BG)
+        self._notebook.add(_tab3, text="  Konfiguration  ")
+        from lib.config_tab import ConfigTab
+        self._config_tab = ConfigTab(
+            _tab3, self,
+            dict(BG=BG, BG2=BG2, BG3=BG3, FG=FG, FG_DIM=FG_DIM,
+                 FG_INPUT=FG_INPUT,
+                 ACCENT=ACCENT, GREEN=GREEN, RED=RED, YELLOW=YELLOW, ORANGE=ORANGE))
+
+        # ── Fusszeile ─────────────────────────────────────────────────────────
+        footer_wrap = tk.Frame(self, bg=BG2)
+        footer_wrap.grid(row=2, column=0, sticky="ew")
+        tk.Frame(footer_wrap, bg=BORDER, height=1).pack(fill="x")  # Trennlinie
+        footer = tk.Frame(footer_wrap, bg=BG2, pady=8, padx=12)
+        footer.pack(fill="x")
+
+        self._run_btn = self._mk_btn(footer, "▶  Starten", self._start_run)
+        self._run_btn.pack(side="left", padx=(0, 8))
+        from lib.tutorial import ToolTip, BUTTON_TIPS
+        ToolTip(self._run_btn, BUTTON_TIPS["Starten"])
+        self._widget_refs["run_btn"] = self._run_btn
+
+        self._stop_btn = self._mk_btn(footer, "■  Abbrechen", self._stop_run, color=RED)
+        self._stop_btn.pack(side="left")
+        self._stop_btn.config(state="disabled")
+        ToolTip(self._stop_btn, BUTTON_TIPS["Abbrechen"])
+
+        log_clr = self._mk_btn(footer, "Log loeschen", self._clear_log, small=True)
+        log_clr.pack(side="right")
+        ToolTip(log_clr, BUTTON_TIPS["Log loeschen"])
+        log_sav = self._mk_btn(footer, "Log speichern", self._save_log, small=True)
+        log_sav.pack(side="right", padx=4)
+        ToolTip(log_sav, BUTTON_TIPS["Log speichern"])
+
+        # Tab-Wechsel: Start/Stop nur auf Tab 0 aktiv; Viewer bei Tab 1 aktualisieren
+        def _on_tab_change(event=None):
+            idx = self._notebook.index(self._notebook.select())
+            self._run_btn.config(state="normal" if idx == 0 else "disabled")
+            if idx != 0:
+                self._stop_btn.config(state="disabled")
+            if idx == 1 and hasattr(self, "_viewer_tab"):
+                self._viewer_tab.on_tab_activated()
+        self._notebook.bind("<<NotebookTabChanged>>", _on_tab_change)
+
+        # Logging → GUI
+        gui_handler = _GuiLogHandler(self._append_log)
+        gui_handler.setFormatter(logging.Formatter("%(asctime)s  %(message)s", "%H:%M:%S"))
+        logging.getLogger().addHandler(gui_handler)
+
+    # ── Theme ─────────────────────────────────────────────────────────────────
+    def _toggle_theme(self):
+        global _current_theme, BG, BG2, BG3, ACCENT, GREEN, RED, YELLOW, ORANGE, FG, FG_DIM
+        _current_theme = "ABE" if _current_theme == "Classic" else "Classic"
+        self._theme    = _current_theme
+        _update_globals()
+
+        # Alle Widgets zerstören und UI neu aufbauen
+        for w in self.winfo_children():
+            w.destroy()
+        self._checks = {}
+        self._build_ui()
+        self._append_log(f"Theme gewechselt zu: {_current_theme}", tag="ok")
+
+    # ── Button-Factory ────────────────────────────────────────────────────────
+    def _mk_btn(self, parent, text, cmd, color=None, small=False,
+                variant: str = "primary") -> tk.Button:
+        from lib.design import make_button, THEMES
+        c = THEMES[self._theme]
+        if color is not None:
+            # Legacy-Aufruf mit expliziter Farbe → primary mit Override
+            from lib.design import FONT_UI, FONT_UI_SM, add_hover, lighten
+            font = FONT_UI_SM if small else FONT_UI
+            padx = 8 if small else 14
+            pady = 4 if small else 6
+            hover = lighten(color, 18)
+            btn = tk.Button(parent, text=text, command=cmd,
+                            font=font, bg=color, fg="#ffffff",
+                            activebackground=hover, activeforeground="#ffffff",
+                            relief="flat", bd=0, cursor="hand2",
+                            padx=padx, pady=pady)
+            add_hover(btn, color, hover, "#ffffff", "#ffffff")
+            return btn
+        return make_button(parent, text, cmd, c,
+                           variant=variant, small=small)
+
+    # ── Auswahl ───────────────────────────────────────────────────────────────
+    def _select_all(self):
+        for v in self._checks.values():
+            v.set(True)
+
+    def _deselect_all(self):
+        for v in self._checks.values():
+            v.set(False)
+
+    def _select_default(self):
+        for task in TASKS:
+            self._checks[task["id"]].set(task.get("default", True))
+
+    # ── Dialoge ───────────────────────────────────────────────────────────────
+    def _open_scheduler(self):
+        from tasks.scheduler import open_scheduler_dialog
+        open_scheduler_dialog(self)
+
+    def _open_config(self):
+        from lib.config_editor import ConfigEditor
+        ConfigEditor(self)
+
+    def _open_conn_test(self):
+        from lib.config_editor import ConnectionTestDialog
+        ConnectionTestDialog(self)
+
+    def _open_basedir(self):
+        import subprocess
+        path = self._path_var.get()
+        if os.path.isdir(path):
+            subprocess.Popen(f'explorer "{path}"', shell=True)
+        else:
+            messagebox.showwarning("Pfad nicht gefunden",
+                                   f"Verzeichnis existiert nicht:\n{path}", parent=self)
+
+    # ── Log ───────────────────────────────────────────────────────────────────
+    def _clear_log(self):
+        self._log_txt.config(state="normal")
+        self._log_txt.delete("1.0", "end")
+        self._log_txt.config(state="disabled")
+
+    def _save_log(self):
+        from tkinter.filedialog import asksaveasfilename
+        path = asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Textdateien", "*.txt"), ("Alle", "*.*")],
+            initialfile=f"bmecat_log_{datetime.date.today():%Y%m%d}.txt",
+        )
+        if path:
+            content = self._log_txt.get("1.0", "end")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+
+    # ── Tutorial ──────────────────────────────────────────────────────────────
+    def _start_tutorial(self):
+        from lib.tutorial import Tutorial
+        if not self._tutorial or not (
+            self._tutorial._win and self._tutorial._win.winfo_exists()):
+            self._tutorial = Tutorial(self, self._widget_refs)
+        self._tutorial.start()
+
+    # ── Graceful Shutdown ───────────────────────────────────────────────────────
+    def _on_close(self):
+        """Sauberes Beenden: laufenden Task abbrechen, dann schließen."""
+        if self._running:
+            if not messagebox.askyesno(
+                "Lauf aktiv",
+                "Ein Lauf ist noch aktiv. Wirklich beenden?\n"
+                "Der laufende Task wird abgebrochen.",
+                parent=self
+            ):
+                return
+            self._running = False
+            # Thread hat daemon=True, wird automatisch beendet
+            self._append_log("Programm wird geschlossen – Abbruch ...", tag="warn")
+        self.destroy()
+
+    # ── Task-Ausfuehrung ──────────────────────────────────────────────────────
+    def _check_plain_passwords(self):
+        """Warnt wenn Klartext-Passwörter in config.py gefunden werden."""
+        try:
+            import config as _cfg
+            plain = []
+            for name, srv in _cfg.FTP_SERVERS.items():
+                pw = srv.get("password", "")
+                if pw and not str(pw).startswith("enc:"):
+                    plain.append(name)
+            smtp_pw = _cfg.NOTIFICATION.get("smtp_pass", "")
+            if smtp_pw and not str(smtp_pw).startswith("enc:"):
+                plain.append("SMTP")
+            if plain:
+                self._append_log(
+                    f"⚠ Klartext-Passwörter in config.py: {', '.join(plain)} – "
+                    "Konfigurationsreiter → '🔐 Passwort verschlüsseln' verwenden.",
+                    tag="warn")
+        except Exception:
+            pass
+
+    def _start_run(self):
+        selected = [t for t in TASKS if self._checks[t["id"]].get()]
+        if not selected:
+            messagebox.showwarning("Keine Auswahl",
+                                   "Bitte mindestens eine Aufgabe auswaehlen.", parent=self)
+            return
+
+        # Disk-Space-Check
+        try:
+            import shutil
+            usage = shutil.disk_usage(config.BASE_DIR)
+            free_gb = usage.free / (1024 ** 3)
+            if free_gb < 2:
+                if not messagebox.askyesno(
+                    "Wenig Speicherplatz",
+                    f"Nur noch {free_gb:.1f} GB frei auf {config.BASE_DIR}.\n"
+                    f"Das Tool braucht ca. 2 GB pro Lauf.\n\n"
+                    f"Trotzdem fortfahren?",
+                    parent=self
+                ):
+                    return
+            elif free_gb < 5:
+                self._append_log(
+                    f"⚠ Speicherplatz knapp: {free_gb:.1f} GB frei auf "
+                    f"{config.BASE_DIR}", tag="warn")
+        except Exception:
+            pass
+
+        # Config-Validierung
+        problems = _validate_config()
+        if problems:
+            for msg in problems:
+                self._append_log(f"⚠ Config: {msg}", tag="warn")
+
+        # Reihenfolge: Gruppe bestimmt Abfolge
+        group_order = {
+            "Vorbereitung": 0,
+            "Büroring":     1,
+            "Softcarrier":  2,
+            "Nordwest":     3,
+            "Systeam":      4,
+            "Soennecken":   5,
+            "Bilder":       6,   # nach allen XML-Uploads
+            "Upload":       7,
+            "Extras":       8,
+        }
+        selected.sort(key=lambda t: (group_order.get(t.get("group", ""), 9), t["id"]))
+
+        self._running = True
+        self._set_status("Läuft...", YELLOW)
+        self._run_btn.config(state="disabled")
+        self._stop_btn.config(state="normal")
+        self._progress.config(mode="indeterminate", value=0)
+        self._progress.start(12)
+        self._file_lbl.config(text="")
+        self._speed_lbl.config(text="")
+        self._set_status("Laeuft ...", YELLOW)
+
+        self._thread = threading.Thread(
+            target=self._worker, args=(selected,), daemon=True)
+        self._thread.start()
+
+    def _stop_run(self):
+        self._running = False
+        self._set_status("Abgebrochen", RED)
+        self._append_log("Abbruch angefordert - laufende Aufgabe wird noch abgeschlossen.",
+                         tag="warn")
+        self._progress.stop()
+        self._run_btn.config(state="normal")
+        self._stop_btn.config(state="disabled")
+
+    def _worker(self, tasks):
+        # Einzelinstanz-Schutz: verhindert Doppelstart durch Scheduler
+        from lib.run_lock import RunLock, RunLockError
+        try:
+            lock = RunLock(config.BASE_DIR)
+            if not lock.acquire():
+                self._append_log(
+                    "⚠ Lauf bereits aktiv – dieser Start wird übersprungen.",
+                    tag="warn")
+                lock.release()
+                self._parent.after(0, self._on_run_done)
+                return
+        except Exception:
+            lock = None
+
+
+        start  = datetime.datetime.now()
+        errors = []
+        dedup_total = {"removed": 0, "files": 0, "articles": 0}
+
+        from lib.lauf_report import LaufReport
+        report = LaufReport(config.DIRS["logs"])
+
+        dropped_collector: list[dict] = []
+
+        def log_cb(msg: str, tag: str = "", _dropped: dict = None):
+            self._append_log(msg, tag=tag)
+            if _dropped:
+                dropped_collector.append(_dropped)
+                report.add_dropped([_dropped])
+
+        def file_cb(filename, pct, done, total, speed, eta):
+            self.set_file_progress(filename, pct, done, total, speed, eta)
+
+        def dedup_cb(msg: str, tag: str = ""):
+            self._append_log(msg, tag=tag)
+            import re as _re
+            m = _re.search(r'(\d+) doppelte Features entfernt in (\d+)', msg)
+            if m:
+                dedup_total["removed"]  += int(m.group(1))
+                dedup_total["articles"] += int(m.group(2))
+                dedup_total["files"]    += 1
+
+        for i, task in enumerate(tasks, 1):
+            if not self._running:
+                break
+            self.after(0, self._set_status,
+                       f"Task {i}/{len(tasks)}: {task['name']}", YELLOW)
+            self._append_log(f"\n{'─'*60}", tag="dim")
+            self._append_log(f"[{i}/{len(tasks)}] Start: {task['name']} ...", tag="info")
+            report.begin_task(task["name"])
+            try:
+                _call_task(task["fn"], progress_cb=log_cb, file_progress_cb=file_cb)
+                self._append_log(f"OK: {task['name']} abgeschlossen.", tag="ok")
+                report.end_task(task["name"], success=True)
+            except Exception as exc:
+                self._append_log(f"FEHLER: {task['name']}: {exc}", tag="err")
+                log.exception(f"Task '{task['name']}' fehlgeschlagen")
+                errors.append(task["name"])
+                report.end_task(task["name"], success=False,
+                                details={"fehler": str(exc)})
+
+        report.add_dedup(**dedup_total)
+        report_path = report.write()
+        if report_path:
+            self._append_log(f"Lauf-Report: {os.path.basename(report_path)}",
+                             tag="dim")
+        # Dropped-Articles CSV
+        dropped_csv = report.write_dropped_csv()
+        if dropped_csv:
+            self._append_log(
+                f"⚠ {len(report.dropped_articles)} Artikel nicht mehr im "
+                f"Lieferantenkatalog → {os.path.basename(dropped_csv)}", tag="warn")
+
+        # ── DB-Backup ─────────────────────────────────────────────────────
+        try:
+            from lib.db_backup import run_backup
+            run_backup(config.DB_PATH, progress_cb=log_cb)
+        except Exception as e:
+            log.warning(f"DB-Backup Fehler: {e}")
+
+        # ── Preisregel-Ablauf prüfen ───────────────────────────────────────
+        try:
+            from lib.db_postprocess import _load_price_rules, _check_price_expiry
+            price_rules    = _load_price_rules(config.BASE_DIR)
+            price_warnings = _check_price_expiry(price_rules)
+            if price_warnings:
+                for w in price_warnings:
+                    self._append_log(f"⚠ Preisregel: {w}", tag="warn")
+                report.add_price_warnings(price_warnings)
+        except Exception as e:
+            log.debug(f"Preisregel-Check Fehler: {e}")
+
+        # ── E-Mail-Benachrichtigung ────────────────────────────────────────
+        try:
+            from lib.notifier import send_run_notification
+            send_run_notification(
+                report.as_dict(),
+                dropped_articles=report.dropped_articles,
+                price_warnings=report.price_warnings,
+            )
+        except Exception as e:
+            log.debug("Benachrichtigung übersprungen: %s", e)
+
+        # Trend-Report automatisch aktualisieren
+        try:
+            from lib.dashboard import generate_trend_report
+            generate_trend_report(config.DIRS["logs"])
+        except Exception:
+            pass
+
+        elapsed = datetime.datetime.now() - start
+        self._append_log(f"\n{'─'*60}", tag="dim")
+        self._append_log(
+            f"Laufzeit: {str(elapsed).split('.')[0]}  |  "
+            f"Fehler: {len(errors)}/{len(tasks)}", tag="dim")
+
+        if dedup_total["removed"] > 0:
+            self._append_log(
+                f"⚠ Deduplizierung: {dedup_total['removed']} doppelte Features "
+                f"entfernt in {dedup_total['articles']} Artikel(n) "
+                f"aus {dedup_total['files']} Datei(en) – Details siehe Log oben.",
+                tag="warn")
+
+        self.after(0, self._finish, errors, dedup_total)
+
+    def _finish(self, errors, dedup_total=None):
+        self._running = False
+        self._progress.stop()
+        self._progress.config(mode="determinate", value=0)
+        self._file_lbl.config(text="")
+        self._speed_lbl.config(text="")
+        self._run_btn.config(state="normal")
+        self._stop_btn.config(state="disabled")
+
+        if errors:
+            self._set_status(f"Fehler bei: {', '.join(errors)}", RED)
+        elif dedup_total and dedup_total["removed"] > 0:
+            self._set_status(
+                f"Fertig – {dedup_total['removed']} Duplikate entfernt", YELLOW)
+        else:
+            self._set_status("Alle Aufgaben abgeschlossen", GREEN)
+
+    # ── Hilfsmethoden ─────────────────────────────────────────────────────────
+    def _set_status(self, text, color=FG):
+        # Icon je nach Farbe
+        icon = "●  "
+        if color in (GREEN, "#3fb950", "#15803d", "#50fa7b"):
+            icon = "●  "
+        elif color in (RED, "#f85149", "#dc2626", "#ff5555"):
+            icon = "✗  "
+        elif color in (YELLOW, "#d29922", "#f1fa8c", "#b45309"):
+            icon = "⚠  "
+        self._status_lbl.config(text=icon + text, fg=color)
+
+    def _append_log(self, msg: str, tag: str = ""):
+        def _do():
+            self._log_txt.config(state="normal")
+            ts   = datetime.datetime.now().strftime("%H:%M:%S")
+            line = f"[{ts}]  {msg}\n"
+            self._log_txt.insert("end", line, tag if tag else "")
+            self._log_txt.see("end")
+            self._log_txt.config(state="disabled")
+            self._write_file_log(line)
+        self.after(0, _do)
+
+    def set_file_progress(self, filename: str, pct: float,
+                          done_bytes: int, total_bytes: int, speed: float, eta: float):
+        """Wird aus dem Download-Thread via after() aufgerufen."""
+        def _do():
+            if total_bytes > 0:
+                size_str = f"{_fmt_size(done_bytes)} / {_fmt_size(total_bytes)}"
+                eta_str  = f"  ETA {eta:.0f}s" if eta > 0 else ""
+                self._file_lbl.config(
+                    text=f"  {filename}  {size_str}{eta_str}")
+            else:
+                self._file_lbl.config(
+                    text=f"  {filename}  {_fmt_size(done_bytes)}")
+            self._speed_lbl.config(text=f"{_fmt_size(int(speed))}/s  ")
+            self._progress.stop()
+            self._progress.config(mode="determinate", value=min(pct, 100))
+        self.after(0, _do)
+
+    def _write_file_log(self, line: str):
+        try:
+            log_dir = config.DIRS["logs"]
+            Path(log_dir).mkdir(parents=True, exist_ok=True)
+            fname = os.path.join(log_dir, f"Log_{datetime.date.today():%Y%m%d}.txt")
+            with open(fname, "a", encoding="utf-8") as f:
+                f.write(line)
+        except Exception:
+            pass
+
+
+# ── Logging-Handler fuer GUI ──────────────────────────────────────────────────
+
+class _GuiLogHandler(logging.Handler):
+    def __init__(self, append_fn):
+        super().__init__()
+        self._append = append_fn
+
+    def emit(self, record):
+        msg = self.format(record)
+        tag = ""
+        if record.levelno >= logging.ERROR:
+            tag = "err"
+        elif record.levelno == logging.WARNING:
+            tag = "warn"
+        self._append(msg, tag=tag)
+
+
+# ── Einstiegspunkt ────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    import sys
+    import traceback
+
+    def _crash_handler(exc_type, exc_value, exc_tb):
+        """Schreibt ungefangene Ausnahmen in crash_YYYYMMDD.txt vor dem Absturz."""
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_tb)
+            return
+        try:
+            crash_dir = os.path.join(os.path.dirname(__file__),
+                                     config.DIRS.get("logs", "logs"))
+            os.makedirs(crash_dir, exist_ok=True)
+            stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            crash_path = os.path.join(crash_dir, f"crash_{stamp}.txt")
+            with open(crash_path, "w", encoding="utf-8") as f:
+                f.write(f"BMEcat Download-Tool v{VERSION} — Crash Report\n")
+                f.write(f"Zeitpunkt: {datetime.datetime.now().isoformat()}\n\n")
+                traceback.print_exception(exc_type, exc_value, exc_tb, file=f)
+        except Exception:
+            pass
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+    sys.excepthook = _crash_handler
+
+    app = App()
+    # --auto: direkt Standard-Tasks starten (für Scheduler)
+    from tasks.scheduler import is_auto_mode
+    if is_auto_mode():
+        app.after(500, app._start_run)   # kurz warten bis GUI bereit
+    app.mainloop()

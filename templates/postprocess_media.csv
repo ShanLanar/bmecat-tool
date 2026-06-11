@@ -1,0 +1,5 @@
+product_id,action,mime_type,mime_source,mime_purpose,mime_desc,mime_alt,mime_order
+# action: add | replace | remove
+# replace/remove matchen auf mime_purpose
+# Beispiel:
+# NDW2000379997,replace,image/jpeg,mein_bild.jpg,normal,Produktbild,,1
