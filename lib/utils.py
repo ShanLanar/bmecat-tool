@@ -171,19 +171,11 @@ def detect_encoding(path: str) -> str:
     # 5. Fallback
     return "cp1252"
 
-
 def check_dependencies() -> list:
-    """
-    Prüft ob alle benötigten Python-Pakete installiert sind.
-    Gibt eine Liste fehlender Pakete zurück (leer = alles OK).
-    """
-    missing = []
-    for pkg in ("paramiko", "openpyxl"):
-        try:
-            __import__(pkg)
-        except ImportError:
-            missing.append(pkg)
-    return missing
+    """Prüft ob alle benötigten Python-Pakete installiert sind (ohne sie zu laden)."""
+    import importlib.util
+    return [pkg for pkg in ("paramiko", "openpyxl")
+            if importlib.util.find_spec(pkg) is None]
 
 
 def file_hash(path: str) -> str:

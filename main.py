@@ -22,7 +22,6 @@ from lib.config_editor import apply_overrides
 apply_overrides()
 
 import config
-from lib.ftp_client import _fmt_size
 from lib.utils import VERSION
 from lib.task_registry import TASKS, call_task, validate_config, TASK_GROUP_ORDER, apply_patches
 
@@ -92,8 +91,6 @@ def run_bestandsdaten_only(progress_cb=None):
         p(f"Mindest-Abgleich übersprungen: {e}", tag="warn")
 
 
-apply_patches(run_bestandsdaten_only)
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # GUI
@@ -118,7 +115,8 @@ class App(tk.Tk):
         self._build_ui()
         self._ensure_dirs()
         self._append_log(f"BMEcat Download-Tool v{VERSION} bereit.", tag="ok")
-        self._startup_checks()
+        # Startup-Checks nach erstem Render (Fenster erscheint sofort)
+        self.after(0, self._startup_checks)
 
     # ── Verzeichnisse anlegen ─────────────────────────────────────────────────
     def _ensure_dirs(self):
@@ -130,7 +128,10 @@ class App(tk.Tk):
 
     # ── Startup-Prüfungen ─────────────────────────────────────────────────────
     def _startup_checks(self):
-        """Prüft Dependencies, Config-Migration und letzten Lauf-Zeitpunkt beim Start."""
+        """Startup-Prüfungen: läuft nach erstem Render im Event-Loop."""
+        # Task-Patches (tasks.cleanup + tasks.others) – erst jetzt laden
+        apply_patches(run_bestandsdaten_only)
+
         # 0. Erstinstall: fehlende Templates nach BASE_DIR kopieren
         try:
             from lib.first_run import initialize
@@ -830,6 +831,7 @@ class App(tk.Tk):
     def set_file_progress(self, filename: str, pct: float,
                           done_bytes: int, total_bytes: int, speed: float, eta: float):
         """Wird aus dem Download-Thread via after() aufgerufen."""
+        from lib.ftp_client import _fmt_size
         def _do():
             if total_bytes > 0:
                 size_str = f"{_fmt_size(done_bytes)} / {_fmt_size(total_bytes)}"
