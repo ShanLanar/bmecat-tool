@@ -38,48 +38,50 @@ TOOLS = {
 SQL_SNIPPET_DIR = r"C:\Users\etconnector\Downloads\HeidiSQL_11.3_64_Portable\Snippets"
 
 # ── FTP / SFTP Zugangsdaten ────────────────────────────────────────────────────
-# Format: {"host": ..., "user": ..., "password": ..., "protocol": "ftp"|"sftp", "port": 21|22}
+# Passwörter hier LEER lassen — sie werden über den Konfigurations-Editor
+# in config_user.json gespeichert (gitignored).
+# Beim ersten Start: Konfiguration → Verbindungen → Passwörter eintragen.
 
 CONNECTIONS = {
     "bueroring": {
         "host":     "sftp.bueroring.de",
         "user":     "400446-w",
-        "password": "Tusumo98",
+        "password": "",
         "protocol": "sftp",
         "port":     22,
     },
     "nordwest": {
         "host":     "filehub.configo.de",
         "user":     "abe_admin",
-        "password": "ahPo8Rowoozao0ox",
+        "password": "",
         "protocol": "sftp",
         "port":     22,
     },
     "softcarrier": {
         "host":     "ftp.softcarrier.com",
         "user":     "ABE-GmbH",
-        "password": "fFmjtfEZWv",
+        "password": "",
         "protocol": "ftp",
         "port":     21,
     },
     "systeam": {
         "host":     "ftp.systeam.de",
         "user":     "137942",
-        "password": "dGne96",
+        "password": "",
         "protocol": "ftp",
         "port":     21,
     },
     "soennecken": {
         "host":     "ftpshop.soennecken.de",
         "user":     "3637700",
-        "password": "Wb46]N19JKzv",
+        "password": "",
         "protocol": "sftp",
         "port":     22,
     },
     "allago_images": {
         "host":     "217.71.221.27",
         "user":     "wwwadmin",
-        "password": "Maet8Uoc",
+        "password": "",
         "protocol": "ftp",
         "port":     21,
         "remote_path_thumbs":   "/sites/images/allago/thumbnails/generate/",
@@ -88,7 +90,7 @@ CONNECTIONS = {
     "officexl_images": {
         "host":     "217.71.221.26",
         "user":     "wwwadmin",
-        "password": "Deizoo2y",
+        "password": "",
         "protocol": "ftp",
         "port":     21,
         "remote_path_thumbs":   "/sites/images/officexl/thumbnails/generate/",
@@ -97,8 +99,7 @@ CONNECTIONS = {
     "mercateo": {
         "host":     "sftp.unite.services",
         "user":     "KaenguruhDE",
-        # URL-dekodiert: v(Q?:qE3S"a8P+I#j4K5`t#v80B?TFM,
-        "password": 'v(Q?:qE3S"a8P+I#j4K5`t#v80B?TFM,',
+        "password": "",
         "protocol": "sftp",
         "port":     22,
         "remote_path": "/catalog/32WQS/",
@@ -106,27 +107,25 @@ CONNECTIONS = {
     "brickfox_bmecat": {
         "host":     "abe.brickfox.net",
         "user":     "c_abe_ftp_2",
-        "password": "n7GCh3suhEDXrhf5",
+        "password": "",
         "protocol": "ftp",
         "port":     21,
         "remote_path": "/incoming",
         "_comment": "BMEcat-XMLs → Brickfox /incoming",
     },
     "brickfox_csv_erp": {
-        # CsvERP: nur Preise + Bestand, schnelle Verarbeitung
         "host":     "abe.brickfox.net",
         "user":     "c_abe_ftp_3",
-        "password": "678GL9CYL0oTprmw",
+        "password": "",
         "protocol": "ftp",
         "port":     21,
         "remote_path": "/incoming",
         "_comment": "Nur v_stock, v_price – schneller ERP-Import",
     },
     "brickfox_csv_exchange": {
-        # CsvAutoimport: Stammdaten, Attribute, Kanalzuweisung
         "host":     "abe.brickfox.net",
         "user":     "c_abe_ftp_5",
-        "password": "XJ87na35dTsnDiXi",
+        "password": "",
         "protocol": "ftp",
         "port":     21,
         "remote_path": "/incoming",

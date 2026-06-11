@@ -1,0 +1,36 @@
+# Zugangsdaten und Schlüssel – niemals einchecken
+config_user.json
+.fernet.key
+
+# Laufzeitdaten
+logs/
+in_BME/
+in/
+in2/
+in_vertrieb/
+unzip/
+export_vendosys/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.spec.bak
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# Windows
+Thumbs.db
+desktop.ini
