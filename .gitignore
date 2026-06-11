@@ -31,6 +31,10 @@ build/
 *.swp
 *~
 
+# Datei-Artefakte
+*.xlsx
+*.xls
+
 # Windows
 Thumbs.db
 desktop.ini

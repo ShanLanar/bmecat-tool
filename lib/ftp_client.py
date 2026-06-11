@@ -1,4 +1,3 @@
-from tasks.scheduler import is_dry_run as _is_dry_run
 # lib/ftp_client.py – FTP- und SFTP-Operationen, optimiert für Hochgeschwindigkeit
 #
 # Kernoptimierungen:

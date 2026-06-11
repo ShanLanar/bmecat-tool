@@ -30,13 +30,6 @@ _MIM_PAT = re.compile(r"<MIME_SOURCE>(.*?)</MIME_SOURCE>", re.IGNORECASE)
 
 def extract_catalog_data(xml_path: str, progress_cb=None) -> list:
     """
-    Extrahiert Schlüsselfelder aus einer BMEcat-XML (streaming).
-
-    Returns:
-        Liste von dicts: [{aid, ean, manufacturer, desc_short, desc_long, has_image}, ...]
-    """
-def extract_catalog_data(xml_path: str, progress_cb=None) -> list:
-    """
     Extrahiert Artikel-Metadaten aus einer BMEcat-XML.
     Unterstützt sowohl mehrzeilige als auch einzeilige (minifizierte) XMLs.
     """

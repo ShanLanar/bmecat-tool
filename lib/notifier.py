@@ -48,63 +48,88 @@ def send_run_notification(report: dict, dropped_articles: list[dict] = None,
         return False
 
 
-def _build_mail(report: dict, dropped: list, price_warnings: list) -> tuple[str, str]:
-    n_ok  = report.get("tasks_ok", 0)
-    n_err = report.get("tasks_fehler", 0)
-    dauer = report.get("dauer_s", 0)
-    host  = socket.gethostname()
-    ts    = datetime.now().strftime("%d.%m.%Y %H:%M")
+def _build_subject(data: dict) -> str:
+    n_err = data.get("tasks_fehler", 0)
+    n_ok  = data.get("tasks_ok", 0)
+    total = data.get("tasks_gesamt", 0)
+    if n_err > 0:
+        return f"⚠ BMEcat-Tool: {n_err} Fehler bei {total} Tasks"
+    return f"✅ BMEcat-Tool: {n_ok}/{total} Tasks erfolgreich"
 
-    status = "✓ Erfolgreich" if n_err == 0 else f"✗ {n_err} Fehler"
-    subject = f"[BMEcat-Tool] {status} – {ts} ({host})"
 
+def _build_body(data: dict) -> str:
     lines = [
-        f"BMEcat Download-Tool – Laufbericht",
-        f"{'=' * 48}",
-        f"Datum:          {ts}",
-        f"Rechner:        {host}",
-        f"Dauer:          {int(dauer // 60)} min {int(dauer % 60)} s",
-        f"Tasks OK:       {n_ok}",
-        f"Tasks Fehler:   {n_err}",
+        "BMEcat Download-Tool – Lauf-Zusammenfassung",
+        "=" * 50,
+        "",
+        f"Start:    {data.get('start', '?')}",
+        f"Ende:     {data.get('ende', '?')}",
+        f"Dauer:    {data.get('dauer_s', 0):.0f} Sekunden",
+        "",
+        f"Tasks:    {data.get('tasks_ok', 0)} OK, "
+        f"{data.get('tasks_fehler', 0)} Fehler "
+        f"(von {data.get('tasks_gesamt', 0)})",
         "",
     ]
 
-    if report.get("fehler"):
-        lines += ["FEHLERHAFTE TASKS:", ""]
-        for t in report["fehler"]:
-            lines.append(f"  ✗  {t}")
+    fehler = data.get("fehler", [])
+    if fehler:
+        lines.append("FEHLER:")
+        for f in fehler:
+            lines.append(f"  ❌ {f}")
         lines.append("")
 
-    lines += ["TASK-ÜBERSICHT:", ""]
-    for t in report.get("tasks", []):
-        icon = "✓" if t["status"] == "ok" else "✗"
-        lines.append(f"  {icon}  {t['name']:<35} {t['duration_s']:.0f} s")
+    lines.append("Task-Details:")
+    lines.append("-" * 50)
+    for task in data.get("tasks", []):
+        status = "✅" if task["status"] == "ok" else "❌"
+        dur    = f"{task['duration_s']:.1f}s"
+        lines.append(f"  {status} {task['name']:40s} {dur:>8s}")
+        if task.get("details", {}).get("fehler"):
+            lines.append(f"     → {task['details']['fehler']}")
     lines.append("")
 
+    dedup = data.get("deduplizierung", {})
+    if dedup.get("removed", 0) > 0:
+        lines.append(
+            f"Deduplizierung: {dedup['removed']} Features entfernt "
+            f"in {dedup['articles']} Artikeln aus {dedup['files']} Dateien"
+        )
+
+    lines += ["", "-- ", "BMEcat Download-Tool (automatisch generiert)"]
+    return "\n".join(lines)
+
+
+def _build_mail(report: dict, dropped: list, price_warnings: list) -> tuple[str, str]:
+    host = socket.gethostname()
+    ts   = datetime.now().strftime("%d.%m.%Y %H:%M")
+
+    subject = f"[BMEcat-Tool] {_build_subject(report)} – {ts} ({host})"
+    body    = _build_body(report)
+
+    extras = []
     if dropped:
-        lines += [
+        extras += [
             f"WEGGEFALLENE ARTIKEL ({len(dropped)}):",
             "(nicht mehr im Lieferantenkatalog – im Shop ggf. deaktivieren)",
             "",
         ]
         for a in dropped[:50]:
-            lines.append(f"  {a.get('product_id','?'):<20}  {a.get('supplier_name','')}")
+            extras.append(f"  {a.get('product_id','?'):<20}  {a.get('supplier_name','')}")
         if len(dropped) > 50:
-            lines.append(f"  … und {len(dropped) - 50} weitere")
-        lines.append("")
+            extras.append(f"  … und {len(dropped) - 50} weitere")
+        extras.append("")
 
     if price_warnings:
-        lines += ["PREISREGEL-WARNUNGEN:", ""]
+        extras += ["PREISREGEL-WARNUNGEN:", ""]
         for w in price_warnings:
-            lines.append(f"  ⚠  {w}")
-        lines.append("")
+            extras.append(f"  ⚠  {w}")
+        extras.append("")
 
-    lines += [
-        "─" * 48,
-        "BMEcat Download-Tool  |  ABE GmbH",
-    ]
+    if extras:
+        body = body + "\n" + "\n".join(extras)
 
-    return subject, "\n".join(lines)
+    return subject, body
 
 
 def _send(cfg: dict, subject: str, body: str):
