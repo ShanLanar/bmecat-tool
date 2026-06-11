@@ -89,9 +89,6 @@ if exist "%~dp0requirements.txt" (
 )
 echo.
 
-:: ── 3. Downloads starten ─────────────────────────────────────────────────────
-echo [3/4] Starte Downloads ...
-echo.
-call "%~dp0start.bat" --auto
+echo Fertig. Starte die Anwendung manuell mit start.bat
 
 endlocal
