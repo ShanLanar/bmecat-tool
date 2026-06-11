@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-analyse_fnames.py – BMEcat FNAME-Analyse + Kollisionserkennung
+tasks/fname_analyse.py – BMEcat FNAME-Analyse + Kollisionserkennung
 
 Liest alle konfigurierten BMEcat-XMLs, extrahiert alle FNAMEs,
 erkennt Kollisionen innerhalb von Artikeln und erzeugt:

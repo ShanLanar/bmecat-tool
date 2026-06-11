@@ -113,7 +113,7 @@ TASKS = [
         "id":      "fname_analyse",
         "name":    "FNAME-Analyse",
         "desc":    "Alle FNAMEs aus XMLs extrahieren, Kollisionen prüfen, fname_alle.csv erzeugen",
-        "fn":      "analyse_fnames:run",
+        "fn":      "tasks.fname_analyse:run",
         "default": False,
         "group":   "Extras",
     },

@@ -43,21 +43,6 @@ def _T(key: str) -> str:
     """Gibt den Farbwert für den aktuellen Theme zurück."""
     return THEMES[_current_theme][key]
 
-# Shorthand-Konstanten – werden beim Theme-Wechsel neu gesetzt
-def _update_globals():
-    global BG, BG2, BG3, ACCENT, ACCENT_H, GREEN, RED, YELLOW, ORANGE
-    global FG, FG_DIM, FG_INPUT, FG_BODY, FG_DIM_BODY, BORDER, LOG_BG, LOG_FG
-    t = THEMES[_current_theme]
-    BG          = t["BG"];      BG2       = t["BG2"];   BG3       = t["BG3"]
-    ACCENT      = t["ACCENT"];  ACCENT_H  = t["ACCENT_H"]
-    GREEN       = t["GREEN"];   RED       = t["RED"];   YELLOW    = t["YELLOW"]
-    ORANGE      = t["ORANGE"];  FG        = t["FG"];    FG_DIM    = t["FG_DIM"]
-    FG_INPUT    = t["FG_INPUT"]; FG_BODY  = t["FG_BODY"]
-    FG_DIM_BODY = t["FG_DIM_BODY"]
-    BORDER      = t["BORDER"];  LOG_BG    = t["LOG_BG"]; LOG_FG   = t["LOG_FG"]
-
-_update_globals()
-
 FONT_MAIN = ("Segoe UI", 10)
 FONT_MONO = ("Consolas", 9)
 FONT_HEAD = ("Segoe UI Semibold", 11)
@@ -188,37 +173,37 @@ class App(tk.Tk):
 
     # ── UI aufbauen ───────────────────────────────────────────────────────────
     def _build_ui(self):
-        self.configure(bg=BG)
+        self.configure(bg=_T("BG"))
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
 
         # ── Kopfzeile ─────────────────────────────────────────────────────────
         from lib.design import FONT_HEAD_L, FONT_UI_SM, add_hover, darken, lighten
 
-        self._header = tk.Frame(self, bg=BG2, pady=0, padx=0)
+        self._header = tk.Frame(self, bg=_T("BG2"), pady=0, padx=0)
         self._header.grid(row=0, column=0, sticky="ew")
         self._header.columnconfigure(1, weight=1)
 
         # Hauptzeile
-        header_inner = tk.Frame(self._header, bg=BG2, pady=10, padx=16)
+        header_inner = tk.Frame(self._header, bg=_T("BG2"), pady=10, padx=16)
         header_inner.pack(fill="x")
         header_inner.columnconfigure(1, weight=1)
         header = header_inner
 
         # Logo-Bereich
-        logo_frame = tk.Frame(header, bg=BG2)
+        logo_frame = tk.Frame(header, bg=_T("BG2"))
         logo_frame.grid(row=0, column=0, sticky="w")
         self._title_lbl = tk.Label(
             logo_frame,
             text="BMEcat",
-            font=("Segoe UI Semibold", 15), bg=BG2, fg=ACCENT)
+            font=("Segoe UI Semibold", 15), bg=_T("BG2"), fg=_T("ACCENT"))
         self._title_lbl.pack(side="left")
         tk.Label(
             logo_frame,
             text=f" Download-Tool  v{VERSION}",
-            font=("Segoe UI", 12), bg=BG2, fg=FG_DIM).pack(side="left")
+            font=("Segoe UI", 12), bg=_T("BG2"), fg=_T("FG_DIM")).pack(side="left")
 
-        hbf = tk.Frame(header, bg=BG2)
+        hbf = tk.Frame(header, bg=_T("BG2"))
         hbf.grid(row=0, column=2, sticky="e")
         self._hbf = hbf
 
@@ -226,12 +211,12 @@ class App(tk.Tk):
 
         def _ghost_btn(parent, text, cmd, tip=""):
             b = tk.Button(parent, text=text, command=cmd,
-                          font=FONT_UI_SM, bg=BG2, fg=FG_DIM,
-                          activebackground=lighten(BG2, 10),
-                          activeforeground=FG,
+                          font=FONT_UI_SM, bg=_T("BG2"), fg=_T("FG_DIM"),
+                          activebackground=lighten(_T("BG2"), 10),
+                          activeforeground=_T("FG"),
                           relief="flat", bd=0, cursor="hand2",
                           padx=10, pady=5)
-            add_hover(b, BG2, lighten(BG2, 10), FG_DIM, FG)
+            add_hover(b, _T("BG2"), lighten(_T("BG2"), 10), _T("FG_DIM"), _T("FG"))
             b.pack(side="left", padx=2)
             if tip: ToolTip(b, tip)
             return b
@@ -252,15 +237,15 @@ class App(tk.Tk):
         theme_lbl = "◑ Classic" if self._theme == "ABE" else "◑ ABE"
         self._theme_btn = tk.Button(
             hbf, text=theme_lbl, command=self._toggle_theme,
-            font=FONT_UI_SM, bg=BG2, fg=FG_DIM,
-            activebackground=lighten(BG2, 10), activeforeground=FG,
+            font=FONT_UI_SM, bg=_T("BG2"), fg=_T("FG_DIM"),
+            activebackground=lighten(_T("BG2"), 10), activeforeground=_T("FG"),
             relief="flat", bd=0, cursor="hand2", padx=10, pady=5)
-        add_hover(self._theme_btn, BG2, lighten(BG2, 10), FG_DIM, FG)
+        add_hover(self._theme_btn, _T("BG2"), lighten(_T("BG2"), 10), _T("FG_DIM"), _T("FG"))
         self._theme_btn.pack(side="left", padx=2)
         ToolTip(self._theme_btn, "Zwischen Classic (dunkel) und ABE wechseln.")
 
         # Tutorial-Button
-        tut_bg = ACCENT
+        tut_bg = _T("ACCENT")
         tut_btn = tk.Button(
             hbf, text="?", command=self._start_tutorial,
             font=("Segoe UI Semibold", 9), bg=tut_bg, fg="#ffffff",
@@ -272,11 +257,11 @@ class App(tk.Tk):
 
         self._status_lbl = tk.Label(
             header, text="●  Bereit", font=("Segoe UI", 9),
-            bg=BG2, fg=GREEN)
+            bg=_T("BG2"), fg=_T("GREEN"))
         self._status_lbl.grid(row=0, column=3, sticky="e", padx=(16, 0))
 
         # Akzentlinie am unteren Header-Rand
-        tk.Frame(self._header, bg=ACCENT, height=2).pack(fill="x")
+        tk.Frame(self._header, bg=_T("ACCENT"), height=2).pack(fill="x")
 
         # ── Hauptbereich: Notebook mit Reitern ───────────────────────────────
         self._notebook = ttk.Notebook(self)
@@ -286,28 +271,28 @@ class App(tk.Tk):
         apply_notebook_style(self._notebook, THEMES[self._theme], "BME.TNotebook")
 
         # Tab 1: BMECat-Verarbeitung
-        body = tk.Frame(self._notebook, bg=BG)
+        body = tk.Frame(self._notebook, bg=_T("BG"))
         self._notebook.add(body, text="  BMECat-Verarbeitung  ")
         body.columnconfigure(1, weight=1)
         body.rowconfigure(1, weight=1)
 
         # ── Linke Spalte: Task-Auswahl (scrollbar) ───────────────────────────
-        left_outer = tk.Frame(body, bg=BG2)
+        left_outer = tk.Frame(body, bg=_T("BG2"))
         left_outer.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(0, 10))
         left_outer.rowconfigure(1, weight=1)
 
         tk.Label(left_outer, text="Aufgaben", font=FONT_HEAD,
-                 bg=BG2, fg=FG, padx=12).grid(row=0, column=0, columnspan=2,
+                 bg=_T("BG2"), fg=_T("FG"), padx=12).grid(row=0, column=0, columnspan=2,
                                                sticky="w", pady=(10, 4))
 
-        canvas = tk.Canvas(left_outer, bg=BG2, highlightthickness=0, width=224)
+        canvas = tk.Canvas(left_outer, bg=_T("BG2"), highlightthickness=0, width=224)
         canvas.grid(row=1, column=0, sticky="ns")
 
         vsb = ttk.Scrollbar(left_outer, orient="vertical", command=canvas.yview)
         vsb.grid(row=1, column=1, sticky="ns")
         canvas.configure(yscrollcommand=vsb.set)
 
-        left = tk.Frame(canvas, bg=BG2, padx=12)
+        left = tk.Frame(canvas, bg=_T("BG2"), padx=12)
         canvas_win = canvas.create_window((0, 0), window=left, anchor="nw")
 
         def _on_frame_configure(e):
@@ -331,13 +316,13 @@ class App(tk.Tk):
             if grp != current_group:
                 current_group = grp
                 # Gruppen-Separator
-                sep_frm = tk.Frame(left, bg=BG2)
+                sep_frm = tk.Frame(left, bg=_T("BG2"))
                 sep_frm.pack(fill="x", pady=(10, 2))
                 sep_frm.bind("<MouseWheel>", _on_mousewheel)
-                tk.Frame(sep_frm, bg=BORDER, height=1).pack(fill="x", pady=(0, 4))
+                tk.Frame(sep_frm, bg=_T("BORDER"), height=1).pack(fill="x", pady=(0, 4))
                 lbl = tk.Label(sep_frm, text=grp.upper(),
                                font=("Segoe UI", 7, "bold"),
-                               bg=BG2, fg=FG_DIM, padx=2)
+                               bg=_T("BG2"), fg=_T("FG_DIM"), padx=2)
                 lbl.pack(anchor="w")
                 lbl.bind("<MouseWheel>", _on_mousewheel)
 
@@ -345,37 +330,37 @@ class App(tk.Tk):
             self._checks[task["id"]] = var
 
             # Task-Karte mit Hover
-            row_h = lighten(BG2, 8)
-            row = tk.Frame(left, bg=BG2, pady=2, padx=2)
+            row_h = lighten(_T("BG2"), 8)
+            row = tk.Frame(left, bg=_T("BG2"), pady=2, padx=2)
             row.pack(fill="x", pady=1)
             row.bind("<MouseWheel>", _on_mousewheel)
-            add_hover(row, BG2, row_h)
+            add_hover(row, _T("BG2"), row_h)
 
             cb = tk.Checkbutton(
                 row, text=task["name"], variable=var,
-                font=FONT_UI, bg=BG2, fg=FG,
-                selectcolor=BG3, activebackground=row_h, activeforeground=FG,
+                font=FONT_UI, bg=_T("BG2"), fg=_T("FG"),
+                selectcolor=_T("BG3"), activebackground=row_h, activeforeground=_T("FG"),
                 cursor="hand2", relief="flat", bd=0)
             cb.pack(anchor="w")
             cb.bind("<MouseWheel>", _on_mousewheel)
             row.bind("<Enter>", lambda e, c=cb, h=row_h:
                      c.config(bg=h, activebackground=h))
             row.bind("<Leave>", lambda e, c=cb:
-                     c.config(bg=BG2, activebackground=BG2))
+                     c.config(bg=_T("BG2"), activebackground=_T("BG2")))
             tip = TASK_TIPS.get(task["id"])
             if tip: ToolTip(cb, tip)
 
             dl = tk.Label(row, text=task["desc"], font=FONT_CAP,
-                          bg=BG2, fg=FG_DIM, wraplength=195, justify="left")
+                          bg=_T("BG2"), fg=_T("FG_DIM"), wraplength=195, justify="left")
             dl.pack(anchor="w", padx=(22, 0), pady=(0, 1))
             dl.bind("<MouseWheel>", _on_mousewheel)
-            add_hover(dl, BG2, row_h)
+            add_hover(dl, _T("BG2"), row_h)
 
         self._widget_refs["task_list"] = left
 
         ttk.Separator(left, orient="horizontal").pack(fill="x", pady=8)
 
-        bf = tk.Frame(left, bg=BG2)
+        bf = tk.Frame(left, bg=_T("BG2"))
         bf.pack(anchor="w", pady=(0, 10))
         bf.bind("<MouseWheel>", _on_mousewheel)
         from lib.tutorial import ToolTip, BUTTON_TIPS
@@ -391,75 +376,64 @@ class App(tk.Tk):
         self._widget_refs["sel_buttons"] = bf
 
         # ── Rechte Seite oben: Basispfad ──────────────────────────────────────
-        top_right = tk.Frame(body, bg=BG)
+        top_right = tk.Frame(body, bg=_T("BG"))
         top_right.grid(row=0, column=1, sticky="ew", pady=(0, 6))
         top_right.columnconfigure(1, weight=1)
 
         tk.Label(top_right, text="Basispfad:", font=FONT_MAIN,
-                 bg=BG, fg=FG_DIM_BODY).grid(row=0, column=0, padx=(0, 6))
+                 bg=_T("BG"), fg=_T("FG_DIM_BODY")).grid(row=0, column=0, padx=(0, 6))
         self._path_var = tk.StringVar(value=config.BASE_DIR)
         tk.Entry(top_right, textvariable=self._path_var,
-                 font=FONT_MONO, bg=BG2, fg=FG,
-                 insertbackground=FG, relief="flat", bd=4,
+                 font=FONT_MONO, bg=_T("BG2"), fg=_T("FG"),
+                 insertbackground=_T("FG"), relief="flat", bd=4,
                  ).grid(row=0, column=1, sticky="ew")
         self._mk_btn(top_right, "Oeffnen", self._open_basedir, small=True
                      ).grid(row=0, column=2, padx=(6, 0))
 
         # ── Log-Fenster ───────────────────────────────────────────────────────
-        log_bg = LOG_BG
-        log_fg = LOG_FG
         self._log_txt = scrolledtext.ScrolledText(
-            body, font=FONT_MONO, bg=log_bg, fg=log_fg,
-            insertbackground=log_fg, relief="flat", bd=0,
+            body, font=FONT_MONO, bg=_T("LOG_BG"), fg=_T("LOG_FG"),
+            insertbackground=_T("LOG_FG"), relief="flat", bd=0,
             state="disabled", wrap="word",
         )
         self._log_txt.grid(row=1, column=1, sticky="nsew")
-        self._log_txt.tag_config("ok",   foreground=GREEN)
-        self._log_txt.tag_config("err",  foreground=RED)
-        self._log_txt.tag_config("warn", foreground=YELLOW)
-        self._log_txt.tag_config("dim",  foreground=FG_DIM)
-        self._log_txt.tag_config("info", foreground=ORANGE)
+        self._log_txt.tag_config("ok",   foreground=_T("GREEN"))
+        self._log_txt.tag_config("err",  foreground=_T("RED"))
+        self._log_txt.tag_config("warn", foreground=_T("YELLOW"))
+        self._log_txt.tag_config("dim",  foreground=_T("FG_DIM"))
+        self._log_txt.tag_config("info", foreground=_T("ORANGE"))
         self._widget_refs["log_area"] = self._log_txt
 
         # ── Fortschrittsbereich ───────────────────────────────────────────────
-        prog_frame = tk.Frame(body, bg=BG)
+        prog_frame = tk.Frame(body, bg=_T("BG"))
         prog_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(6, 0))
         prog_frame.columnconfigure(0, weight=1)
         self._file_lbl  = tk.Label(prog_frame, text="", font=FONT_MONO,
-                                   bg=BG, fg=FG_DIM_BODY, anchor="w")
+                                   bg=_T("BG"), fg=_T("FG_DIM_BODY"), anchor="w")
         self._file_lbl.grid(row=0, column=0, sticky="ew")
         self._speed_lbl = tk.Label(prog_frame, text="", font=FONT_MONO,
-                                   bg=BG, fg=FG_DIM_BODY, anchor="e")
+                                   bg=_T("BG"), fg=_T("FG_DIM_BODY"), anchor="e")
         self._speed_lbl.grid(row=0, column=1, sticky="e", padx=(8, 0))
         self._progress  = ttk.Progressbar(prog_frame, mode="determinate",
                                           maximum=100, value=0)
         self._progress.grid(row=1, column=0, columnspan=2, sticky="ew")
 
         # ── Tab 2: Viewer / Export ────────────────────────────────────────────
-        _tab2 = tk.Frame(self._notebook, bg=BG)
+        _tab2 = tk.Frame(self._notebook, bg=_T("BG"))
         self._notebook.add(_tab2, text="  Viewer / Export  ")
         from lib.viewer_tab import ViewerTab
-        self._viewer_tab = ViewerTab(
-            _tab2, self,
-            dict(BG=BG, BG2=BG2, BG3=BG3, FG=FG, FG_DIM=FG_DIM,
-                 FG_INPUT=FG_INPUT,
-                 ACCENT=ACCENT, GREEN=GREEN, RED=RED, YELLOW=YELLOW, ORANGE=ORANGE))
+        self._viewer_tab = ViewerTab(_tab2, self, THEMES[self._theme])
 
-
-        _tab3 = tk.Frame(self._notebook, bg=BG)
+        _tab3 = tk.Frame(self._notebook, bg=_T("BG"))
         self._notebook.add(_tab3, text="  Konfiguration  ")
         from lib.config_tab import ConfigTab
-        self._config_tab = ConfigTab(
-            _tab3, self,
-            dict(BG=BG, BG2=BG2, BG3=BG3, FG=FG, FG_DIM=FG_DIM,
-                 FG_INPUT=FG_INPUT,
-                 ACCENT=ACCENT, GREEN=GREEN, RED=RED, YELLOW=YELLOW, ORANGE=ORANGE))
+        self._config_tab = ConfigTab(_tab3, self, THEMES[self._theme])
 
         # ── Fusszeile ─────────────────────────────────────────────────────────
-        footer_wrap = tk.Frame(self, bg=BG2)
+        footer_wrap = tk.Frame(self, bg=_T("BG2"))
         footer_wrap.grid(row=2, column=0, sticky="ew")
-        tk.Frame(footer_wrap, bg=BORDER, height=1).pack(fill="x")  # Trennlinie
-        footer = tk.Frame(footer_wrap, bg=BG2, pady=8, padx=12)
+        tk.Frame(footer_wrap, bg=_T("BORDER"), height=1).pack(fill="x")
+        footer = tk.Frame(footer_wrap, bg=_T("BG2"), pady=8, padx=12)
         footer.pack(fill="x")
 
         self._run_btn = self._mk_btn(footer, "▶  Starten", self._start_run)
@@ -468,7 +442,7 @@ class App(tk.Tk):
         ToolTip(self._run_btn, BUTTON_TIPS["Starten"])
         self._widget_refs["run_btn"] = self._run_btn
 
-        self._stop_btn = self._mk_btn(footer, "■  Abbrechen", self._stop_run, color=RED)
+        self._stop_btn = self._mk_btn(footer, "■  Abbrechen", self._stop_run, color=_T("RED"))
         self._stop_btn.pack(side="left")
         self._stop_btn.config(state="disabled")
         ToolTip(self._stop_btn, BUTTON_TIPS["Abbrechen"])
@@ -497,10 +471,9 @@ class App(tk.Tk):
 
     # ── Theme ─────────────────────────────────────────────────────────────────
     def _toggle_theme(self):
-        global _current_theme, BG, BG2, BG3, ACCENT, GREEN, RED, YELLOW, ORANGE, FG, FG_DIM
+        global _current_theme
         _current_theme = "ABE" if _current_theme == "Classic" else "Classic"
         self._theme    = _current_theme
-        _update_globals()
 
         # Alle Widgets zerstören und UI neu aufbauen
         for w in self.winfo_children():
@@ -666,14 +639,14 @@ class App(tk.Tk):
         selected.sort(key=lambda t: (TASK_GROUP_ORDER.get(t.get("group", ""), 9), t["id"]))
 
         self._running = True
-        self._set_status("Läuft...", YELLOW)
+        self._set_status("Läuft...", _T("YELLOW"))
         self._run_btn.config(state="disabled")
         self._stop_btn.config(state="normal")
         self._progress.config(mode="indeterminate", value=0)
         self._progress.start(12)
         self._file_lbl.config(text="")
         self._speed_lbl.config(text="")
-        self._set_status("Laeuft ...", YELLOW)
+        self._set_status("Laeuft ...", _T("YELLOW"))
 
         self._thread = threading.Thread(
             target=self._worker, args=(selected,), daemon=True)
@@ -681,7 +654,7 @@ class App(tk.Tk):
 
     def _stop_run(self):
         self._running = False
-        self._set_status("Abgebrochen", RED)
+        self._set_status("Abgebrochen", _T("RED"))
         self._append_log("Abbruch angefordert - laufende Aufgabe wird noch abgeschlossen.",
                          tag="warn")
         self._progress.stop()
@@ -735,7 +708,7 @@ class App(tk.Tk):
             if not self._running:
                 break
             self.after(0, self._set_status,
-                       f"Task {i}/{len(tasks)}: {task['name']}", YELLOW)
+                       f"Task {i}/{len(tasks)}: {task['name']}", _T("YELLOW"))
             self._append_log(f"\n{'─'*60}", tag="dim")
             self._append_log(f"[{i}/{len(tasks)}] Start: {task['name']} ...", tag="info")
             report.begin_task(task["name"])
@@ -824,22 +797,22 @@ class App(tk.Tk):
         self._stop_btn.config(state="disabled")
 
         if errors:
-            self._set_status(f"Fehler bei: {', '.join(errors)}", RED)
+            self._set_status(f"Fehler bei: {', '.join(errors)}", _T("RED"))
         elif dedup_total and dedup_total["removed"] > 0:
             self._set_status(
-                f"Fertig – {dedup_total['removed']} Duplikate entfernt", YELLOW)
+                f"Fertig – {dedup_total['removed']} Duplikate entfernt", _T("YELLOW"))
         else:
-            self._set_status("Alle Aufgaben abgeschlossen", GREEN)
+            self._set_status("Alle Aufgaben abgeschlossen", _T("GREEN"))
 
     # ── Hilfsmethoden ─────────────────────────────────────────────────────────
-    def _set_status(self, text, color=FG):
-        # Icon je nach Farbe
+    def _set_status(self, text, color=None):
+        color = color or _T("FG")
         icon = "●  "
-        if color in (GREEN, "#3fb950", "#15803d", "#50fa7b"):
+        if color in (_T("GREEN"), "#3fb950", "#15803d", "#50fa7b"):
             icon = "●  "
-        elif color in (RED, "#f85149", "#dc2626", "#ff5555"):
+        elif color in (_T("RED"), "#f85149", "#dc2626", "#ff5555"):
             icon = "✗  "
-        elif color in (YELLOW, "#d29922", "#f1fa8c", "#b45309"):
+        elif color in (_T("YELLOW"), "#d29922", "#f1fa8c", "#b45309"):
             icon = "⚠  "
         self._status_lbl.config(text=icon + text, fg=color)
 
