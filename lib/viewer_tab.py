@@ -286,13 +286,27 @@ class ViewerTab:
             import config as _cfg
             from lib.article_db import open_db
 
-            # ── Lieferanten: alle aus supplier_config.yaml + Markierung ob in DB ──
+            # ── Eine DB-Verbindung für alle Abfragen ─────────────────────────────
             sups_in_db = set()
+            cats = ['Alle']
             if os.path.exists(_cfg.DB_PATH):
                 con = open_db(_cfg.DB_PATH)
                 for r in con.execute(
                         "SELECT supplier_name FROM suppliers ORDER BY supplier_name"):
                     sups_in_db.add(r[0])
+                rows = con.execute("""
+                    SELECT cn.group_id, cn.name, s.supplier_name
+                    FROM catalog_nodes cn
+                    JOIN suppliers s ON s.id = cn.supplier_id
+                    WHERE cn.parent_group_id = '' OR cn.parent_group_id IS NULL
+                    ORDER BY s.supplier_name, cn.node_order, cn.name
+                """).fetchall()
+                seen = set()
+                for gid, name, sup_name in rows:
+                    entry = f"{sup_name}  /  {name}  [{gid}]"
+                    if entry not in seen:
+                        cats.append(entry)
+                        seen.add(entry)
 
             try:
                 import yaml
@@ -311,24 +325,6 @@ class ViewerTab:
                 sups = ['Alle'] + sorted(all_names)
             except Exception:
                 sups = ['Alle'] + sorted(sups_in_db)
-
-            # ── Katalog: nur Root-Knoten, mit Lieferant-Präfix ───────────────────
-            cats = ['Alle']
-            if os.path.exists(_cfg.DB_PATH):
-                con = open_db(_cfg.DB_PATH)
-                rows = con.execute("""
-                    SELECT cn.group_id, cn.name, s.supplier_name
-                    FROM catalog_nodes cn
-                    JOIN suppliers s ON s.id = cn.supplier_id
-                    WHERE cn.parent_group_id = '' OR cn.parent_group_id IS NULL
-                    ORDER BY s.supplier_name, cn.node_order, cn.name
-                """).fetchall()
-                seen = set()
-                for gid, name, sup_name in rows:
-                    entry = f"{sup_name}  /  {name}  [{gid}]"
-                    if entry not in seen:
-                        cats.append(entry)
-                        seen.add(entry)
 
             self._sup_cb["values"] = sups
             self._cat_cb["values"] = cats

@@ -378,18 +378,14 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
         with transaction(con):
             for art in batch:
                 try:
-                    status = upsert_article(con, supplier_id, art)
+                    status, art_id = upsert_article(con, supplier_id, art)
                     stats[status] += 1
-                    # Katalog-Knoten zuordnen
+                    # Katalog-Knoten zuordnen (art_id direkt aus upsert, kein Extra-SELECT)
                     sub_gid = art.get('catalog_sub_group_id') or art.get('catalog_group_id', '')
-                    if sub_gid:
+                    if sub_gid and art_id:
                         node = get_catalog_node(con, supplier_id, sub_gid)
                         if node:
-                            art_row = con.execute(
-                                "SELECT id FROM articles WHERE supplier_id=? AND supplier_pid=?",
-                                (supplier_id, art['supplier_pid'])).fetchone()
-                            if art_row:
-                                assign_article_catalog(con, art_row['id'], node['id'])
+                            assign_article_catalog(con, art_id, node['id'])
                 except Exception as exc:
                     log.warning(f"Upsert-Fehler {art.get('supplier_pid','?')}: {exc}")
                     stats['errors'] += 1

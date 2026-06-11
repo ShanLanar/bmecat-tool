@@ -379,10 +379,10 @@ def get_or_create_supplier(con: sqlite3.Connection,
 
 # ── Upsert ────────────────────────────────────────────────────────────────────
 
-def upsert_article(con: sqlite3.Connection, supplier_id: int, article: dict) -> str:
+def upsert_article(con: sqlite3.Connection, supplier_id: int, article: dict) -> tuple[str, int]:
     """
     Fügt Artikel ein oder aktualisiert ihn.
-    Gibt zurück: 'new' | 'updated' | 'unchanged'
+    Gibt zurück: ('new'|'updated'|'unchanged', article_id)
     """
     now = _now()
     article["content_hash"] = _article_hash(article)
@@ -399,7 +399,7 @@ def upsert_article(con: sqlite3.Connection, supplier_id: int, article: dict) -> 
                 "UPDATE articles SET last_seen=? WHERE id=?",
                 (now, existing["id"])
             )
-            return "unchanged"
+            return "unchanged", existing["id"]
         # Geändert: Artikel-Hauptzeile aktualisieren
         art_id = existing["id"]
         con.execute("""
@@ -492,7 +492,7 @@ def upsert_article(con: sqlite3.Connection, supplier_id: int, article: dict) -> 
             "INSERT INTO article_udx(article_id,key,value) VALUES (?,?,?)",
             (art_id, u.get("key",""), u.get("value",""))
         )
-    return status
+    return status, art_id
 
 
 # ── Abfragen ──────────────────────────────────────────────────────────────────

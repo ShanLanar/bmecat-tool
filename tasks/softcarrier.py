@@ -40,14 +40,11 @@ def _compute_delta(jpg_dir: str, previous: dict) -> tuple[list, dict]:
         new_snapshot:  aktueller Stand {filename: size}
     """
     current = {}
-    for path in glob_ci(jpg_dir, "jpg"):
-        bn = os.path.basename(path)
-        current[bn] = os.path.getsize(path)
-
     changed = []
     for path in glob_ci(jpg_dir, "jpg"):
-        bn = os.path.basename(path)
-        size = current[bn]
+        bn   = os.path.basename(path)
+        size = os.path.getsize(path)
+        current[bn] = size
         if bn not in previous or previous[bn] != size:
             changed.append(path)
 

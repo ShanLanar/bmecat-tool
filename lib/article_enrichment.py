@@ -33,6 +33,7 @@ _FEAT_PAT      = re.compile(r'(?is)<feature>(.*?)</feature>')
 _FNAME_PAT     = re.compile(r'(?is)<fname>(.*?)</fname>')
 _FVALUE_PAT    = re.compile(r'(?is)<fvalue>(.*?)</fvalue>')
 _DETAILS_END   = re.compile(r'(?i)(</article_details>)')
+_MFR_AID_END   = re.compile(r'(?i)(</manufacturer_aid>)')
 _KEYWORD_PAT   = re.compile(r'(?i)<keyword>(.*?)</keyword>')
 _EAN_PAT       = re.compile(
     r'(?is)<(?:ean|international_pid[^>]*)>(.*?)</(?:ean|international_pid)>')
@@ -152,9 +153,8 @@ def rule_manufacturer_name(article: str) -> tuple[str, bool]:
             f"<MANUFACTURER_NAME>{escaped}</MANUFACTURER_NAME>", article, count=1)
     else:
         # Nach MANUFACTURER_AID einfügen falls vorhanden, sonst vor </ARTICLE_DETAILS>
-        mfr_aid_pat = re.compile(r'(?i)(</manufacturer_aid>)')
-        if mfr_aid_pat.search(article):
-            new_article = mfr_aid_pat.sub(
+        if _MFR_AID_END.search(article):
+            new_article = _MFR_AID_END.sub(
                 f"\\1\n        <MANUFACTURER_NAME>{escaped}</MANUFACTURER_NAME>",
                 article, count=1)
         else:
