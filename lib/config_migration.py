@@ -7,6 +7,7 @@
 import os
 import json
 import logging
+import tempfile
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -101,8 +102,12 @@ def migrate(user_config_path: str, progress_cb=None) -> bool:
         except Exception:
             pass
 
-        with open(user_config_path, "w", encoding="utf-8") as f:
+        p_path = Path(user_config_path)
+        with tempfile.NamedTemporaryFile("w", dir=p_path.parent, delete=False,
+                                         suffix=".tmp", encoding="utf-8") as f:
             json.dump(user_cfg, f, ensure_ascii=False, indent=2)
+            tmp = f.name
+        os.replace(tmp, user_config_path)
         p(f"Config-Migration: config_user.json auf v{CONFIG_VERSION} aktualisiert.",
           tag="ok")
 

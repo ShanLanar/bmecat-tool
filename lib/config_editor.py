@@ -9,6 +9,7 @@
 
 import json
 import os
+import tempfile
 import tkinter as tk
 from tkinter import ttk, messagebox
 from pathlib import Path
@@ -37,21 +38,35 @@ _CFG_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 # Persistenz
 # ──────────────────────────────────────────────────────────────────────────────
 
+_config_cache: dict | None = None
+
+
 def load_user_config() -> dict:
-    """Lädt gespeicherte Überschreibungen oder gibt leeres Dict zurück."""
+    """Lädt gespeicherte Überschreibungen. Fällt bei I/O-Fehler auf Cache zurück."""
+    global _config_cache
     if os.path.exists(_CFG_FILE):
         try:
             with open(_CFG_FILE, encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+            if isinstance(data, dict):
+                _config_cache = data
+                return dict(data)  # Kopie — kein Aliasing
         except Exception:
             pass
-    return {}
+    return dict(_config_cache) if _config_cache else {}
 
 
 def save_user_config(data: dict):
-    """Speichert Überschreibungen als JSON."""
-    with open(_CFG_FILE, "w", encoding="utf-8") as f:
+    """Speichert Überschreibungen atomar. Cache wird nur bei Erfolg aktualisiert."""
+    global _config_cache
+    cfg_path = Path(_CFG_FILE)
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", dir=cfg_path.parent, delete=False,
+                                     suffix=".tmp", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+        tmp = f.name
+    os.replace(tmp, _CFG_FILE)
+    _config_cache = dict(data)  # nur nach erfolgreichem Write aktualisieren
 
 
 def apply_overrides():
