@@ -1,0 +1,12 @@
+supplier_category_code;supplier_category_name;ebay_category_id;kaufland_category_id;mirakl_conrad_category;mirakl_mano_category;unite_category
+# Präfix-Logik: BRG=Büroring | SOC=Softcarrier | NDW=Nordwest
+# ebay_category_id       → Numerische Leaf-Kategorie-ID  (z.B. 162800 = Bürostühle)
+# kaufland_category_id   → Kaufland-Kategoriepfad/ID     (z.B. buero-zubehoer)
+# mirakl_conrad_category → Conrad-Kategoriecode (Mirakl) (z.B. SIEGE_DE_BUREAU)
+# mirakl_mano_category   → ManoMano-Kategoriecode        (z.B. FOURNITURES_BUREAU)
+# unite_category         → UNSPSC-Code oder Unite-Code   (z.B. 56101600)
+#
+# Beispiele (auskommentiert):
+# BRG64640;Bürostühle;162800;buerostuehle;SIEGE_DE_BUREAU;FOURNITURES_BUREAU;56101600
+# SOC12345;Druckerpatronen;12576001;druckerpatronen;CARTOUCHE_IMPRIMANTE;CARTOUCHE;44103103
+# NDW78901;Schrauben;26964;schrauben-befestigungsmittel;VIS_BOULONS;VIS;31161500

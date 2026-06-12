@@ -165,6 +165,15 @@ TASKS = [
         "default": False,
         "group":   "Extras",
     },
+    # ── Marktplätze ───────────────────────────────────────────────────────────
+    {
+        "id":      "channel_mapping",
+        "name":    "Kanal-Kategorie-Mapping",
+        "desc":    "Lieferanten-Kategorien zu Marktplatz-Kanälen mappen (eBay, Kaufland, Conrad, ManoMano, Unite)",
+        "fn":      "tasks.channel_mapping:run",
+        "default": False,
+        "group":   "Marktplätze",
+    },
 ]
 
 TASK_GROUP_ORDER = {
@@ -177,6 +186,7 @@ TASK_GROUP_ORDER = {
     "Bilder":       6,
     "Upload":       7,
     "Extras":       8,
+    "Marktplätze":  9,
 }
 
 
