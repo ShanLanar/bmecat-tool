@@ -167,6 +167,14 @@ TASKS = [
     },
     # ── Marktplätze ───────────────────────────────────────────────────────────
     {
+        "id":      "eclass_analyse",
+        "name":    "ECLASS-Analyse",
+        "desc":    "ECLASS-5/9-Kategorien je Artikel aus BMEcat auflösen (channels/article_eclass_categories.csv)",
+        "fn":      "lib.eclass_intelligence:run",
+        "default": False,
+        "group":   "Marktplätze",
+    },
+    {
         "id":      "channel_mapping",
         "name":    "Kanal-Kategorie-Mapping",
         "desc":    "Lieferanten-Kategorien zu Marktplatz-Kanälen mappen (eBay, Kaufland, Conrad, ManoMano, Unite)",
