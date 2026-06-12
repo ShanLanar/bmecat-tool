@@ -523,7 +523,8 @@ def export_changed(db_path: str, base_dir: str, export_dir: str,
     articles  = apply_ean_dedup(articles, priority)
     p(f"DB-Export: {len(articles)} Artikel nach EAN-Dedup")
 
-    stats = {'exported': 0, 'blacklisted': 0, 'errors': 0}
+    stats        = {'exported': 0, 'blacklisted': 0, 'errors': 0}
+    exported_pids: list[tuple] = []   # (product_id, price_amount)
 
     for art in articles:
         pid = art.get('product_id', 'UNKNOWN')
@@ -558,18 +559,11 @@ def export_changed(db_path: str, base_dir: str, export_dir: str,
             stats['errors'] += 1
 
     # Staging → Ziel verschieben (atomar auf demselben Volume)
-    import glob as _glob, shutil as _shutil
-    moved = 0
-    exported_pids: list[tuple] = []   # (product_id, price_amount)
+    import glob as _glob
     if stats['errors'] == 0 or stats['exported'] > 0:
         for src_file in _glob.glob(os.path.join(staging_dir, "*.xml")):
             dst_file = os.path.join(export_dir, os.path.basename(src_file))
             os.replace(src_file, dst_file)
-            moved += 1
-            # product_id aus Dateiname extrahieren (pid_timestamp.xml)
-            basename = os.path.basename(src_file)
-            pid_from_file = basename.rsplit('_', 1)[0]
-            # Hinweis: exported_pids wird schon im Export-Loop befüllt
     try:
         os.rmdir(staging_dir)
     except Exception:
