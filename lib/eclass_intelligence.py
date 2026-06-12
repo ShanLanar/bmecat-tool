@@ -253,6 +253,47 @@ def analyze_bmecat(xml_path: str, writer, stats: dict) -> int:
     return count
 
 
+# ── Endknoten-Nutzung aus dem Artikel-CSV sammeln ─────────────────────────────
+
+def collect_leaf_usage(csv_path: str) -> dict:
+    """
+    Liest channels/article_eclass_categories.csv und sammelt die tatsächlich
+    aufgelösten ECLASS-Endknoten (Methode eclass_5/eclass_9).
+
+    Returns:
+        {eclass_id: {"eclass_version", "count", "example", "eclass_name"}}
+        Nur Artikel mit echtem ECLASS-Endknoten; Fallback/unknown wird ignoriert.
+    """
+    usage: dict = {}
+    with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f, delimiter=";")
+        for row in reader:
+            method = (row.get("METHODE") or "").strip()
+            if method == "eclass_5":
+                eid, ver = (row.get("ECLASS_5_ID") or "").strip(), "ECLASS-5"
+            elif method == "eclass_9":
+                eid, ver = (row.get("ECLASS_9_ID") or "").strip(), "ECLASS-9"
+            else:
+                continue
+            if not eid:
+                continue
+
+            u = usage.get(eid)
+            name = (row.get("BR_KATEGORIE") or "").strip()
+            if u is None:
+                usage[eid] = {
+                    "eclass_version": ver,
+                    "count":          1,
+                    "example":        (row.get("SUPPLIER_AID") or "").strip(),
+                    "eclass_name":    name,
+                }
+            else:
+                u["count"] += 1
+                if not u["eclass_name"] and name:
+                    u["eclass_name"] = name
+    return usage
+
+
 # ── Task-Einstieg ─────────────────────────────────────────────────────────────
 
 def run(progress_cb=None):

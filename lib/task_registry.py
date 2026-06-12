@@ -175,6 +175,14 @@ TASKS = [
         "group":   "Marktplätze",
     },
     {
+        "id":      "eclass_channel_map",
+        "name":    "ECLASS → Kanal-Mapping",
+        "desc":    "ECLASS-Endknoten lieferantenübergreifend zu Marktplatz-Kategorien mappen (nach ECLASS-Analyse)",
+        "fn":      "tasks.eclass_channel_map:run",
+        "default": False,
+        "group":   "Marktplätze",
+    },
+    {
         "id":      "channel_mapping",
         "name":    "Kanal-Kategorie-Mapping",
         "desc":    "Lieferanten-Kategorien zu Marktplatz-Kanälen mappen (eBay, Kaufland, Conrad, ManoMano, Unite)",

@@ -157,3 +157,115 @@ def add_missing_to_mapping(base_dir: str, new_categories: list) -> int:
             added += 1
 
     return added
+
+
+# ── ECLASS-gekeytes Kanal-Mapping ─────────────────────────────────────────────
+#
+# Brücke ECLASS → Marktplatz: Eine ECLASS-Endknoten-ID wird EINMAL pro Kanal
+# gemappt und gilt dann lieferantenübergreifend für alle Artikel mit dieser
+# ECLASS-Klassifikation. Deutlich weniger Pflegeaufwand als pro Lieferant-Code.
+
+_ECLASS_MAPPING_RELPATH = os.path.join("channels", "eclass_channel_mapping.csv")
+
+_ECLASS_HEADER = [
+    "eclass_id", "eclass_version", "eclass_name",
+    "example_article", "article_count",
+    "ebay_category_id", "kaufland_category_id",
+    "mirakl_conrad_category", "mirakl_mano_category", "unite_category",
+]
+
+
+def eclass_mapping_path(base_dir: str) -> str:
+    return os.path.join(base_dir, _ECLASS_MAPPING_RELPATH)
+
+
+def load_eclass_mappings(base_dir: str) -> dict:
+    """
+    Lädt channels/eclass_channel_mapping.csv.
+
+    Returns:
+        {eclass_id_upper: {"version": str, "name": str, "ebay": str, ...}}
+    """
+    path = eclass_mapping_path(base_dir)
+    if not os.path.exists(path):
+        log.debug("Kein ECLASS-Kanal-Mapping gefunden: %s", path)
+        return {}
+
+    mappings: dict = {}
+    for enc in _ENCODINGS:
+        try:
+            with open(path, "r", encoding=enc, errors="strict") as f:
+                sample = f.read(4096)
+                try:
+                    dialect = csv.Sniffer().sniff(sample, delimiters=",;")
+                except csv.Error:
+                    dialect = csv.excel
+                f.seek(0)
+                reader = csv.DictReader(f, dialect=dialect)
+                for row in reader:
+                    eid = (row.get("eclass_id") or "").strip()
+                    if not eid or eid.startswith("#"):
+                        continue
+                    entry: dict = {
+                        "version": (row.get("eclass_version") or "").strip(),
+                        "name":    (row.get("eclass_name") or "").strip(),
+                    }
+                    for col, ch_key in _COLUMN_MAP.items():
+                        entry[ch_key] = (row.get(col) or "").strip()
+                    mappings[eid.upper()] = entry
+            if mappings:
+                log.info("ECLASS-Kanal-Mapping: %d Kategorien geladen", len(mappings))
+            return mappings
+        except (UnicodeDecodeError, KeyError):
+            continue
+
+    log.warning("ECLASS-Kanal-Mapping konnte nicht gelesen werden: %s", path)
+    return {}
+
+
+def add_missing_eclass_mappings(base_dir: str, new_leaves: list) -> int:
+    """
+    Fügt ECLASS-Endknoten, die noch nicht in der Mapping-Datei stehen,
+    als Leerzeilen an. Legt Datei + Verzeichnis an falls nicht vorhanden.
+
+    Args:
+        base_dir:    Projektwurzel
+        new_leaves:  [{eclass_id, eclass_version, eclass_name, example, count}]
+
+    Returns:
+        Anzahl neu hinzugefügter Zeilen
+    """
+    channels_dir = os.path.join(base_dir, "channels")
+    os.makedirs(channels_dir, exist_ok=True)
+    path = eclass_mapping_path(base_dir)
+
+    file_exists = os.path.exists(path)
+    added = 0
+
+    with open(path, "a", encoding="utf-8-sig", newline="") as f:
+        writer = csv.writer(f, delimiter=";")
+
+        if not file_exists:
+            writer.writerow(_ECLASS_HEADER)
+            writer.writerow([
+                "# z.B. 24-23-05-01", "# ECLASS-5 oder ECLASS-9",
+                "# Klartext (informativ)", "# Beispielartikel", "# Anzahl Artikel",
+                "# eBay Leaf-ID", "# Kaufland-Kategorie",
+                "# Conrad (Mirakl)", "# ManoMano (Mirakl)", "# Unite/Mercateo",
+            ])
+
+        for lf in new_leaves:
+            writer.writerow([
+                lf["eclass_id"], lf.get("eclass_version", ""),
+                lf.get("eclass_name", ""), lf.get("example", ""),
+                lf.get("count", ""), "", "", "", "", "",
+            ])
+            added += 1
+
+    return added
+
+
+def get_channel_category_by_eclass(mappings: dict, eclass_id: str,
+                                   channel: str) -> str:
+    """Marktplatz-Kategorie für eine ECLASS-ID. Leer wenn nicht gemappt."""
+    return mappings.get((eclass_id or "").upper(), {}).get(channel, "")

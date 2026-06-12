@@ -1,0 +1,11 @@
+eclass_id;eclass_version;eclass_name;example_article;article_count;ebay_category_id;kaufland_category_id;mirakl_conrad_category;mirakl_mano_category;unite_category
+# ECLASS-Endknoten → Marktplatz-Kategorie (gilt lieferantenübergreifend!)
+# eclass_id      → ECLASS-Klassen-ID, z.B. 24-23-05-01
+# eclass_version → ECLASS-5 oder ECLASS-9
+# eclass_name    → Klartext (informativ, aus Artikelbezeichnung)
+# article_count  → wie viele Artikel diese Kategorie nutzen (Hebel-Hinweis)
+# Channel-Spalten einmal pro ECLASS-Kategorie ausfüllen — gilt dann für ALLE
+# Artikel mit dieser ECLASS-ID, egal von welchem Lieferanten.
+#
+# Beispiel (auskommentiert):
+# 24-23-05-01;ECLASS-5;Kugelschreiber;ART001;1234;162800;buerobedarf;STYLOS;STYLOS;44121701
