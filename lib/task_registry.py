@@ -80,6 +80,14 @@ TASKS = [
         "default": False,
         "group":   "Softcarrier",
     },
+    {
+        "id":      "softcarrier_img_patch",
+        "name":    "Softcarrier – Bild-Patch",
+        "desc":    "Mehrdeutige MIME_SOURCE auflösen: pHash-Matching lokaler Bild-ZIPs gegen Thumbnails. Einmalig ausführen wenn GRAPHIK-ZIPs vorliegen.",
+        "fn":      "tasks.softcarrier_img_patch:run",
+        "default": False,
+        "group":   "Softcarrier",
+    },
     # ── Nordwest ──────────────────────────────────────────────────────────────
     {
         "id":      "nordwest",

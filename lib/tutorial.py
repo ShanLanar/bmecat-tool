@@ -629,6 +629,7 @@ TASK_TIPS = {
     "bueroring_bestand":  "Nur Bestandsdaten: Excel patchen + CSV-Exporte für Brickfox ERP und Exchange.",
     "softcarrier":        "Softcarrier komplett: Download → Feature-Merge → Brickfox-Upload. Bilder SEPARAT (nächster Task).",
     "softcarrier_merge":  "Nur Merge ohne Download. Fallback wenn Download OK aber Merge fehlgeschlagen.",
+    "softcarrier_img_patch": "Einmalig ausführen wenn die Softcarrier-Bild-ZIPs (GRAPHIK1-9.ZIP) lokal vorliegen. Löst das MIME_SOURCE-Problem: Farbvarianten bekommen ihr richtiges Bild statt zufällig dasselbe. Vorher DIRS.sc_bilder_zips in der Konfiguration setzen.",
     "softcarrier_bilder": "Nur geänderte Bilder auf Allago + OfficeXL hochladen (Delta: typisch 200-500 statt 61.000).",
     "nordwest":           "Nordwest: 3 XMLs herunterladen + UDX-Konvertierung + KIP-CSV + Brickfox-Upload.",
     "systeam":            "Systeam: nur Download. Aktuell inaktiv (fehlende Preise).",

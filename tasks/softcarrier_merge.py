@@ -34,6 +34,7 @@ _AID_PAT      = re.compile(r'(?is)<supplier_aid>(.*?)</supplier_aid>')
 _MFR_PAT      = re.compile(r'(?is)<manufacturer_name>(.*?)</manufacturer_name>')
 _ARTICLE_PAT  = re.compile(r'(?is)(<article[\s>].*?</article>)')
 _ART_END_PAT  = re.compile(r'(?i)</article>')
+_SRC_PAT      = re.compile(r'(?i)(<source>)([^<]+)(</source>)')
 
 
 from lib.utils import detect_encoding  # zentralisiert in lib/utils.py
@@ -140,6 +141,20 @@ def _build_udf_block(features: list, indent: str = "      ") -> str:
     return "\n".join(lines)
 
 
+def _apply_image_patch(article: str, aid: str, patch_map: dict) -> str:
+    """
+    Ersetzt <SOURCE>39672.jpg</SOURCE> durch <SOURCE>39672_302.jpg</SOURCE>
+    (Ordner_Dateiname) wenn ein Eintrag in der Patch-Map vorhanden ist.
+    """
+    if not patch_map or aid not in patch_map:
+        return article
+    folder, img = patch_map[aid]
+    new_val = f"{folder}_{img}"
+    def _replace(m):
+        return f"{m.group(1)}{new_val}{m.group(3)}"
+    return _SRC_PAT.sub(_replace, article, count=1)
+
+
 def _enrich_article(article: str,
                     data_map: dict,
                     herstinfo: dict) -> str:
@@ -188,7 +203,8 @@ def _enrich_article(article: str,
 
 
 def merge(xml_path: str, data_csv: str, herstinfo_csv: str,
-          out_path: str = None, progress_cb=None) -> dict:
+          out_path: str = None, progress_cb=None,
+          patch_map: dict = None) -> dict:
     """
     Hauptfunktion:
       xml_path      – soft-carrier.xml
@@ -227,12 +243,13 @@ def merge(xml_path: str, data_csv: str, herstinfo_csv: str,
     if not content.lstrip().startswith("<?xml"):
         content = '<?xml version="1.0" encoding="UTF-8"?>\n' + content
 
+    img_patched   = 0
     enriched      = 0
     tab_enriched  = 0
     gpsr_enriched = 0
 
     def _process(m):
-        nonlocal enriched, tab_enriched, gpsr_enriched
+        nonlocal enriched, tab_enriched, gpsr_enriched, img_patched
         article = m.group(1)
 
         aid_m = _AID_PAT.search(article)
@@ -247,7 +264,16 @@ def merge(xml_path: str, data_csv: str, herstinfo_csv: str,
         if has_gpsr: gpsr_enriched += 1
         if has_tab or has_gpsr:
             enriched += 1
-            return _enrich_article(article, data_map, herstinfo)
+            article = _enrich_article(article, data_map, herstinfo)
+
+        # Bild-Patch: mehrdeutige MIME_SOURCE durch artikelspezifische ersetzen
+        if patch_map:
+            aid_raw = aid_m.group(1).strip() if aid_m else ""
+            patched = _apply_image_patch(article, aid_raw, patch_map)
+            if patched is not article:
+                img_patched += 1
+                article = patched
+
         return article
 
     new_content = _ARTICLE_PAT.sub(_process, content)
@@ -267,19 +293,25 @@ def merge(xml_path: str, data_csv: str, herstinfo_csv: str,
     p(f"  Artikel angereichert: {enriched}", tag="ok")
     p(f"    davon TAB-Features:  {tab_enriched}")
     p(f"    davon GPSR-Daten:    {gpsr_enriched}")
+    if patch_map:
+        p(f"  Bild-Patch angewendet: {img_patched}", tag="ok" if img_patched else "dim")
 
     return {
         "enriched":     enriched,
         "tab_enriched": tab_enriched,
         "gpsr_enriched":gpsr_enriched,
+        "img_patched":  img_patched,
         "out_path":     out_path,
     }
 
 
 def run(progress_cb=None, file_progress_cb=None):
     """Task-Einstiegspunkt für main.py."""
+    import config as _cfg
     from config import DIRS
-    p  = progress_cb or (lambda m, **kw: None)
+    from lib.sc_image_patch import load_patch_map, PATCH_FILENAME
+
+    p      = progress_cb or (lambda m, **kw: None)
     in_bme = DIRS["in_bme"]
 
     xml_path      = os.path.join(in_bme, "soft-carrier.xml")
@@ -287,11 +319,19 @@ def run(progress_cb=None, file_progress_cb=None):
     herstinfo_csv = os.path.join(in_bme, "softcarrier_HERSTINFO.CSV")
     out_path      = os.path.join(in_bme, "soft-carrier_merge.xml")
 
-    for path, label in [(xml_path, "soft-carrier.xml")]:
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"{label} nicht gefunden: {path}")
+    if not os.path.exists(xml_path):
+        raise FileNotFoundError(f"soft-carrier.xml nicht gefunden: {xml_path}")
 
-    merge(xml_path, data_csv, herstinfo_csv, out_path, progress_cb=p)
+    # Bild-Patch-Map laden (optional – wird nur angewendet wenn CSV vorhanden)
+    patch_csv = os.path.join(_cfg.BASE_DIR, PATCH_FILENAME)
+    patch_map = load_patch_map(patch_csv)
+    if patch_map:
+        p(f"  Bild-Patch geladen: {len(patch_map):,} Einträge aus {PATCH_FILENAME}", tag="ok")
+    else:
+        p(f"  Kein Bild-Patch ({PATCH_FILENAME} fehlt) – MIME_SOURCE unverändert", tag="dim")
+
+    merge(xml_path, data_csv, herstinfo_csv, out_path,
+          progress_cb=p, patch_map=patch_map)
 
     # FNAME-Transforms + Dedup (Transforms vor Dedup)
     from lib.fname_transforms import apply_fname_transforms

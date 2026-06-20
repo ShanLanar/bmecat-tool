@@ -116,6 +116,7 @@ def run(progress_cb=None):
         ("supplier_priority.csv",           "EAN-Dedup Prioritäten"),
         ("channel_category_mapping.csv",    "Kanal-Mapping (Lieferanten-Codes)"),
         ("eclass_channel_mapping.csv",      "Kanal-Mapping (ECLASS)"),
+        ("sc_image_patch.csv",              "Softcarrier Bild-Patch (pHash)"),
     ]
     for fname, desc in optional_files:
         exists = os.path.exists(os.path.join(BASE_DIR, fname))
