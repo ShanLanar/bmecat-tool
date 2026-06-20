@@ -321,10 +321,6 @@ class App(tk.Tk):
             canvas.configure(scrollregion=canvas.bbox("all"))
         left.bind("<Configure>", _on_frame_configure)
 
-        def _on_canvas_configure(e):
-            canvas.itemconfig(canvas_win, width=e.width)
-        canvas.bind("<Configure>", _on_canvas_configure)
-
         def _on_mousewheel(e):
             canvas.yview_scroll(-1 * (e.delta // 120), "units")
         canvas.bind("<MouseWheel>", _on_mousewheel)
@@ -332,14 +328,54 @@ class App(tk.Tk):
 
         from lib.tutorial import ToolTip, TASK_TIPS
         from lib.design import add_hover, lighten, FONT_UI, FONT_UI_SM, FONT_CAP
+
+        # Widgets erst sammeln, dann per _apply_layout in 1 oder 2 Spalten legen
+        _task_items = []   # ("group"|"task"|"sep", widget)
+        _cols_state  = {"n": 0}
+
+        def _apply_layout(ncols):
+            if ncols == _cols_state["n"]:
+                return
+            _cols_state["n"] = ncols
+            for child in left.winfo_children():
+                child.grid_forget()
+            grow = gcol = 0
+            for kind, widget in _task_items:
+                if kind == "group":
+                    if gcol > 0:
+                        grow += 1; gcol = 0
+                    widget.grid(row=grow, column=0, columnspan=ncols,
+                                sticky="ew", pady=(8, 2), padx=2)
+                    grow += 1; gcol = 0
+                elif kind == "sep":
+                    if gcol > 0:
+                        grow += 1; gcol = 0
+                    widget.grid(row=grow, column=0, columnspan=ncols,
+                                sticky="ew", pady=8, padx=2)
+                    grow += 1; gcol = 0
+                else:
+                    widget.grid(row=grow, column=gcol, sticky="nsew",
+                                padx=2, pady=1)
+                    gcol += 1
+                    if gcol >= ncols:
+                        gcol = 0; grow += 1
+            for i in range(ncols):
+                left.columnconfigure(i, weight=1)
+            if ncols == 1:
+                left.columnconfigure(1, weight=0)
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_canvas_configure(e):
+            canvas.itemconfig(canvas_win, width=e.width)
+            _apply_layout(2 if e.width >= 420 else 1)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
         current_group = None
         for task in TASKS:
             grp = task.get("group", "")
             if grp != current_group:
                 current_group = grp
-                # Gruppen-Separator
                 sep_frm = tk.Frame(left, bg=_T("BG2"))
-                sep_frm.pack(fill="x", pady=(10, 2))
                 sep_frm.bind("<MouseWheel>", _on_mousewheel)
                 tk.Frame(sep_frm, bg=_T("BORDER"), height=1).pack(fill="x", pady=(0, 4))
                 lbl = tk.Label(sep_frm, text=grp.upper(),
@@ -347,14 +383,13 @@ class App(tk.Tk):
                                bg=_T("BG2"), fg=_T("FG_DIM"), padx=2)
                 lbl.pack(anchor="w")
                 lbl.bind("<MouseWheel>", _on_mousewheel)
+                _task_items.append(("group", sep_frm))
 
             var = tk.BooleanVar(value=task.get("default", True))
             self._checks[task["id"]] = var
 
-            # Task-Karte mit Hover
             row_h = lighten(_T("BG2"), 8)
             row = tk.Frame(left, bg=_T("BG2"), pady=2, padx=2)
-            row.pack(fill="x", pady=1)
             row.bind("<MouseWheel>", _on_mousewheel)
             add_hover(row, _T("BG2"), row_h)
 
@@ -378,9 +413,11 @@ class App(tk.Tk):
             dl.bind("<MouseWheel>", _on_mousewheel)
             add_hover(dl, _T("BG2"), row_h)
 
-        self._widget_refs["task_list"] = left
+            _task_items.append(("task", row))
 
-        ttk.Separator(left, orient="horizontal").pack(fill="x", pady=8)
+        _task_items.append(("sep", ttk.Separator(left, orient="horizontal")))
+        _apply_layout(1)
+        self._widget_refs["task_list"] = left
 
         # ── Rechte Seite oben: Basispfad ──────────────────────────────────────
         top_right = tk.Frame(right_outer, bg=_T("BG"))
