@@ -71,47 +71,87 @@ STEPS = [
     {
         "title": "Willkommen im BMEcat Download-Tool",
         "text": (
-            "Dieses Tutorial führt dich in 15 Schritten durch alle wichtigen "
-            "Funktionen des Tools.\n\n"
+            "Dieses Tutorial führt dich durch alle wichtigen Funktionen des Tools.\n\n"
             "Das Tool automatisiert den täglichen Katalogdaten-Import: "
-            "Es lädt Produktkataloge von FTP-Servern herunter, verarbeitet "
-            "sie und lädt sie auf die Verkaufsplattformen hoch.\n\n"
+            "Es lädt Produktkataloge von Lieferanten-Servern herunter, verarbeitet "
+            "sie (Merge, Keywords, Preise, Bestand) und lädt sie auf die "
+            "Verkaufsplattformen hoch (Brickfox, Mercateo/Unite).\n\n"
             "Tipp: Du kannst das Tutorial jederzeit mit 'Schließen' beenden "
-            "und später über den '?' Knopf neu starten."
+            "und später über den '?' Knopf oben rechts neu starten."
         ),
         "widget_id": None,
     },
     {
-        "title": "Die Task-Liste (links)",
+        "title": "Die Task-Liste (linke Leiste)",
         "text": (
-            "Hier wählst du aus, welche Aufgaben beim nächsten Lauf ausgeführt "
-            "werden sollen.\n\n"
-            "Jede Checkbox ist ein 'Task' – ein eigenständiger Arbeitsschritt. "
-            "Du kannst beliebig kombinieren: z.B. nur Büroring, oder alles außer Bilder.\n\n"
-            "Die grauen Beschriftungen darunter erklären kurz was der Task macht."
+            "Die linke Leiste zeigt alle verfügbaren Aufgaben als farbige Buttons.\n\n"
+            "Aktiv (Accent-Farbe) = wird beim nächsten Lauf ausgeführt.\n"
+            "Inaktiv (grau) = wird übersprungen.\n\n"
+            "Klick auf einen Button schaltet ihn ein oder aus. "
+            "Tooltip beim Hover zeigt die ausführliche Beschreibung.\n\n"
+            "Die Leiste lässt sich durch Ziehen des Trennbalkens breiter machen. "
+            "Ab bestimmten Breiten schalten die Buttons automatisch auf "
+            "2, 3 oder 4 Spalten um."
         ),
         "widget_id": "task_list",
     },
     {
+        "title": "Alle / Keine / Standard",
+        "text": (
+            "Diese drei Knöpfe ganz oben steuern die Auswahl auf einmal:\n\n"
+            "'Standard' → Vorauswahl wiederherstellen\n"
+            "  (Setup-Check + Aufräumen + Büroring + Softcarrier + Nordwest + Bilder)\n\n"
+            "'Alle' → jeden Task aktivieren\n\n"
+            "'Keine' → alles deaktivieren – nützlich wenn du nur einen einzigen "
+            "Task gezielt ausführen willst\n\n"
+            "Tipp: 'Keine' → dann den gewünschten Task anklicken → 'Starten'."
+        ),
+        "widget_id": "sel_buttons",
+    },
+    {
+        "title": "Setup-Check (Vorbereitung)",
+        "text": (
+            "Der Setup-Check prüft ohne Netzwerkzugriff ob alle Voraussetzungen "
+            "für einen erfolgreichen Lauf erfüllt sind:\n\n"
+            "• Git-Stand (Branch, Commit, Remote-URL)\n"
+            "• 7-Zip installiert und gefunden\n"
+            "• FTP/SFTP-Passwörter in allen Verbindungen gesetzt\n"
+            "• Pflichtdateien: keywords_exploded.csv, Bestand_und_Preise.xlsx, "
+            "fname_renames.csv, fvalue_renames.csv\n"
+            "• Optionale Dateien: postprocess_*.csv, Mapping-CSVs\n"
+            "• Verzeichnisse: in_BME, in, logs, export_vendosys\n\n"
+            "Wichtig: Bei Fehlern bricht der Setup-Check den gesamten Lauf ab. "
+            "Erst abwählen wenn die Ursache bekannt und absichtlich ignoriert wird."
+        ),
+        "widget_id": None,
+    },
+    {
         "title": "Aufräumen (Vorbereitung)",
         "text": (
-            "Der erste Task 'Aufräumen' löscht alte XML-, CSV- und ZIP-Dateien "
-            "aus dem Arbeitsverzeichnis.\n\n"
-            "Das ist wichtig damit keine veralteten Dateien aus dem Vortag "
-            "versehentlich hochgeladen werden. Immer als erstes aktiviert lassen.\n\n"
-            "Ausnahme: du willst gezielt einen einzelnen Schritt wiederholen – "
-            "dann Aufräumen abwählen."
+            "Löscht alte XML-, CSV- und ZIP-Dateien aus dem Arbeitsverzeichnis "
+            "bevor neue heruntergeladen werden.\n\n"
+            "Warum wichtig: Ohne Aufräumen könnten veraltete Dateien vom Vortag "
+            "versehentlich verarbeitet oder hochgeladen werden.\n\n"
+            "Wann abwählen:\n"
+            "• Du willst einen einzelnen Schritt wiederholen (z.B. nur Merge)\n"
+            "• Die Quelldateien wurden gerade manuell angepasst\n\n"
+            "Im Normalbetrieb immer aktiviert lassen."
         ),
         "widget_id": None,
     },
     {
         "title": "Büroring – Komplett",
         "text": (
-            "Der komplexeste Lieferant. Dieser Task macht alles in einem Schritt:\n\n"
-            "1. Download vom SFTP-Server (~470 MB XML)\n"
-            "2. Merge: Zwei Quelldateien zusammenführen + ECLASS-Features + Keywords\n"
-            "3. Bestandsdaten: Excel-Datei patchen, CSV-Exporte erzeugen\n"
-            "4. Upload auf Brickfox, Mercateo, Brickfox ERP, Brickfox Exchange\n\n"
+            "Der komplexeste Lieferant – macht alles in einem Schritt:\n\n"
+            "Quellen (Download von sftp.bueroring.de):\n"
+            "  ↓ br-ek_DE_BMEcat_DEU_ABE.zip → bueroring.xml (ABE + ECLASS)\n"
+            "  ↓ bf-ek_DE_BMEcat_DEU.zip → bueroring_basis.xml (Hauptkatalog)\n"
+            "  ↓ br-bestand.zip → Bestandsdaten-CSV\n\n"
+            "Verarbeitung: Merge beider XMLs + Keywords + FNAME/FVALUE + DB-Import\n\n"
+            "Uploads:\n"
+            "  ↑ bueroring_merged.xml → Brickfox (c_abe_ftp_2)\n"
+            "  ↑ Products_bueroring_*.csv → Brickfox ERP (c_abe_ftp_3)\n"
+            "  ↑ csv_autoimport_bueroring_*.csv → Brickfox Exchange (c_abe_ftp_5)\n\n"
             "Laufzeit: ~3–4 Minuten."
         ),
         "widget_id": None,
@@ -119,11 +159,11 @@ STEPS = [
     {
         "title": "Büroring – Merge (manuell)",
         "text": (
-            "Dieser Fallback-Task macht nur den Merge-Schritt – "
-            "ohne neu herunterzuladen.\n\n"
-            "Wann nützlich: Der Download hat geklappt, aber der Merge ist "
-            "fehlgeschlagen. Oder du hast die Quelldateien manuell angepasst "
-            "und willst nur neu zusammenführen.\n\n"
+            "Nur der Merge-Schritt – ohne neuen Download.\n\n"
+            "Wann nützlich:\n"
+            "• Download hat funktioniert, aber Merge ist fehlgeschlagen\n"
+            "• Quelldateien wurden manuell geändert (z.B. keywords_exploded.csv)\n"
+            "• Schneller Test ob Konfigurationsänderungen korrekt wirken\n\n"
             "Standardmäßig deaktiviert."
         ),
         "widget_id": None,
@@ -132,195 +172,247 @@ STEPS = [
         "title": "Softcarrier – Komplett",
         "text": (
             "Download + Merge + XML-Upload für Softcarrier:\n\n"
-            "1. Download: soft-carrier.xml (~280 MB), DATA.CSV, HERSTINFO.CSV, PREVIEW.ZIP\n"
-            "2. Merge: TAB-Features aus CSV + GPSR-Herstellerdaten einfügen\n"
-            "3. Upload der merged XML auf Brickfox\n\n"
-            "Die ~61.000 Bilder aus PREVIEW.ZIP werden NICHT hier hochgeladen – "
-            "dafür gibt es den separaten 'Bilder'-Task (schneller, entkoppelt)."
+            "Quellen (ftp.softcarrier.com):\n"
+            "  ↓ soft-carrier.xml (~280 MB Hauptkatalog)\n"
+            "  ↓ DATA.CSV (TAB-Features/Attributdaten)\n"
+            "  ↓ HERSTINFO.CSV (GPSR-Herstellerdaten)\n\n"
+            "Verarbeitung: TAB-Features + GPSR in XML einarbeiten\n\n"
+            "Upload: soft-carrier.xml → Brickfox /incoming\n\n"
+            "Bilder (PREVIEW.ZIP mit ~61.000 JPGs) werden SEPARAT hochgeladen "
+            "– über den 'Softcarrier – Bilder (Delta)' Task."
         ),
         "widget_id": None,
     },
     {
         "title": "Softcarrier – Bilder (Delta)",
         "text": (
-            "Lädt nur die GEÄNDERTEN Bilder auf Allago und OfficeXL hoch.\n\n"
-            "Beim ersten Lauf: alle ~61.000 Bilder (einmalig, ~10 Minuten).\n"
-            "Bei Folgeläufen: typischerweise nur 200–500 geänderte Bilder (~30 Sekunden).\n\n"
-            "Dieser Task läuft ganz am Ende, NACHDEM alle XML-Uploads "
-            "der anderen Lieferanten abgeschlossen sind. So blockiert er nicht "
-            "den Nordwest-Upload."
+            "Lädt nur die GEÄNDERTEN Bilder hoch – nicht alle 61.000 jedes Mal.\n\n"
+            "Wie es funktioniert:\n"
+            "Beim ersten Lauf werden alle Bilder hochgeladen (~10 Minuten, einmalig).\n"
+            "Danach vergleicht das Tool Checksummen und lädt nur Neue/Geänderte "
+            "hoch (~30 Sekunden bei typisch 200–500 Änderungen).\n\n"
+            "Ziele:\n"
+            "  ↑ Allago: 217.71.221.27 /thumbnails/ + /category/\n"
+            "  ↑ OfficeXL: 217.71.221.26 /thumbnails/ + /category/\n\n"
+            "Läuft nach allen XML-Uploads, damit er die anderen Tasks nicht blockiert."
         ),
         "widget_id": None,
     },
     {
         "title": "Nordwest – Komplett",
         "text": (
-            "Nordwest liefert drei separate XML-Dateien:\n\n"
-            "• arbeitsschutz.xml (~40.000 Artikel)\n"
-            "• werkstatt.xml (~30.000 Artikel)\n"
-            "• werkzeugtechnik.xml (~50.000 Artikel)\n\n"
-            "Alle drei werden zusammen heruntergeladen, entpackt, mit "
-            "UDX-zu-Feature-Konvertierung verarbeitet und auf Brickfox hochgeladen.\n\n"
-            "Außerdem: KIP-CSV für Preisdaten auf ein Netzlaufwerk."
+            "Nordwest liefert drei separate Katalog-Dateien (filehub.configo.de):\n\n"
+            "  ↓ arbeitsschutz.zip → arbeitsschutz.xml (~40.000 Artikel)\n"
+            "  ↓ werkstatt.zip → werkstatt.xml (~30.000 Artikel)\n"
+            "  ↓ werkzeugtechnik.zip → werkzeugtechnik.xml (~50.000 Artikel)\n\n"
+            "Verarbeitung: UDX-Felder → ARTICLE_FEATURES konvertieren\n"
+            "Außerdem: KIP-CSV für Preisdaten auf Netzlaufwerk schreiben\n\n"
+            "Upload: alle drei XMLs → Brickfox /incoming"
         ),
         "widget_id": None,
     },
     {
-        "title": "Standard / Alle / Keine",
+        "title": "Marktplätze – ECLASS-Analyse",
         "text": (
-            "Diese drei Knöpfe steuern die Auswahl schnell:\n\n"
-            "'Standard' → setzt die Vorauswahl zurück (Aufräumen + die 3 aktiven Lieferanten + Bilder)\n"
-            "'Alle' → aktiviert jeden einzelnen Task\n"
-            "'Keine' → deaktiviert alles (nützlich wenn man nur einen bestimmten Task will)\n\n"
-            "Tipp: 'Keine' klicken, dann nur den gewünschten Task ankreuzen – "
-            "gut zum Wiederholen einzelner Schritte."
+            "Liest die BMEcat-XML aus und löst für jeden Artikel die "
+            "ECLASS-Kategorie auf (ECLASS 5.x und 9.x werden erkannt).\n\n"
+            "Ergebnis: channels/article_eclass_categories.csv\n"
+            "  → Artikel-Nr. | ECLASS-ID | ECLASS-Name | Konfidenz\n\n"
+            "Warum nützlich:\n"
+            "ECLASS ist eine lieferantenübergreifende Produktklassifikation. "
+            "Damit lassen sich Artikel mehrerer Lieferanten auf dieselbe "
+            "Marktplatz-Kategorie mappen – statt jeden Lieferanten einzeln.\n\n"
+            "Voraussetzung für 'ECLASS → Kanal-Mapping'."
         ),
-        "widget_id": "sel_buttons",
+        "widget_id": None,
+    },
+    {
+        "title": "Marktplätze – Kanal-Mappings",
+        "text": (
+            "Zwei Mapping-Tasks bereiten Marktplatz-Exporte vor:\n\n"
+            "'ECLASS → Kanal-Mapping':\n"
+            "Ordnet ECLASS-Endknoten den Kategorien auf eBay, Kaufland, "
+            "Conrad, ManoMano etc. zu. Einmal gemappt gilt die Zuordnung "
+            "lieferantenübergreifend für alle Artikel mit dieser ECLASS-ID.\n"
+            "→ eclass_channel_mapping.csv\n\n"
+            "'Kanal-Kategorie-Mapping':\n"
+            "Fallback für Artikel ohne ECLASS: Lieferanten-Kategorien "
+            "(BRG/SOC/NDW-Codes) direkt zu Marktplatz-Kategorien mappen.\n"
+            "→ channel_category_mapping.csv\n\n"
+            "Beide CSVs können im Konfiguration-Reiter bearbeitet werden."
+        ),
+        "widget_id": None,
     },
     {
         "title": "Starten und Abbrechen",
         "text": (
-            "'Starten' führt alle aktivierten Tasks in der richtigen Reihenfolge aus.\n\n"
+            "'Starten' führt alle aktiven Tasks in der richtigen Reihenfolge aus.\n\n"
             "Während ein Lauf läuft:\n"
-            "• Die Statusleiste oben rechts zeigt 'Task 2/5: Softcarrier'\n"
-            "• Der Fortschrittsbalken zeigt den aktuellen Dateidownload/-upload\n"
-            "• Im Log erscheinen alle Schritte in Echtzeit\n\n"
-            "'Abbrechen' stoppt nach dem aktuellen Schritt (nicht mitten in einer Datei)."
+            "• Statusleiste oben rechts zeigt 'Task 2/5: Softcarrier – Komplett'\n"
+            "• Fortschrittsbalken zeigt aktuellen Dateidownload/-upload\n"
+            "• Log zeigt alle Schritte in Echtzeit\n\n"
+            "'Abbrechen' stoppt nach dem aktuellen Schritt "
+            "(nicht mitten in einer Datei).\n\n"
+            "Tipp: Wenn der Setup-Check rot ist, startet kein weiterer Task – "
+            "erst die Ursache beheben oder Setup-Check abwählen."
         ),
         "widget_id": "run_btn",
     },
     {
         "title": "Das Log-Fenster",
         "text": (
-            "Hier siehst du alles was das Tool macht – in Echtzeit.\n\n"
+            "Zeigt in Echtzeit alles was das Tool macht.\n\n"
             "Farben:\n"
             "• Grün / ✓  = Schritt erfolgreich\n"
-            "• Gelb / ⚠  = Warnung (Lauf geht weiter, aber etwas stimmt nicht ganz)\n"
-            "• Rot / ✗   = Fehler (dieser Task ist fehlgeschlagen)\n"
-            "• Grau      = Informationsmeldung\n\n"
-            "Nach dem Lauf: 'Log speichern' für ein Textdokument, oder "
-            "in logs/Log_JJJJMMTT.txt nachschauen."
+            "• Gelb / ⚠  = Warnung (Lauf geht weiter, aber prüfen)\n"
+            "• Rot / ✗   = Fehler (Task fehlgeschlagen, ggf. Abbruch)\n"
+            "• Grau      = Info / Detailmeldung\n\n"
+            "Am Anfang eines Tasks: Datenfluss-Box mit Quellen und Upload-Zielen.\n"
+            "Am Anfang des Büroring-Tasks: Preflight-Check mit ✓/✗ für jede Datei.\n\n"
+            "Nach dem Lauf: 'Log speichern' oder logs/Log_JJJJMMTT.txt."
         ),
         "widget_id": "log_area",
     },
     {
         "title": "Verbindungstest",
         "text": (
-            "Über diesen Knopf kannst du prüfen ob die FTP/SFTP-Verbindungen "
-            "zu den Lieferanten-Servern funktionieren – ohne einen Lauf zu starten.\n\n"
+            "Prüft alle FTP/SFTP-Verbindungen ohne einen Lauf zu starten.\n\n"
             "Wann sinnvoll:\n"
-            "• Nach Änderungen in config.py (neue Zugangsdaten)\n"
+            "• Nach Änderungen an Zugangsdaten\n"
             "• Wenn ein Lieferant-Task dauerhaft fehlschlägt\n"
-            "• Morgens vor dem ersten Lauf, wenn man sichergehen will\n\n"
-            "Zeigt Verbindungsstatus und Verzeichnisinhalt."
+            "• Auf einem neuen Rechner nach der Einrichtung\n\n"
+            "Zeigt pro Verbindung: Status, Serverantwort, Verzeichnisinhalt.\n\n"
+            "Tipp: Vor dem ersten echten Lauf auf einem neuen System immer "
+            "zuerst den Verbindungstest durchführen."
         ),
         "widget_id": "conn_test_btn",
     },
     {
-        "title": "Konfiguration",
+        "title": "Konfiguration (Knopf oben)",
         "text": (
-            "Öffnet den Konfigurationsdialog – ohne config.py manuell bearbeiten zu müssen.\n\n"
-            "Hier kannst du ändern:\n"
+            "Öffnet den Konfigurationsdialog – config.py muss nicht manuell "
+            "bearbeitet werden.\n\n"
+            "Änderbar:\n"
             "• Basispfad (Installationsverzeichnis)\n"
-            "• FTP-Zugangsdaten pro Lieferant\n"
-            "• E-Mail-Benachrichtigungen (aktivieren + SMTP-Daten)\n"
+            "• FTP/SFTP-Zugangsdaten pro Lieferant\n"
+            "• E-Mail-Benachrichtigungen (SMTP-Daten)\n"
             "• Artikel-Schwellwerte für Validierung\n\n"
-            "Einstellungen werden in config_user.json gespeichert und haben "
-            "Vorrang vor config.py – die Originaldatei bleibt unverändert."
+            "Einstellungen werden in config_user.json gespeichert – "
+            "haben Vorrang vor config.py, die Originaldatei bleibt unberührt."
         ),
         "widget_id": "config_btn",
     },
     {
-        "title": "Scheduler – Automatische Läufe",
+        "title": "Reiter: Konfiguration – Pipeline-Übersicht",
         "text": (
-            "Hier richtest du ein, dass das Tool täglich automatisch startet – "
-            "auch wenn niemand angemeldet ist.\n\n"
-            "Einstellen:\n"
-            "1. Uhrzeit (z.B. 06:00 Uhr)\n"
-            "2. Gewünschte Tasks auswählen\n"
-            "3. 'Zeitplan einrichten' klicken\n\n"
-            "Das erzeugt einen Windows-Task via 'schtasks'. "
-            "Danach läuft das Tool täglich automatisch. Das Ergebnis findest du "
-            "am nächsten Morgen in den Log-Dateien."
+            "Der Konfiguration-Reiter hat ganz oben 'Pipeline-Übersicht'.\n\n"
+            "Klick auf eine Stufe zeigt:\n"
+            "• Was in dieser Phase passiert\n"
+            "• Welche Konfigurations-Datei sie steuert\n"
+            "• Konkrete Server-Namen und Dateipfade\n\n"
+            "Die Pipeline-Stufen:\n"
+            "  Download → Transform → DB-Import → Post-Processing → Export → Upload\n\n"
+            "Im Upload-Schritt siehst du alle Brickfox-FTP-Verbindungen "
+            "(c_abe_ftp_2/3/5) und die Unite/Mercateo-Verbindung mit "
+            "den genauen Remote-Pfaden."
         ),
-        "widget_id": "scheduler_btn",
+        "widget_id": None,
     },
     {
-        "title": "Extras: Sanity-Check und Dashboard",
+        "title": "Reiter: Konfiguration – Dateien bearbeiten",
         "text": (
-            "Ganz unten in der Task-Liste findest du die Extras:\n\n"
-            "'Artikel-Sanity-Check': Prüft Datenqualität aller Kataloge "
-            "(EAN-Abdeckung, fehlende Hersteller, Bildabdeckung) und findet "
-            "Artikel die bei mehreren Lieferanten vorkommen aber Lücken haben.\n\n"
-            "'Cross-Filling Dashboard': Generiert eine HTML-Datei die du im "
-            "Browser öffnen kannst. Zeigt visuell: wer kann wem welche Felder "
-            "liefern (z.B. Büroring kennt den Hersteller, Softcarrier nicht).\n\n"
-            "Nicht im täglichen Lauf – einmal wöchentlich zur Qualitätskontrolle."
+            "Links die Liste aller Konfigurations-Dateien, rechts der Editor.\n\n"
+            "Wichtige Dateien:\n"
+            "• fname_renames.csv – Feature-Namen normalisieren\n"
+            "• fvalue_renames.csv – Feature-Werte normalisieren\n"
+            "• postprocess_prices.csv – Preisformeln je Artikel\n"
+            "• postprocess_blacklist.csv – Artikel dauerhaft ausblenden\n"
+            "• custom_categories.csv – Eigene Kategorie-Namen\n"
+            "• channel_category_mapping.csv – Marktplatz-Zuordnungen\n\n"
+            "Dateien > 64 KB werden nur angezeigt (nicht editierbar) – "
+            "sie werden per SQL-Skript generiert.\n\n"
+            "Änderungen wirken beim nächsten Lauf – kein Neustart nötig."
         ),
         "widget_id": None,
     },
     {
         "title": "Reiter: Viewer / Export",
         "text": (
-            "Der zweite Reiter 'Viewer / Export' zeigt alle Artikel aus der "
-            "internen Datenbank (article_db.sqlite).\n\n"
-            "Filter oben:\n"
+            "Zeigt alle Artikel aus der internen Datenbank (article_db.sqlite).\n\n"
+            "Filter:\n"
             "  • Von / Bis: Zeitraum der letzten Änderung\n"
-            "  • Lieferant: nur BRG / NDW / SOC\n"
-            "  • Katalog: Root-Kategorie (z.B. Arbeitsschutz)\n"
-            "  • Artikel-Nr. / EAN: Sofortfilter, reagiert beim Tippen\n\n"
-            "Doppelklick auf einen Artikel öffnet das Detailfenster mit allen "
-            "Feldern, Features und MIMEs.\n\n"
-            "Der DB-Status oben rechts zeigt immer wie viele Artikel pro "
-            "Lieferant in der Datenbank sind."
+            "  • Lieferant: BRG / NDW / SOC\n"
+            "  • Katalog: Root-Kategorie\n"
+            "  • Artikel-Nr. / EAN: Sofortfilter beim Tippen\n\n"
+            "Doppelklick = Detailansicht mit allen Feldern, Features und MIMEs.\n\n"
+            "'Gefilterte Artikel exportieren' schreibt genau die "
+            "aktuell sichtbaren Artikel als VENDOSYS_CAT XML ins Export-Verzeichnis – "
+            "mit Blacklist, Preisformeln, EAN-Dedup und allen Post-Processing-Stufen."
         ),
         "widget_id": None,
     },
     {
-        "title": "Viewer: Gefilterter Export",
+        "title": "Scheduler – Automatische Läufe",
         "text": (
-            "Der Knopf 'Gefilterte Artikel exportieren' exportiert genau die "
-            "Artikel die aktuell in der Tabelle angezeigt werden.\n\n"
-            "Was beim Export passiert:\n"
-            "  1. Blacklist-Prüfung (Artikel überspringen)\n"
-            "  2. Preisformeln anwenden (SOC: *Faktor → nrp)\n"
-            "  3. Preis-Typ-Konvertierung (BRG: net_list → nrp)\n"
-            "  4. FUSAGE=3 setzen\n"
-            "  5. MIME-Zwecke korrigieren\n"
-            "  6. EAN-Dedup (bei gleicher EAN: BRG schlägt NDW)\n"
-            "  7. VENDOSYS_CAT XML schreiben (price_type='net_customer')\n\n"
-            "Die Exportdateien liegen im Export-Verzeichnis aus config.py."
+            "Richtet einen automatischen täglichen Lauf ein – "
+            "auch ohne angemeldeten Benutzer.\n\n"
+            "Einrichten:\n"
+            "1. Uhrzeit wählen (z.B. 06:00)\n"
+            "2. Gewünschte Tasks aktivieren\n"
+            "3. 'Zeitplan einrichten' klicken\n\n"
+            "Das erstellt einen Windows-Scheduled-Task via 'schtasks'.\n"
+            "Das Ergebnis steht am nächsten Morgen in logs/Log_JJJJMMTT.txt.\n\n"
+            "Empfehlung: Setup-Check im Scheduler-Lauf immer aktiviert lassen – "
+            "er erkennt Konfigurationsprobleme bevor sie zu Fehlern werden."
         ),
-        "widget_id": None,
+        "widget_id": "scheduler_btn",
     },
     {
-        "title": "Reiter: Konfiguration",
+        "title": "Extras: Analyse und Qualitätskontrolle",
         "text": (
-            "Der dritte Reiter 'Konfiguration' ist ein eingebauter Editor "
-            "für alle Konfigurations-Dateien.\n\n"
-            "Links: Liste aller Dateien mit Kurztitel.\n"
-            "Rechts oben: Ausführliche Erklärung was die Datei macht.\n"
-            "Rechts unten: Editor zum direkten Bearbeiten.\n\n"
-            "Dateien > 64 KB (z.B. postprocess_prices.csv mit 73K Zeilen) "
-            "werden nur zur Ansicht angezeigt – sie werden automatisch "
-            "aus dem SQL-Skript generiert und nicht manuell editiert.\n\n"
-            "Nach dem Speichern: Das Tool muss NICHT neu gestartet werden –"
-            " Änderungen werden beim nächsten Export automatisch gelesen."
+            "'Artikel-Sanity-Check':\n"
+            "Prüft Datenqualität aller Kataloge – EAN-Abdeckung, fehlende "
+            "Hersteller, Bildabdeckung, Artikel die bei mehreren Lieferanten "
+            "vorkommen aber Lücken haben. Einmal wöchentlich empfohlen.\n\n"
+            "'Cross-Filling Dashboard':\n"
+            "HTML-Report: wer kann wem welche Felder liefern.\n\n"
+            "'FNAME-Analyse':\n"
+            "Extrahiert alle Feature-Namen aus den XMLs, prüft Kollisionen "
+            "und erzeugt fname_alle.csv als Grundlage für fname_renames.csv.\n\n"
+            "'Lauf-Trend-Report':\n"
+            "Visualisiert Laufzeiten und Fehler der letzten 30 Läufe."
         ),
         "widget_id": None,
     },
     {
-        "title": "Das war's! 🎉",
+        "title": "Updates – neuen Stand ziehen",
+        "text": (
+            "Das Tool wird über Git aktualisiert. Auf dem Windows-Rechner:\n\n"
+            "  cd C:\\Test\\bmecat-tool\n"
+            "  git pull\n\n"
+            "Der Setup-Check zeigt beim nächsten Start den aktuellen "
+            "Git-Branch und Commit-Hash im Log – so siehst du sofort "
+            "ob du den neuesten Stand hast.\n\n"
+            "Tipp: git log --oneline -3 zeigt die letzten 3 Commits "
+            "und ob du aktuell bist."
+        ),
+        "widget_id": None,
+    },
+    {
+        "title": "Das war's!",
         "text": (
             "Du kennst jetzt alle wichtigen Funktionen des Tools.\n\n"
-            "Wichtigste Regel für den Alltag:\n"
-            "1. start.bat öffnen\n"
-            "2. Standard-Auswahl prüfen\n"
-            "3. Starten\n"
-            "4. Log auf rote Meldungen prüfen\n\n"
-            "Bei Problemen: TUTORIAL.md und WIKI.md im Programmordner, "
-            "oder den Verbindungstest nutzen.\n\n"
-            "Dieses Tutorial ist jederzeit über den '?' Knopf oben erreichbar."
+            "Täglicher Ablauf:\n"
+            "  1. daten_ziehen.bat starten (oder Tool öffnen)\n"
+            "  2. Standard-Auswahl prüfen\n"
+            "  3. 'Starten' klicken\n"
+            "  4. Log auf rote Meldungen prüfen\n\n"
+            "Bei Problemen:\n"
+            "  • Verbindungstest nutzen\n"
+            "  • Setup-Check einzeln starten\n"
+            "  • Log in logs/Log_JJJJMMTT.txt nachschauen\n"
+            "  • Im Konfiguration-Reiter → Pipeline-Übersicht\n\n"
+            "Das Tutorial ist jederzeit über den '?' Knopf oben erreichbar."
         ),
         "widget_id": None,
     },
@@ -527,9 +619,13 @@ BUTTON_TIPS = {
 }
 
 TASK_TIPS = {
+    "setup_check":        "Prüft Git-Stand, 7-Zip, alle FTP-Passwörter, Pflichtdateien und Verzeichnisse – kein Netzwerkzugriff. Bei Fehlern wird der gesamte Lauf abgebrochen.",
     "cleanup":            "Löscht alte XML/CSV/ZIP-Dateien aus dem Arbeitsverzeichnis. Immer zuerst ausführen.",
+    "parallel_download":  "Lädt Büroring, Softcarrier und Nordwest gleichzeitig herunter – spart ca. 3 Minuten Wartezeit.",
     "bueroring":          "Büroring komplett: Download (~470 MB) → Merge+Keywords → Bestand → Upload auf Brickfox+Mercateo.",
+    "bueroring_bilder":   "Büroring Bilder und Dokumente herunterladen und entpacken. Nicht täglich nötig – nur wenn neue Bilddaten erwartet werden.",
     "bueroring_merge":    "Nur Merge ohne Download. Nützlich wenn Download erfolgreich war aber Merge fehlgeschlagen ist.",
+    "buecat_merge":       "Manueller Merge-Trigger: direkt steuern welche Dateien zusammengeführt werden.",
     "bueroring_bestand":  "Nur Bestandsdaten: Excel patchen + CSV-Exporte für Brickfox ERP und Exchange.",
     "softcarrier":        "Softcarrier komplett: Download → Feature-Merge → Brickfox-Upload. Bilder SEPARAT (nächster Task).",
     "softcarrier_merge":  "Nur Merge ohne Download. Fallback wenn Download OK aber Merge fehlgeschlagen.",
@@ -540,6 +636,12 @@ TASK_TIPS = {
     "bmecat_merge":       "Manueller Merge-Trigger: direkt steuern welche Dateien zusammengeführt werden.",
     "bestandsdaten":      "Nur Availability-CSV für Mercateo erzeugen, ohne Download.",
     "cleanup_logs":       "Alte Log-Dateien und Export-CSVs (>30 Tage) löschen.",
+    "fname_analyse":      "Extrahiert alle Feature-Namen aus den XMLs, prüft Kollisionen und erzeugt fname_alle.csv als Grundlage für fname_renames.csv.",
     "sanity_check":       "Datenqualität prüfen + Cross-Supplier-Vergleich. Einmal wöchentlich empfohlen.",
     "dashboard":          "HTML-Dashboard aus letztem Sanity-Report generieren. Im Browser öffnen.",
+    "trend_report":       "Visualisiert Laufzeiten und Fehlerquoten der letzten 30 Läufe als HTML-Bericht.",
+    "ki_anreicherung":    "Verbessert Artikeldaten mit Claude-KI (Beschreibungen, Kategorien). Erfordert AI_ENRICHMENT in config aktiviert.",
+    "eclass_analyse":     "Liest ECLASS-Kategorien aus BMEcat-XMLs und erzeugt article_eclass_categories.csv. Voraussetzung für ECLASS→Kanal-Mapping.",
+    "eclass_channel_map": "Ordnet ECLASS-Endknoten Marktplatz-Kategorien zu (eBay, Kaufland, Conrad…). Einmal gemappt gilt die Zuordnung für alle Lieferanten mit dieser ECLASS-ID.",
+    "channel_mapping":    "Lieferanten-Kategorien direkt zu Marktplatz-Kanälen mappen – Fallback für Artikel ohne ECLASS-ID.",
 }
