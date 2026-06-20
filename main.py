@@ -370,16 +370,18 @@ class App(tk.Tk):
                         gcol = 0; grow += 1
             for i in range(ncols):
                 left.columnconfigure(i, weight=1)
-            for i in range(ncols, 4):
+            for i in range(ncols, 6):
                 left.columnconfigure(i, weight=0)
             canvas.configure(scrollregion=canvas.bbox("all"))
 
         def _on_canvas_configure(e):
             canvas.itemconfig(canvas_win, width=e.width)
             w = e.width
-            ncols = (4 if w >= 640 else
-                     3 if w >= 440 else
-                     2 if w >= 280 else 1)
+            ncols = (6 if w >= 900 else
+                     5 if w >= 720 else
+                     4 if w >= 560 else
+                     3 if w >= 400 else
+                     2 if w >= 260 else 1)
             _apply_layout(ncols)
         canvas.bind("<Configure>", _on_canvas_configure)
 
