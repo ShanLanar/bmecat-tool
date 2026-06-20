@@ -274,19 +274,29 @@ class App(tk.Tk):
         # Tab 1: BMECat-Verarbeitung
         body = tk.Frame(self._notebook, bg=_T("BG"))
         self._notebook.add(body, text="  BMECat-Verarbeitung  ")
-        body.columnconfigure(1, weight=1)
-        body.rowconfigure(1, weight=1)
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(0, weight=1)
 
-        # ── Linke Spalte: Task-Auswahl (scrollbar) ───────────────────────────
-        left_outer = tk.Frame(body, bg=_T("BG2"))
-        left_outer.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(0, 10))
+        # ── Splitter: Links Task-Liste, Rechts Inhalt ─────────────────────────
+        _pane = tk.PanedWindow(body, orient="horizontal", bg=_T("BG"),
+                               sashwidth=6, sashrelief="raised",
+                               sashcursor="sb_h_double_arrow")
+        _pane.grid(row=0, column=0, sticky="nsew")
+
+        left_outer = tk.Frame(_pane, bg=_T("BG2"))
+        _pane.add(left_outer, minsize=180, width=240)
         left_outer.rowconfigure(1, weight=1)
+
+        right_outer = tk.Frame(_pane, bg=_T("BG"))
+        right_outer.columnconfigure(0, weight=1)
+        right_outer.rowconfigure(1, weight=1)
+        _pane.add(right_outer, minsize=400)
 
         tk.Label(left_outer, text="Aufgaben", font=FONT_HEAD,
                  bg=_T("BG2"), fg=_T("FG"), padx=12).grid(row=0, column=0, columnspan=2,
                                                sticky="w", pady=(10, 4))
 
-        canvas = tk.Canvas(left_outer, bg=_T("BG2"), highlightthickness=0, width=224)
+        canvas = tk.Canvas(left_outer, bg=_T("BG2"), highlightthickness=0)
         canvas.grid(row=1, column=0, sticky="ns")
 
         vsb = ttk.Scrollbar(left_outer, orient="vertical", command=canvas.yview)
@@ -377,8 +387,8 @@ class App(tk.Tk):
         self._widget_refs["sel_buttons"] = bf
 
         # ── Rechte Seite oben: Basispfad ──────────────────────────────────────
-        top_right = tk.Frame(body, bg=_T("BG"))
-        top_right.grid(row=0, column=1, sticky="ew", pady=(0, 6))
+        top_right = tk.Frame(right_outer, bg=_T("BG"))
+        top_right.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         top_right.columnconfigure(1, weight=1)
 
         tk.Label(top_right, text="Basispfad:", font=FONT_MAIN,
@@ -393,11 +403,11 @@ class App(tk.Tk):
 
         # ── Log-Fenster ───────────────────────────────────────────────────────
         self._log_txt = scrolledtext.ScrolledText(
-            body, font=FONT_MONO, bg=_T("LOG_BG"), fg=_T("LOG_FG"),
+            right_outer, font=FONT_MONO, bg=_T("LOG_BG"), fg=_T("LOG_FG"),
             insertbackground=_T("LOG_FG"), relief="flat", bd=0,
             state="disabled", wrap="word",
         )
-        self._log_txt.grid(row=1, column=1, sticky="nsew")
+        self._log_txt.grid(row=1, column=0, sticky="nsew")
         self._log_txt.tag_config("ok",   foreground=_T("GREEN"))
         self._log_txt.tag_config("err",  foreground=_T("RED"))
         self._log_txt.tag_config("warn", foreground=_T("YELLOW"))
@@ -405,9 +415,9 @@ class App(tk.Tk):
         self._log_txt.tag_config("info", foreground=_T("ORANGE"))
         self._widget_refs["log_area"] = self._log_txt
 
-        # ── Fortschrittsbereich ───────────────────────────────────────────────
+        # ── Fortschrittsbereich (außerhalb Splitter, volle Breite) ───────────
         prog_frame = tk.Frame(body, bg=_T("BG"))
-        prog_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        prog_frame.grid(row=1, column=0, sticky="ew", pady=(6, 0))
         prog_frame.columnconfigure(0, weight=1)
         self._file_lbl  = tk.Label(prog_frame, text="", font=FONT_MONO,
                                    bg=_T("BG"), fg=_T("FG_DIM_BODY"), anchor="w")
@@ -429,6 +439,15 @@ class App(tk.Tk):
         self._notebook.add(_tab3, text="  Konfiguration  ")
         from lib.config_tab import ConfigTab
         self._config_tab = ConfigTab(_tab3, self, THEMES[self._theme])
+
+        # ── Tab 4: Pipeline-Übersicht ─────────────────────────────────────────
+        _tab_pipe = tk.Frame(self._notebook, bg=_T("BG"))
+        self._notebook.add(_tab_pipe, text="  Pipeline  ")
+        _tab_pipe.columnconfigure(0, weight=1)
+        _tab_pipe.rowconfigure(0, weight=1)
+        from lib.pipeline_view import PipelineView
+        PipelineView(_tab_pipe, THEMES[self._theme]).grid(
+            row=0, column=0, sticky="nsew")
 
         # ── Fusszeile ─────────────────────────────────────────────────────────
         footer_wrap = tk.Frame(self, bg=_T("BG2"))
