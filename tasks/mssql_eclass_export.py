@@ -27,23 +27,29 @@ MSSQL_VERSIONS = ["4.0", "4.1", "5.1", "5.1.1", "5.1.4", "6.2"]
 
 # ── Code-Hilfsfunktionen ──────────────────────────────────────────────────────
 
+def _is_zero(pair: str) -> bool:
+    """Gibt True zurück wenn ein 2-stelliger Block '00' oder leer ist."""
+    return pair == "00"
+
 def code8_to_eclass(code8: str) -> str:
-    """'20010101' → '20-01-01-01'"""
-    s = str(code8).zfill(8)
+    """'20010101' → '20-01-01-01', '200201xx' → '20-02-01-xx'"""
+    s = str(code8).lower().ljust(8, '0')[:8]
     seg, hg, gr, kl = s[0:2], s[2:4], s[4:6], s[6:8]
-    if hg == "00": return seg
-    if gr == "00": return f"{seg}-{hg}"
-    if kl == "00": return f"{seg}-{hg}-{gr}"
+    if _is_zero(hg): return seg
+    if _is_zero(gr): return f"{seg}-{hg}"
+    if _is_zero(kl): return f"{seg}-{hg}-{gr}"
     return f"{seg}-{hg}-{gr}-{kl}"
 
 
 def parent_code8(code8: str) -> str:
-    """Gibt den 8-stelligen Parent-Code zurück, oder '' für Segmente."""
-    s = str(code8).zfill(8)
-    if s[2:8] == "000000": return ""           # Segment → kein Parent
-    if s[4:8] == "0000":   return s[0:2] + "000000"   # HG → Segment
-    if s[6:8] == "00":     return s[0:4] + "0000"     # Gruppe → HG
-    return s[0:6] + "00"                               # Klasse → Gruppe
+    """Gibt den 8-stelligen Parent-Code zurück, oder '' für Segmente.
+    Wildcards (xx) gelten als gefüllt → Klassen-Ebene."""
+    s = str(code8).lower().ljust(8, '0')[:8]
+    hg, gr, kl = s[2:4], s[4:6], s[6:8]
+    if _is_zero(hg): return ""                    # Segment → kein Parent
+    if _is_zero(gr): return s[0:2] + "000000"     # HG → Segment
+    if _is_zero(kl): return s[0:4] + "0000"       # Gruppe → HG
+    return s[0:6] + "00"                           # Klasse (inkl. xx) → Gruppe
 
 
 # ── Export ────────────────────────────────────────────────────────────────────
@@ -69,28 +75,28 @@ def export(server: str, database: str, out_csv: str, progress_cb=None):
         cursor = conn.cursor()
 
         cursor.execute("""
-            SELECT kennung, bezeichnung, ebene, version, sprache
+            SELECT eclass, bezeichnung, ebene, version, sprache
             FROM   [bur_core].[eclass_kategorien]
             WHERE  sprache IN ('de', 'en')
-              AND  kennung IS NOT NULL
-              AND  ebene   IS NOT NULL
-            ORDER BY eclass, kennung
+              AND  eclass IS NOT NULL
+              AND  ebene  IS NOT NULL
+            ORDER BY version, eclass
         """)
 
-        rows_de: dict[tuple, dict] = {}   # (version, kennung) → row
-        rows_en: dict[tuple, str]  = {}   # (version, kennung) → name_en
+        rows_de: dict[tuple, dict] = {}   # (version, eclass_code) → row
+        rows_en: dict[tuple, str]  = {}   # (version, eclass_code) → name_en
 
-        for kennung, bezeichnung, ebene, version, sprache in cursor.fetchall():
-            key = (str(version), str(kennung))
+        for eclass_code, bezeichnung, ebene, version, sprache in cursor.fetchall():
+            key = (str(version), str(eclass_code))
+            parent8 = parent_code8(eclass_code)
             if sprache == "de":
                 rows_de[key] = {
                     "version":     str(version),
-                    "code":        code8_to_eclass(kennung),
+                    "code":        code8_to_eclass(eclass_code),
                     "name_de":     bezeichnung or "",
                     "name_en":     "",
                     "level":       LEVELS.get(int(ebene), "klasse"),
-                    "parent_code": code8_to_eclass(parent_code8(kennung))
-                                   if parent_code8(kennung) else "",
+                    "parent_code": code8_to_eclass(parent8) if parent8 else "",
                 }
             elif sprache == "en":
                 rows_en[key] = bezeichnung or ""
@@ -98,7 +104,7 @@ def export(server: str, database: str, out_csv: str, progress_cb=None):
     # Englische Namen eintragen
     for key, name_en in rows_en.items():
         if key in rows_de:
-            rows_de[key]["name_en"] = name_en
+                rows_de[key]["name_en"] = name_en
 
     result = list(rows_de.values())
     p(f"  {len(result):,} Einträge gelesen")
