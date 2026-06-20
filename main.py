@@ -367,7 +367,7 @@ class App(tk.Tk):
 
         def _on_canvas_configure(e):
             canvas.itemconfig(canvas_win, width=e.width)
-            _apply_layout(2 if e.width >= 420 else 1)
+            _apply_layout(2 if e.width >= 360 else 1)
         canvas.bind("<Configure>", _on_canvas_configure)
 
         current_group = None
