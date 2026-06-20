@@ -285,6 +285,8 @@ class App(tk.Tk):
 
         left_outer = tk.Frame(_pane, bg=_T("BG2"))
         _pane.add(left_outer, minsize=180, width=240)
+        left_outer.columnconfigure(0, weight=1)
+        left_outer.columnconfigure(1, weight=0)
         left_outer.rowconfigure(2, weight=1)
 
         right_outer = tk.Frame(_pane, bg=_T("BG"))
@@ -327,11 +329,22 @@ class App(tk.Tk):
         left.bind("<MouseWheel>", _on_mousewheel)
 
         from lib.tutorial import ToolTip, TASK_TIPS
-        from lib.design import add_hover, lighten, FONT_UI, FONT_UI_SM, FONT_CAP
+        from lib.design import lighten, FONT_UI, FONT_UI_SM
 
-        # Widgets erst sammeln, dann per _apply_layout in 1 oder 2 Spalten legen
-        _task_items = []   # ("group"|"task"|"sep", widget)
-        _cols_state  = {"n": 0}
+        _task_items       = []   # ("group"|"task"|"sep", widget)
+        self._task_btns   = {}   # task_id → (btn, var)
+        _cols_state       = {"n": 0}
+
+        def _refresh_btn(task_id):
+            btn, var = self._task_btns[task_id]
+            if var.get():
+                btn.config(bg=_T("ACCENT"), fg="#ffffff",
+                           activebackground=lighten(_T("ACCENT"), 12),
+                           activeforeground="#ffffff")
+            else:
+                btn.config(bg=_T("BG3"), fg=_T("FG_DIM"),
+                           activebackground=lighten(_T("BG3"), 8),
+                           activeforeground=_T("FG"))
 
         def _apply_layout(ncols):
             if ncols == _cols_state["n"]:
@@ -341,33 +354,33 @@ class App(tk.Tk):
                 child.grid_forget()
             grow = gcol = 0
             for kind, widget in _task_items:
-                if kind == "group":
+                if kind in ("group", "sep"):
                     if gcol > 0:
                         grow += 1; gcol = 0
+                    sticky = "ew" if kind == "group" else "ew"
+                    pady   = (8, 2) if kind == "group" else 6
                     widget.grid(row=grow, column=0, columnspan=ncols,
-                                sticky="ew", pady=(8, 2), padx=2)
-                    grow += 1; gcol = 0
-                elif kind == "sep":
-                    if gcol > 0:
-                        grow += 1; gcol = 0
-                    widget.grid(row=grow, column=0, columnspan=ncols,
-                                sticky="ew", pady=8, padx=2)
+                                sticky=sticky, pady=pady, padx=4)
                     grow += 1; gcol = 0
                 else:
                     widget.grid(row=grow, column=gcol, sticky="nsew",
-                                padx=2, pady=1)
+                                padx=3, pady=2)
                     gcol += 1
                     if gcol >= ncols:
                         gcol = 0; grow += 1
             for i in range(ncols):
                 left.columnconfigure(i, weight=1)
-            if ncols == 1:
-                left.columnconfigure(1, weight=0)
+            for i in range(ncols, 4):
+                left.columnconfigure(i, weight=0)
             canvas.configure(scrollregion=canvas.bbox("all"))
 
         def _on_canvas_configure(e):
             canvas.itemconfig(canvas_win, width=e.width)
-            _apply_layout(2 if e.width >= 360 else 1)
+            w = e.width
+            ncols = (4 if w >= 640 else
+                     3 if w >= 440 else
+                     2 if w >= 280 else 1)
+            _apply_layout(ncols)
         canvas.bind("<Configure>", _on_canvas_configure)
 
         current_group = None
@@ -377,43 +390,38 @@ class App(tk.Tk):
                 current_group = grp
                 sep_frm = tk.Frame(left, bg=_T("BG2"))
                 sep_frm.bind("<MouseWheel>", _on_mousewheel)
-                tk.Frame(sep_frm, bg=_T("BORDER"), height=1).pack(fill="x", pady=(0, 4))
-                lbl = tk.Label(sep_frm, text=grp.upper(),
-                               font=("Segoe UI", 7, "bold"),
-                               bg=_T("BG2"), fg=_T("FG_DIM"), padx=2)
-                lbl.pack(anchor="w")
-                lbl.bind("<MouseWheel>", _on_mousewheel)
+                tk.Frame(sep_frm, bg=_T("BORDER"), height=1).pack(
+                    fill="x", pady=(0, 3))
+                tk.Label(sep_frm, text=grp.upper(),
+                         font=("Segoe UI", 7, "bold"),
+                         bg=_T("BG2"), fg=_T("FG_DIM"),
+                         padx=2).pack(anchor="w")
                 _task_items.append(("group", sep_frm))
 
             var = tk.BooleanVar(value=task.get("default", True))
             self._checks[task["id"]] = var
 
-            row_h = lighten(_T("BG2"), 8)
-            row = tk.Frame(left, bg=_T("BG2"), pady=2, padx=2)
-            row.bind("<MouseWheel>", _on_mousewheel)
-            add_hover(row, _T("BG2"), row_h)
-
-            cb = tk.Checkbutton(
-                row, text=task["name"], variable=var,
-                font=FONT_UI, bg=_T("BG2"), fg=_T("FG"),
-                selectcolor=_T("BG3"), activebackground=row_h, activeforeground=_T("FG"),
-                cursor="hand2", relief="flat", bd=0)
-            cb.pack(anchor="w")
-            cb.bind("<MouseWheel>", _on_mousewheel)
-            row.bind("<Enter>", lambda e, c=cb, h=row_h:
-                     c.config(bg=h, activebackground=h))
-            row.bind("<Leave>", lambda e, c=cb:
-                     c.config(bg=_T("BG2"), activebackground=_T("BG2")))
-            tip = TASK_TIPS.get(task["id"])
-            if tip: ToolTip(cb, tip)
-
-            dl = tk.Label(row, text=task["desc"], font=FONT_CAP,
-                          bg=_T("BG2"), fg=_T("FG_DIM"), wraplength=195, justify="left")
-            dl.pack(anchor="w", padx=(22, 0), pady=(0, 1))
-            dl.bind("<MouseWheel>", _on_mousewheel)
-            add_hover(dl, _T("BG2"), row_h)
-
-            _task_items.append(("task", row))
+            tip_text = task["desc"]
+            btn = tk.Button(
+                left,
+                text=task["name"],
+                font=FONT_UI_SM,
+                relief="flat", bd=0,
+                cursor="hand2",
+                padx=6, pady=5,
+                wraplength=130,
+                justify="center",
+                command=lambda tid=task["id"]: (
+                    self._task_btns[tid][1].set(
+                        not self._task_btns[tid][1].get()),
+                    _refresh_btn(tid)
+                )
+            )
+            btn.bind("<MouseWheel>", _on_mousewheel)
+            ToolTip(btn, tip_text)
+            self._task_btns[task["id"]] = (btn, var)
+            _refresh_btn(task["id"])
+            _task_items.append(("task", btn))
 
         _task_items.append(("sep", ttk.Separator(left, orient="horizontal")))
         _apply_layout(1)
@@ -552,14 +560,29 @@ class App(tk.Tk):
     def _select_all(self):
         for v in self._checks.values():
             v.set(True)
+        self._refresh_all_btns()
 
     def _deselect_all(self):
         for v in self._checks.values():
             v.set(False)
+        self._refresh_all_btns()
 
     def _select_default(self):
         for task in TASKS:
             self._checks[task["id"]].set(task.get("default", True))
+        self._refresh_all_btns()
+
+    def _refresh_all_btns(self):
+        from lib.design import lighten
+        for tid, (btn, var) in self._task_btns.items():
+            if var.get():
+                btn.config(bg=_T("ACCENT"), fg="#ffffff",
+                           activebackground=lighten(_T("ACCENT"), 12),
+                           activeforeground="#ffffff")
+            else:
+                btn.config(bg=_T("BG3"), fg=_T("FG_DIM"),
+                           activebackground=lighten(_T("BG3"), 8),
+                           activeforeground=_T("FG"))
 
     # ── Dialoge ───────────────────────────────────────────────────────────────
     def _open_scheduler(self):
