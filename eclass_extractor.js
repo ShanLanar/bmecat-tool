@@ -3,12 +3,8 @@
 //
 // Seite: https://eclass.eu/eclass-standard/content-suche
 //
-// Das Script läuft komplett automatisch:
-//   1. Liest alle Versionen aus dem Versions-Dropdown
-//   2. Lädt jede Version in einem versteckten Iframe (echter Browser-Request)
-//   3. Liest alle 4 Hierarchiestufen (Segment → Klasse) per Seiten-Fetch
-//   4. Lädt nach jeder Version eclass_catalog_X.Y.csv herunter
-//   5. Am Ende: eclass_catalog_all.csv mit allen Versionen
+// Standard: nur die im Dropdown aktuell gewählte Version wird geladen.
+// Für alle Versionen: ALLE_VERSIONEN = true setzen.
 //
 // Ausführen: Einfach alles markieren, kopieren, in Konsole einfügen + Enter
 // ═══════════════════════════════════════════════════════════════════════════
@@ -16,9 +12,11 @@
 (async function eClassExtract() {
 'use strict';
 
-const DELAY   = 400;   // ms Pause zwischen Requests (Server schonen)
-const LANG    = '0';   // 0=DE, 1=EN, 2=FR, 3=CN
-const DISCHARGE = '0'; // 0=BASIC, 1=ADVANCED
+// ── Konfiguration ─────────────────────────────────────────────────────────
+const ALLE_VERSIONEN = false;  // true = alle; false = nur die aktuell gewählte
+const DELAY          = 400;    // ms Pause zwischen Requests (Server schonen)
+const LANG           = '0';    // 0=DE, 1=EN, 2=FR, 3=CN
+const DISCHARGE      = '0';    // 0=BASIC, 1=ADVANCED
 
 // ── Hilfsfunktionen ──────────────────────────────────────────────────────
 
@@ -150,8 +148,14 @@ function downloadCsv(rows, filename) {
 
 const vSelect = document.getElementById('versionlist');
 if (!vSelect) { console.error('❌ Nicht auf der eClass-Seite!'); return; }
-const versions = [...vSelect.options].map(o => o.value).filter(v => v);
-console.log(`✅ ${versions.length} Versionen gefunden:`, versions);
+
+const allVersions     = [...vSelect.options].map(o => o.value).filter(v => v);
+const selectedVersion = vSelect.value;
+const versions        = ALLE_VERSIONEN ? allVersions : [selectedVersion];
+
+console.log(ALLE_VERSIONEN
+    ? `✅ Alle ${allVersions.length} Versionen: ${allVersions.join(', ')}`
+    : `✅ Gewählte Version: ${selectedVersion}`);
 
 const allResults = [];
 let   total      = 0;
