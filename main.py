@@ -440,15 +440,6 @@ class App(tk.Tk):
         from lib.config_tab import ConfigTab
         self._config_tab = ConfigTab(_tab3, self, THEMES[self._theme])
 
-        # ── Tab 4: Pipeline-Übersicht ─────────────────────────────────────────
-        _tab_pipe = tk.Frame(self._notebook, bg=_T("BG"))
-        self._notebook.add(_tab_pipe, text="  Pipeline  ")
-        _tab_pipe.columnconfigure(0, weight=1)
-        _tab_pipe.rowconfigure(0, weight=1)
-        from lib.pipeline_view import PipelineView
-        PipelineView(_tab_pipe, THEMES[self._theme]).grid(
-            row=0, column=0, sticky="nsew")
-
         # ── Fusszeile ─────────────────────────────────────────────────────────
         footer_wrap = tk.Frame(self, bg=_T("BG2"))
         footer_wrap.grid(row=2, column=0, sticky="ew")
