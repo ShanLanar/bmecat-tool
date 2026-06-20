@@ -216,15 +216,17 @@ const rows    = results.map(r =>
     [r.version, r.code, r.name_de, r.name_en, r.level, r.parent_code]
     .map(escape).join(';')
 );
-const csv  = '﻿' + [HEADER, ...rows].join('\r\n');  // BOM für Excel
-const blob = new Blob([csv], {type: 'text/csv;charset=utf-8'});
-const link = Object.assign(document.createElement('a'), {
-    href: URL.createObjectURL(blob), download: 'eclass_catalog.csv'
+const csv      = '﻿' + [HEADER, ...rows].join('\r\n');  // BOM für Excel
+const blob     = new Blob([csv], {type: 'text/csv;charset=utf-8'});
+const verLabel = versions.length === 1 ? versions[0] : 'all';
+const filename = `eclass_catalog_${verLabel}.csv`;
+const link     = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob), download: filename
 });
 document.body.appendChild(link);
 link.click();
 link.remove();
 
-console.log(`\n✅ Fertig! ${total} Einträge in ${versions.length} Versionen → eclass_catalog.csv`);
+console.log(`\n✅ Fertig! ${total} Einträge in ${versions.length} Versionen → ${filename}`);
 
 })().catch(e => console.error('❌ Fehler:', e));
