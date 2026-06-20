@@ -15,6 +15,14 @@ log = logging.getLogger(__name__)
 TASKS = [
     # ── Vorbereitung ──────────────────────────────────────────────────────────
     {
+        "id":      "setup_check",
+        "name":    "Setup-Check",
+        "desc":    "Git-Stand, Tools, Passwörter, Pflichtdateien und Verzeichnisse prüfen – kein Netzwerkzugriff",
+        "fn":      "tasks.setup_check:run",
+        "default": False,
+        "group":   "Vorbereitung",
+    },
+    {
         "id":      "cleanup",
         "name":    "Aufräumen",
         "desc":    "Alte XML/CSV/ZIP in in_BME und JPGs in in2 löschen",
