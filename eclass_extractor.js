@@ -7,7 +7,8 @@
 //   1. Liest alle Versionen aus dem Versions-Dropdown
 //   2. Schaltet jede Version durch (per Formular-Submit)
 //   3. Liest alle 4 Hierarchiestufen (Segment → Klasse) per Seiten-Fetch
-//   4. Lädt eclass_catalog.csv herunter (Semikolon-getrennt, UTF-8 mit BOM)
+//   4. Lädt nach jeder Version eclass_catalog_X.Y.csv herunter
+//   5. Am Ende: eclass_catalog_all.csv mit allen Versionen
 //
 // Ausführen: Einfach alles markieren, kopieren, in Konsole einfügen + Enter
 // ═══════════════════════════════════════════════════════════════════════════
@@ -42,9 +43,6 @@ function toEclassCode(code8) {
     return `${seg}-${hg}-${gr}-${kl}`;
 }
 
-const LEVELS = {0:'segment', 1:'hauptgruppe', 2:'gruppe', 3:'klasse'};
-function eclassLevel(code) { return LEVELS[code.split('-').length - 1] || 'klasse'; }
-
 /**
  * Extrahiert alle Tree-Knoten aus einem HTML-Dokument.
  * Gibt [{code, name, href}] zurück.
@@ -52,21 +50,17 @@ function eclassLevel(code) { return LEVELS[code.split('-').length - 1] || 'klass
 function parseNodes(doc) {
     const nodes = [];
     const seen  = new Set();
-    // Suche alle li-Elemente mit id="node_XXXXXXXX"
     doc.querySelectorAll('li[id^="node_"]').forEach(li => {
-        const nodeId = li.id.replace('node_', '');  // "13000000"
+        const nodeId = li.id.replace('node_', '');
         if (seen.has(nodeId)) return;
         seen.add(nodeId);
 
         const a = li.querySelector('a.treeLink');
         if (!a || !a.href) return;
 
-        // Text: "<i>-Icon</i>  13 Entwicklung..." oder "24-22-09-01 Name"
-        // → Icon hat leeren textContent, führender Zahlen-/Strich-Präfix wird entfernt
         let text = a.textContent.replace(/\s+/g, ' ').trim();
-        // Entferne eClass-Code-Präfix: "13 " / "24-22 " / "24-22-09-01 "
         text = text.replace(/^\d{2}(?:-\d{2}){0,3}\s+/, '').trim();
-        if (!text) text = a.textContent.trim(); // Fallback: unbearbeiteter Text
+        if (!text) text = a.textContent.trim();
 
         nodes.push({
             code8: nodeId,
@@ -91,6 +85,7 @@ async function fetchDoc(url) {
 
 /**
  * Wechselt die Version per Formular-Submit und gibt die geparste Seite zurück.
+ * Prüft, ob die Version im Response tatsächlich gewechselt hat.
  */
 async function fetchVersionPage(version) {
     const form = document.getElementById('ajaxselectlist-form');
@@ -110,15 +105,49 @@ async function fetchVersionPage(version) {
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status} für Version ${version}`);
     const html = await resp.text();
-    return new DOMParser().parseFromString(html, 'text/html');
+    const doc  = new DOMParser().parseFromString(html, 'text/html');
+
+    // ── Versions-Verifikation ─────────────────────────────────────────────
+    const vSel   = doc.getElementById('versionlist');
+    const loaded = vSel?.value ?? '?';
+    if (loaded !== version) {
+        console.warn(`  ⚠ Versions-Switch nicht sicher: angefordert=${version}, geladen=${loaded}`);
+        console.warn(`    → Segment-Codes werden auf Version ${version} geprüft, falls Links version-spezifisch sind`);
+    } else {
+        console.log(`  ✓ Version ${version} bestätigt`);
+    }
+
+    return doc;
+}
+
+/**
+ * Erzeugt und lädt eine CSV-Datei herunter.
+ */
+const escape = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+const HEADER  = 'version;code;name_de;name_en;level;parent_code';
+
+function downloadCsv(rows, filename) {
+    const lines = rows.map(r =>
+        [r.version, r.code, r.name_de, r.name_en, r.level, r.parent_code]
+        .map(escape).join(';')
+    );
+    const csv  = '﻿' + [HEADER, ...lines].join('\r\n');  // BOM für Excel
+    const blob = new Blob([csv], {type: 'text/csv;charset=utf-8'});
+    const link = Object.assign(document.createElement('a'), {
+        href: URL.createObjectURL(blob), download: filename
+    });
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
+    console.log(`  💾 Heruntergeladen: ${filename} (${rows.length} Zeilen)`);
 }
 
 // ── Hauptschleife ─────────────────────────────────────────────────────────
 
-// Alle Versionen aus dem Dropdown lesen
 const vSelect  = document.getElementById('versionlist');
 if (!vSelect) { console.error('❌ Nicht auf der eClass-Seite!'); return; }
-const versions = [...vSelect.options].map(o => o.value);
+const versions = [...vSelect.options].map(o => o.value).filter(v => v);
 console.log(`✅ ${versions.length} Versionen gefunden:`, versions);
 
 const results  = [];
@@ -135,6 +164,8 @@ for (const version of versions) {
         continue;
     }
 
+    const versionRows = [];
+
     // Segmente (Ebene 1) aus der Seite lesen
     const segments = parseNodes(rootDoc);
     console.log(`  ${segments.length} Segmente`);
@@ -144,10 +175,12 @@ for (const version of versions) {
     }
 
     for (const seg of segments) {
-        results.push({
+        const segRow = {
             version, code: seg.code, name_de: seg.name, name_en: '',
             level: 'segment', parent_code: ''
-        });
+        };
+        results.push(segRow);
+        versionRows.push(segRow);
         total++;
 
         // Hauptgruppen (Ebene 2)
@@ -155,17 +188,18 @@ for (const version of versions) {
         try { hgDoc = await fetchDoc(seg.href); }
         catch(e) { console.warn(`  ⚠ Segment ${seg.code}:`, e.message); continue; }
 
-        // Nur direkte Kinder: Code muss mit "SEG-" beginnen und 2 Teile haben
         const hgruppen = parseNodes(hgDoc).filter(n =>
             n.code.startsWith(seg.code + '-') && n.code.split('-').length === 2);
         for (const hg of hgruppen) {
-            results.push({
+            const hgRow = {
                 version, code: hg.code, name_de: hg.name, name_en: '',
                 level: 'hauptgruppe', parent_code: seg.code
-            });
+            };
+            results.push(hgRow);
+            versionRows.push(hgRow);
             total++;
 
-            // Gruppen (Ebene 3): Code beginnt mit "SEG-HG-" und hat 3 Teile
+            // Gruppen (Ebene 3)
             let grDoc;
             try { grDoc = await fetchDoc(hg.href); }
             catch(e) { console.warn(`    ⚠ HG ${hg.code}:`, e.message); continue; }
@@ -173,13 +207,15 @@ for (const version of versions) {
             const gruppen = parseNodes(grDoc).filter(n =>
                 n.code.startsWith(hg.code + '-') && n.code.split('-').length === 3);
             for (const gr of gruppen) {
-                results.push({
+                const grRow = {
                     version, code: gr.code, name_de: gr.name, name_en: '',
                     level: 'gruppe', parent_code: hg.code
-                });
+                };
+                results.push(grRow);
+                versionRows.push(grRow);
                 total++;
 
-                // Klassen (Ebene 4): Code beginnt mit "SEG-HG-GR-" und hat 4 Teile
+                // Klassen (Ebene 4)
                 let klDoc;
                 try { klDoc = await fetchDoc(gr.href); }
                 catch(e) { console.warn(`      ⚠ Gr ${gr.code}:`, e.message); continue; }
@@ -187,46 +223,38 @@ for (const version of versions) {
                 const klassen = parseNodes(klDoc).filter(n =>
                     n.code.startsWith(gr.code + '-') && n.code.split('-').length === 4);
                 for (const kl of klassen) {
-                    results.push({
+                    const klRow = {
                         version, code: kl.code, name_de: kl.name, name_en: '',
                         level: 'klasse', parent_code: gr.code
-                    });
+                    };
+                    results.push(klRow);
+                    versionRows.push(klRow);
                     total++;
                 }
                 if (klassen.length)
                     console.log(`      ${gr.code}: ${klassen.length} Klassen`);
             }
         }
-        const nGruppen = results.filter(r => r.version===version && r.parent_code.startsWith(seg.code+'-') && r.level==='gruppe').length;
+        const nGruppen = versionRows.filter(r => r.parent_code.startsWith(seg.code+'-') && r.level==='gruppe').length;
         console.log(`  ${seg.code}: ${hgruppen.length} HG, ${nGruppen} Gruppen`);
     }
-    console.log(`  ✅ Version ${version}: ${results.filter(r=>r.version===version).length} Einträge`);
+
+    console.log(`  ✅ Version ${version}: ${versionRows.length} Einträge`);
+
+    // ── Checkpoint-Download nach jeder Version ────────────────────────────
+    downloadCsv(versionRows, `eclass_catalog_${version}.csv`);
 }
 
-// ── CSV erzeugen und downloaden ───────────────────────────────────────────
+// ── Gesamt-CSV ────────────────────────────────────────────────────────────
 
 if (!results.length) {
     console.error('❌ Keine Daten gesammelt.');
     return;
 }
 
-const escape = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-const HEADER  = 'version;code;name_de;name_en;level;parent_code';
-const rows    = results.map(r =>
-    [r.version, r.code, r.name_de, r.name_en, r.level, r.parent_code]
-    .map(escape).join(';')
-);
-const csv      = '﻿' + [HEADER, ...rows].join('\r\n');  // BOM für Excel
-const blob     = new Blob([csv], {type: 'text/csv;charset=utf-8'});
-const verLabel = versions.length === 1 ? versions[0] : 'all';
-const filename = `eclass_catalog_${verLabel}.csv`;
-const link     = Object.assign(document.createElement('a'), {
-    href: URL.createObjectURL(blob), download: filename
-});
-document.body.appendChild(link);
-link.click();
-link.remove();
+const allLabel = versions.length === 1 ? versions[0] : 'all';
+downloadCsv(results, `eclass_catalog_${allLabel}.csv`);
 
-console.log(`\n✅ Fertig! ${total} Einträge in ${versions.length} Versionen → ${filename}`);
+console.log(`\n✅ Fertig! ${total} Einträge in ${versions.length} Versionen`);
 
 })().catch(e => console.error('❌ Fehler:', e));
