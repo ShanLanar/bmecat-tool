@@ -642,6 +642,7 @@ TASK_TIPS = {
     "dashboard":          "HTML-Dashboard aus letztem Sanity-Report generieren. Im Browser öffnen.",
     "trend_report":       "Visualisiert Laufzeiten und Fehlerquoten der letzten 30 Läufe als HTML-Bericht.",
     "ki_anreicherung":    "Verbessert Artikeldaten mit Claude-KI (Beschreibungen, Kategorien). Erfordert AI_ENRICHMENT in config aktiviert.",
+    "eclass_catalog_scrape": "Scrapt den vollständigen eClass-Katalog von eclass.eu (alle Versionen, alle 4 Ebenen). Einmalig ausführen. Benötigt: py -m pip install selenium webdriver-manager. Ausgabe: eclass_catalog.csv.",
     "eclass_analyse":     "Liest ECLASS-Kategorien aus BMEcat-XMLs und erzeugt article_eclass_categories.csv. Voraussetzung für ECLASS→Kanal-Mapping.",
     "eclass_channel_map": "Ordnet ECLASS-Endknoten Marktplatz-Kategorien zu (eBay, Kaufland, Conrad…). Einmal gemappt gilt die Zuordnung für alle Lieferanten mit dieser ECLASS-ID.",
     "channel_mapping":    "Lieferanten-Kategorien direkt zu Marktplatz-Kanälen mappen – Fallback für Artikel ohne ECLASS-ID.",

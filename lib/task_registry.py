@@ -191,6 +191,14 @@ TASKS = [
         "group":   "Marktplätze",
     },
     {
+        "id":      "eclass_catalog_scrape",
+        "name":    "eClass-Katalog scrapen",
+        "desc":    "Vollständigen eClass-Katalog von eclass.eu laden (alle Versionen, alle Ebenen) → eclass_catalog.csv. Einmalig ausführen. Benötigt Selenium + Chrome.",
+        "fn":      "tasks.eclass_catalog_scrape:run",
+        "default": False,
+        "group":   "Marktplätze",
+    },
+    {
         "id":      "eclass_channel_map",
         "name":    "ECLASS → Kanal-Mapping",
         "desc":    "ECLASS-Endknoten lieferantenübergreifend zu Marktplatz-Kategorien mappen (nach ECLASS-Analyse)",
