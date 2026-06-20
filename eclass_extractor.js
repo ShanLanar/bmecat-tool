@@ -61,11 +61,12 @@ function parseNodes(doc) {
         const a = li.querySelector('a.treeLink');
         if (!a || !a.href) return;
 
-        // Text enthält: Icon-Text + "  13 Entwicklung (Dienstleistung)"
-        // Wir entfernen den führenden Leerraum und den numerischen Präfix
+        // Text: "<i>-Icon</i>  13 Entwicklung..." oder "24-22-09-01 Name"
+        // → Icon hat leeren textContent, führender Zahlen-/Strich-Präfix wird entfernt
         let text = a.textContent.replace(/\s+/g, ' ').trim();
-        // Entferne eClass-Code-Präfixe wie "13 " oder "24-22-09-01 "
-        text = text.replace(/^[\d][\d\-]* /, '').trim();
+        // Entferne eClass-Code-Präfix: "13 " / "24-22 " / "24-22-09-01 "
+        text = text.replace(/^\d{2}(?:-\d{2}){0,3}\s+/, '').trim();
+        if (!text) text = a.textContent.trim(); // Fallback: unbearbeiteter Text
 
         nodes.push({
             code8: nodeId,
@@ -154,7 +155,9 @@ for (const version of versions) {
         try { hgDoc = await fetchDoc(seg.href); }
         catch(e) { console.warn(`  ⚠ Segment ${seg.code}:`, e.message); continue; }
 
-        const hgruppen = parseNodes(hgDoc).filter(n => n.code !== seg.code);
+        // Nur direkte Kinder: Code muss mit "SEG-" beginnen und 2 Teile haben
+        const hgruppen = parseNodes(hgDoc).filter(n =>
+            n.code.startsWith(seg.code + '-') && n.code.split('-').length === 2);
         for (const hg of hgruppen) {
             results.push({
                 version, code: hg.code, name_de: hg.name, name_en: '',
@@ -162,13 +165,13 @@ for (const version of versions) {
             });
             total++;
 
-            // Gruppen (Ebene 3)
+            // Gruppen (Ebene 3): Code beginnt mit "SEG-HG-" und hat 3 Teile
             let grDoc;
             try { grDoc = await fetchDoc(hg.href); }
             catch(e) { console.warn(`    ⚠ HG ${hg.code}:`, e.message); continue; }
 
             const gruppen = parseNodes(grDoc).filter(n =>
-                n.code !== seg.code && n.code !== hg.code);
+                n.code.startsWith(hg.code + '-') && n.code.split('-').length === 3);
             for (const gr of gruppen) {
                 results.push({
                     version, code: gr.code, name_de: gr.name, name_en: '',
@@ -176,13 +179,13 @@ for (const version of versions) {
                 });
                 total++;
 
-                // Klassen (Ebene 4)
+                // Klassen (Ebene 4): Code beginnt mit "SEG-HG-GR-" und hat 4 Teile
                 let klDoc;
                 try { klDoc = await fetchDoc(gr.href); }
                 catch(e) { console.warn(`      ⚠ Gr ${gr.code}:`, e.message); continue; }
 
                 const klassen = parseNodes(klDoc).filter(n =>
-                    n.code !== seg.code && n.code !== hg.code && n.code !== gr.code);
+                    n.code.startsWith(gr.code + '-') && n.code.split('-').length === 4);
                 for (const kl of klassen) {
                     results.push({
                         version, code: kl.code, name_de: kl.name, name_en: '',
@@ -194,9 +197,8 @@ for (const version of versions) {
                     console.log(`      ${gr.code}: ${klassen.length} Klassen`);
             }
         }
-        console.log(`  ${seg.code}: ${hgruppen.length} HG, ${
-            results.filter(r => r.version===version && r.parent_code.startsWith(seg.code.slice(0,2)) && r.level==='gruppe').length
-        } Gruppen`);
+        const nGruppen = results.filter(r => r.version===version && r.parent_code.startsWith(seg.code+'-') && r.level==='gruppe').length;
+        console.log(`  ${seg.code}: ${hgruppen.length} HG, ${nGruppen} Gruppen`);
     }
     console.log(`  ✅ Version ${version}: ${results.filter(r=>r.version===version).length} Einträge`);
 }
