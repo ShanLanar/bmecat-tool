@@ -24,10 +24,25 @@ PIPELINE = [
         "desc": (
             "Das Tool verbindet sich per FTP oder SFTP mit dem Lieferanten-Server\n"
             "und lädt die aktuellen Katalog-Dateien herunter.\n\n"
-            "Was heruntergeladen wird (je nach Lieferant):\n"
-            "  • Büroring:    bueroring.xml (~470 MB), BESTAND.xlsx\n"
-            "  • Softcarrier: soft-carrier.xml (~280 MB), DATA.CSV, HERSTINFO.CSV\n"
-            "  • Nordwest:    arbeitsschutz.zip, werkstatt.zip, werkzeugtechnik.zip\n\n"
+            "Quellen (Lieferant → Server → Datei → lokal):\n"
+            "┌─ Büroring ──────────────────────────────────────────\n"
+            "│  sftp.bueroring.de (User: 400446-w)\n"
+            "│  downloads/bueroforum/br-ek_DE_BMEcat_DEU_ABE.zip\n"
+            "│    → in_BME/bueroring.xml        (ABE + ECLASS-Features)\n"
+            "│  downloads/bueroforum/bf-ek_DE_BMEcat_DEU.zip\n"
+            "│    → in_BME/bueroring_basis.xml  (Hauptkatalog)\n"
+            "│  downloads/bueroforum/br-bestand.zip\n"
+            "│    → in_BME/availability-data-catalog-32WQS.csv\n"
+            "├─ Softcarrier ───────────────────────────────────────\n"
+            "│  ftp.softcarrier.com (User: ABE-GmbH)\n"
+            "│  soft-carrier_*.xml → in_BME/soft-carrier.xml\n"
+            "│  DATA.CSV, HERSTINFO.CSV → Preise/Hersteller\n"
+            "├─ Nordwest ──────────────────────────────────────────\n"
+            "│  filehub.configo.de (User: abe_admin)\n"
+            "│  arbeitsschutz.zip, werkstatt.zip, werkzeugtechnik.zip\n"
+            "│    → in_BME/*.xml\n"
+            "└─ Systeam / Soennecken ──────────────────────────────\n"
+            "   ftp.systeam.de / ftpshop.soennecken.de\n\n"
             "Retry: 3 Versuche mit 30 s Pause bei Verbindungsabbruch.\n"
             "Hash-Check: bereits aktuelle Dateien werden nicht neu heruntergeladen."
         ),
@@ -150,7 +165,8 @@ PIPELINE = [
         "color": "#00695c",
         "icon": "📤",
         "desc": (
-            "Jeder Artikel wird als einzelne VENDOSYS_CAT XML-Datei geschrieben.\n\n"
+            "Jeder Artikel wird als einzelne VENDOSYS_CAT XML-Datei geschrieben.\n"
+            "Ziel: lokales Verzeichnis export_vendosys/\n\n"
             "Was der Exporter macht:\n"
             "  • Präfix voranstellen: MIME_SOURCE, ART_ID_TO, CATALOG_SUB_GROUP_ID\n"
             "    (NDW_, SOC_, BRG_ je nach Lieferant)\n"
@@ -158,10 +174,46 @@ PIPELINE = [
             "  • ARTICLE_TO_CATALOGGROUP_MAP mit korrektem ART_ID (mit Präfix)\n"
             "  • Atomarer Export: erst Staging-Dir, dann os.replace() ins Ziel\n\n"
             "Dateinamen: {product_id}_{timestamp}.xml\n"
-            "Export-Verzeichnis: export_vendosys/ (konfigurierbar in config.py)"
+            "Export-Verzeichnis: export_vendosys/"
         ),
         "files": [],
         "note": "export_vendosys/{product_id}_{timestamp}.xml",
+    },
+    {
+        "id": "upload",
+        "label": "Upload",
+        "sub": "Brickfox / Unite / …",
+        "color": "#4e342e",
+        "icon": "☁",
+        "desc": (
+            "Fertige Dateien werden an die Ziel-Systeme übertragen.\n\n"
+            "┌─ BMEcat-XML (Stammdaten) ───────────────────────────\n"
+            "│  abe.brickfox.net  (FTP, User: c_abe_ftp_2)\n"
+            "│  bueroring_merged.xml → /incoming/bueroring.xml\n"
+            "│  soft-carrier_merge.xml → /incoming/soft-carrier.xml\n"
+            "│\n"
+            "├─ CSV-ERP (Preis + Bestand, schnell) ───────────────\n"
+            "│  abe.brickfox.net  (FTP, User: c_abe_ftp_3)\n"
+            "│  Products_bueroring_{ts}.csv → /incoming/\n"
+            "│\n"
+            "├─ CSV-Exchange (Stammdaten ohne Preis) ─────────────\n"
+            "│  abe.brickfox.net  (FTP, User: c_abe_ftp_5)\n"
+            "│  csv_autoimport_bueroring_{ts}.csv → /incoming/\n"
+            "│\n"
+            "└─ Mercateo / Unite ──────────────────────────────────\n"
+            "   sftp.unite.services  (User: KaenguruhDE)\n"
+            "   availability-data-catalog-32WQS.csv → /catalog/32WQS/\n\n"
+            "Bilder-Upload:\n"
+            "  • Allago:   217.71.221.27  /thumbnails/ + /category/\n"
+            "  • OfficeXL: 217.71.221.26  /thumbnails/ + /category/"
+        ),
+        "files": [],
+        "note": (
+            "Brickfox c_abe_ftp_2  → BMEcat-XML\n"
+            "Brickfox c_abe_ftp_3  → ERP-CSV\n"
+            "Brickfox c_abe_ftp_5  → Exchange-CSV\n"
+            "Unite KaenguruhDE     → Availability-CSV"
+        ),
     },
 ]
 

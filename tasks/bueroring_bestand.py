@@ -221,6 +221,24 @@ def run(progress_cb=None, file_progress_cb=None):
     base   = _cfg.BASE_DIR
     in_bme = DIRS["in_bme"]
 
+    p("┌─ Büroring Bestand+Preis ───────────────────────────────────")
+    p(f"│  Eingabe:  {EXCEL_NAME}  (BASE_DIR)")
+    p(f"│            {AVAILABILITY_FILE}")
+    p("│  ↓ erzeugt: Products_bueroring_{{ts}}.csv")
+    p("│             csv_autoimport_bueroring_{{ts}}.csv")
+    p("│  Uploads:")
+    p("│    ↑ Products_*.csv        → abe.brickfox.net/incoming (c_abe_ftp_3 ERP)")
+    p("│    ↑ csv_autoimport_*.csv  → abe.brickfox.net/incoming (c_abe_ftp_5 Exchange)")
+    p("└────────────────────────────────────────────────────────────")
+
+    excel_ok = os.path.exists(os.path.join(base, EXCEL_NAME))
+    avail_ok = (os.path.exists(os.path.join(base, AVAILABILITY_FILE))
+                or os.path.exists(os.path.join(in_bme, AVAILABILITY_FILE)))
+    p(f"  {'✓' if excel_ok else '✗ FEHLT':<8} {EXCEL_NAME}",
+      tag="ok" if excel_ok else "warn")
+    p(f"  {'✓' if avail_ok else '– wird erzeugt':<8} {AVAILABILITY_FILE}",
+      tag="ok" if avail_ok else "dim")
+
     excel_path = os.path.join(base, EXCEL_NAME)
 
     csv_in_path = os.path.join(base, AVAILABILITY_FILE)

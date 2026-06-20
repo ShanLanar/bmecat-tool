@@ -142,6 +142,67 @@ def run(progress_cb=None, file_progress_cb=None):
     basis_name = MERGE["basis_src"]
     udx_name   = MERGE["udx_src"]
 
+    # ── Datenfluss-Übersicht ──────────────────────────────────────────────────
+    p("╔══════════════════════════════════════════════════════════╗")
+    p("║  BÜRORING – Vollständiger Task                          ║")
+    p("╠══════════════════════════════════════════════════════════╣")
+    p("║  QUELLEN (Download von sftp.bueroring.de)               ║")
+    p(f"║    ↓ br-ek_DE_BMEcat_DEU_ABE.zip → {udx_name:<22} ║")
+    p(f"║    ↓ bf-ek_DE_BMEcat_DEU.zip     → {basis_name:<22} ║")
+    p("║    ↓ br-bestand.zip → availability-data-catalog-32WQS  ║")
+    p("╠══════════════════════════════════════════════════════════╣")
+    p("║  VERARBEITUNG                                           ║")
+    p(f"║    ⚙ Merge: {udx_name} + {basis_name}")
+    p(f"║      → bueroring_merged.xml                            ║")
+    p("║    ⚙ Keywords, FNAME/FVALUE, Enrichment, DB-Import     ║")
+    p("║    ⚙ Bestand+Preis → Bestand_und_Preise.xlsx           ║")
+    p("╠══════════════════════════════════════════════════════════╣")
+    p("║  UPLOADS (→ abe.brickfox.net)                          ║")
+    p("║    ↑ bueroring_merged.xml  → /incoming/bueroring.xml   ║")
+    p("║      (FTP c_abe_ftp_2)                                  ║")
+    p("║    ↑ Products_bueroring_*.csv  → /incoming/            ║")
+    p("║      (FTP c_abe_ftp_3 – ERP Preis+Bestand)             ║")
+    p("║    ↑ csv_autoimport_bueroring_*.csv → /incoming/       ║")
+    p("║      (FTP c_abe_ftp_5 – Exchange Stammdaten)           ║")
+    p("╚══════════════════════════════════════════════════════════╝")
+
+    # ── Preflight: lokale Konfigurationsdateien prüfen ────────────────────────
+    import config as _cfg
+    _base = _cfg.BASE_DIR
+    _required = [
+        ("keywords_exploded.csv",      "Keywords für Volltextsuche"),
+        ("Bestand_und_Preise.xlsx",    "Excel-Vorlage Bestand+Preis"),
+        ("fname_renames.csv",          "Feature-Namen-Mapping"),
+        ("fvalue_renames.csv",         "Feature-Werte-Mapping"),
+    ]
+    _optional = [
+        ("custom_categories.csv",      "Eigene Kategorie-Namen"),
+        ("postprocess_blacklist.csv",  "Artikel-Blacklist"),
+        ("postprocess_prices.csv",     "Preisformeln"),
+        ("channel_category_mapping.csv","Kanal-Kategorie-Mapping"),
+    ]
+    _missing_required = []
+    p("Preflight – lokale Dateien:")
+    for fname, desc in _required:
+        exists = os.path.exists(os.path.join(_base, fname))
+        mark   = "✓" if exists else "✗ FEHLT"
+        tag    = "ok" if exists else "warn"
+        p(f"  {mark:<8} {fname}  ({desc})", tag=tag)
+        if not exists:
+            _missing_required.append(fname)
+    for fname, desc in _optional:
+        exists = os.path.exists(os.path.join(_base, fname))
+        mark   = "✓" if exists else "–"
+        tag    = "ok" if exists else "dim"
+        p(f"  {mark:<8} {fname}  ({desc})", tag=tag)
+    _tool_ok = os.path.exists(seven_z)
+    p(f"  {'✓' if _tool_ok else '✗ FEHLT':<8} 7-Zip ({seven_z})",
+      tag="ok" if _tool_ok else "warn")
+    if not _tool_ok:
+        _missing_required.append("7-Zip")
+    if _missing_required:
+        p(f"Fehlende Pflichtdateien: {', '.join(_missing_required)}", tag="warn")
+
     # ── Download: nur BMEcat-ZIPs + Bestand ───────────────────────────────────
     client = make_client(cfg)
     client.connect()

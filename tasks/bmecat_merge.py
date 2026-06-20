@@ -52,10 +52,11 @@ def run(progress_cb=None, file_progress_cb=None):
 
     udx_src, basis_src, out_file = _paths()
 
-    p("BMEcat-Merge:")
-    p(f"  UDX-Quelle:  {os.path.basename(udx_src)}")
-    p(f"  Basisdatei:  {os.path.basename(basis_src)}")
-    p(f"  Ausgabe:     {os.path.basename(out_file)}")
+    p("┌─ BMEcat-Merge ─────────────────────────────────────────────")
+    p(f"│  Quelle 1 (ABE + ECLASS):  {os.path.basename(udx_src)}")
+    p(f"│  Quelle 2 (Hauptkatalog):  {os.path.basename(basis_src)}")
+    p(f"│  ↓ Ausgabe:                {os.path.basename(out_file)}")
+    p("└────────────────────────────────────────────────────────────")
 
     # Fehlende Quelldateien automatisch nachladen
     _ensure_files(udx_src, basis_src, p, fp)
