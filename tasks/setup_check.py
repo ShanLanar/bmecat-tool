@@ -180,3 +180,16 @@ def run(progress_cb=None):
     if sz_ok and not any_missing and not missing_pw:
         p("  ✓ Alles OK – Tool einsatzbereit.", tag="ok")
     p("────────────────────────────────────────────────────────────────")
+
+    problems = []
+    if not sz_ok:
+        problems.append("7-Zip fehlt")
+    if any_missing:
+        problems.append("Pflichtdateien fehlen")
+    if missing_pw:
+        problems.append(f"Passwörter fehlen ({', '.join(missing_pw)})")
+    if problems:
+        raise RuntimeError(
+            "Setup unvollständig: " + " | ".join(problems) +
+            " – Setup-Check abwählen um zu überspringen."
+        )

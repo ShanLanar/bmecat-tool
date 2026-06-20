@@ -19,7 +19,7 @@ TASKS = [
         "name":    "Setup-Check",
         "desc":    "Git-Stand, Tools, Passwörter, Pflichtdateien und Verzeichnisse prüfen – kein Netzwerkzugriff",
         "fn":      "tasks.setup_check:run",
-        "default": False,
+        "default": True,
         "group":   "Vorbereitung",
     },
     {

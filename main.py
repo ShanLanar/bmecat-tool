@@ -285,7 +285,7 @@ class App(tk.Tk):
 
         left_outer = tk.Frame(_pane, bg=_T("BG2"))
         _pane.add(left_outer, minsize=180, width=240)
-        left_outer.rowconfigure(1, weight=1)
+        left_outer.rowconfigure(2, weight=1)
 
         right_outer = tk.Frame(_pane, bg=_T("BG"))
         right_outer.columnconfigure(0, weight=1)
@@ -294,13 +294,24 @@ class App(tk.Tk):
 
         tk.Label(left_outer, text="Aufgaben", font=FONT_HEAD,
                  bg=_T("BG2"), fg=_T("FG"), padx=12).grid(row=0, column=0, columnspan=2,
-                                               sticky="w", pady=(10, 4))
+                                               sticky="w", pady=(10, 2))
+
+        # ── Alle / Keine / Standard – immer sichtbar oben ────────────────────
+        _bf_top = tk.Frame(left_outer, bg=_T("BG2"), padx=10)
+        _bf_top.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        _alle_btn  = self._mk_btn(_bf_top, "Alle",     self._select_all,     small=True)
+        _alle_btn.pack(side="left", padx=(0, 2))
+        _keine_btn = self._mk_btn(_bf_top, "Keine",    self._deselect_all,   small=True)
+        _keine_btn.pack(side="left", padx=2)
+        _std_btn   = self._mk_btn(_bf_top, "Standard", self._select_default, small=True)
+        _std_btn.pack(side="left", padx=2)
+        self._widget_refs["sel_buttons"] = _bf_top
 
         canvas = tk.Canvas(left_outer, bg=_T("BG2"), highlightthickness=0)
-        canvas.grid(row=1, column=0, sticky="ns")
+        canvas.grid(row=2, column=0, sticky="ns")
 
         vsb = ttk.Scrollbar(left_outer, orient="vertical", command=canvas.yview)
-        vsb.grid(row=1, column=1, sticky="ns")
+        vsb.grid(row=2, column=1, sticky="ns")
         canvas.configure(yscrollcommand=vsb.set)
 
         left = tk.Frame(canvas, bg=_T("BG2"), padx=12)
@@ -370,21 +381,6 @@ class App(tk.Tk):
         self._widget_refs["task_list"] = left
 
         ttk.Separator(left, orient="horizontal").pack(fill="x", pady=8)
-
-        bf = tk.Frame(left, bg=_T("BG2"))
-        bf.pack(anchor="w", pady=(0, 10))
-        bf.bind("<MouseWheel>", _on_mousewheel)
-        from lib.tutorial import ToolTip, BUTTON_TIPS
-        alle_btn = self._mk_btn(bf, "Alle", self._select_all, small=True)
-        alle_btn.pack(side="left", padx=2)
-        ToolTip(alle_btn, BUTTON_TIPS["Alle"])
-        keine_btn = self._mk_btn(bf, "Keine", self._deselect_all, small=True)
-        keine_btn.pack(side="left", padx=2)
-        ToolTip(keine_btn, BUTTON_TIPS["Keine"])
-        std_btn = self._mk_btn(bf, "Standard", self._select_default, small=True)
-        std_btn.pack(side="left", padx=2)
-        ToolTip(std_btn, BUTTON_TIPS["Standard"])
-        self._widget_refs["sel_buttons"] = bf
 
         # ── Rechte Seite oben: Basispfad ──────────────────────────────────────
         top_right = tk.Frame(right_outer, bg=_T("BG"))
@@ -733,6 +729,11 @@ class App(tk.Tk):
                 errors.append(task["name"])
                 report.end_task(task["name"], success=False,
                                 details={"fehler": str(exc)})
+                if task["id"] == "setup_check":
+                    self._append_log(
+                        "⛔ Setup-Check fehlgeschlagen – weitere Tasks abgebrochen. "
+                        "Setup-Check abwählen um zu überspringen.", tag="err")
+                    break
 
         report.add_dedup(**dedup_total)
         report_path = report.write()
