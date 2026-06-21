@@ -149,32 +149,37 @@ function downloadCsv(rows, filename) {
 const vSelect = document.getElementById('versionlist');
 if (!vSelect) { console.error('❌ Nicht auf der eClass-Seite!'); return; }
 
-const allVersions     = [...vSelect.options].map(o => o.value).filter(v => v);
+// versionMap: formValue → Anzeige-Label (z. B. "5.14" → "5.1.4")
+const versionMap      = Object.fromEntries(
+    [...vSelect.options].filter(o => o.value).map(o => [o.value, o.text.trim()])
+);
+const allVersions     = Object.keys(versionMap);
 const selectedVersion = vSelect.value;
 const versions        = ALLE_VERSIONEN ? allVersions : [selectedVersion];
 
 console.log(ALLE_VERSIONEN
-    ? `✅ Alle ${allVersions.length} Versionen: ${allVersions.join(', ')}`
-    : `✅ Gewählte Version: ${selectedVersion}`);
+    ? `✅ Alle ${allVersions.length} Versionen: ${allVersions.map(v => versionMap[v]).join(', ')}`
+    : `✅ Gewählte Version: ${versionMap[selectedVersion] ?? selectedVersion}`);
 
 const allResults = [];
 let   total      = 0;
 
 for (const version of versions) {
-    console.log(`\n📚 Version ${version} laden...`);
+    const vLabel = versionMap[version] ?? version;  // Anzeige-Label für CSV (z. B. "5.1.4")
+    console.log(`\n📚 Version ${vLabel} laden...`);
 
     let rootDoc;
     try {
         rootDoc = await fetchVersionViaIframe(version);
     } catch(e) {
-        console.warn(`  ⚠ Version ${version} übersprungen:`, e.message);
+        console.warn(`  ⚠ Version ${vLabel} übersprungen:`, e.message);
         continue;
     }
 
     const segments = parseNodes(rootDoc);
     console.log(`  ${segments.length} Segmente`);
     if (!segments.length) {
-        console.warn(`  ⚠ Keine Segmente für ${version}`);
+        console.warn(`  ⚠ Keine Segmente für ${vLabel}`);
         continue;
     }
 
@@ -182,7 +187,7 @@ for (const version of versions) {
     const add = row => { allResults.push(row); vRows.push(row); total++; };
 
     for (const seg of segments) {
-        add({ version, code: seg.code, name_de: seg.name, name_en: '', level: 'segment', parent_code: '' });
+        add({ version: vLabel, code: seg.code, name_de: seg.name, name_en: '', level: 'segment', parent_code: '' });
 
         let hgDoc;
         try { hgDoc = await fetchDoc(seg.href); }
@@ -192,7 +197,7 @@ for (const version of versions) {
             n.code.startsWith(seg.code + '-') && n.code.split('-').length === 2);
 
         for (const hg of hgruppen) {
-            add({ version, code: hg.code, name_de: hg.name, name_en: '', level: 'hauptgruppe', parent_code: seg.code });
+            add({ version: vLabel, code: hg.code, name_de: hg.name, name_en: '', level: 'hauptgruppe', parent_code: seg.code });
 
             let grDoc;
             try { grDoc = await fetchDoc(hg.href); }
@@ -202,7 +207,7 @@ for (const version of versions) {
                 n.code.startsWith(hg.code + '-') && n.code.split('-').length === 3);
 
             for (const gr of gruppen) {
-                add({ version, code: gr.code, name_de: gr.name, name_en: '', level: 'gruppe', parent_code: hg.code });
+                add({ version: vLabel, code: gr.code, name_de: gr.name, name_en: '', level: 'gruppe', parent_code: hg.code });
 
                 let klDoc;
                 try { klDoc = await fetchDoc(gr.href); }
@@ -212,7 +217,7 @@ for (const version of versions) {
                     n.code.startsWith(gr.code + '-') && n.code.split('-').length === 4);
 
                 for (const kl of klassen) {
-                    add({ version, code: kl.code, name_de: kl.name, name_en: '', level: 'klasse', parent_code: gr.code });
+                    add({ version: vLabel, code: kl.code, name_de: kl.name, name_en: '', level: 'klasse', parent_code: gr.code });
                 }
                 if (klassen.length)
                     console.log(`      ${gr.code}: ${klassen.length} Klassen`);
@@ -222,15 +227,15 @@ for (const version of versions) {
         console.log(`  ${seg.code}: ${hgruppen.length} HG, ${nGr} Gruppen`);
     }
 
-    console.log(`  ✅ Version ${version}: ${vRows.length} Einträge`);
-    downloadCsv(vRows, `eclass_catalog_${version}.csv`);
+    console.log(`  ✅ Version ${vLabel}: ${vRows.length} Einträge`);
+    downloadCsv(vRows, `eclass_catalog_${vLabel}.csv`);
 }
 
 // ── Gesamt-CSV ────────────────────────────────────────────────────────────
 
 if (!allResults.length) { console.error('❌ Keine Daten gesammelt.'); return; }
 
-const allLabel = versions.length === 1 ? versions[0] : 'all';
+const allLabel = versions.length === 1 ? (versionMap[versions[0]] ?? versions[0]) : 'all';
 downloadCsv(allResults, `eclass_catalog_${allLabel}.csv`);
 console.log(`\n✅ Fertig! ${total} Einträge in ${versions.length} Versionen`);
 

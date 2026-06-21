@@ -22,6 +22,14 @@ from pathlib import Path
 CSV_HEADER = ["version", "code", "name_de", "name_en", "level", "parent_code"]
 DEFAULT_OUT = "eclass_catalog.csv"
 
+# Versionsname-Korrekturen: Scraper-Formularwert → kanonischer Name
+_VERSION_ALIASES = {
+    "5.14":  "5.1.4",
+}
+
+def _normalize_version(v: str) -> str:
+    return _VERSION_ALIASES.get(v, v)
+
 
 def _version_sort_key(v: str):
     """Numerische Versionssortierung: '4.0' < '9.0' < '13.1' < 'UNv260801'."""
@@ -49,9 +57,12 @@ def merge(in_paths: list[str], out_path: str, progress_cb=None) -> int:
                 continue
             before = len(seen)
             for row in reader:
-                key = (row.get("version", "").strip(), row.get("code", "").strip())
+                ver = _normalize_version(row.get("version", "").strip())
+                key = (ver, row.get("code", "").strip())
                 if key not in seen:
-                    seen[key] = {k: row.get(k, "").strip() for k in CSV_HEADER}
+                    r = {k: row.get(k, "").strip() for k in CSV_HEADER}
+                    r["version"] = ver
+                    seen[key] = r
                     order.append(key)
             added = len(seen) - before
         p(f"  {added:>7,} neu  ← {Path(path).name}  (gesamt {len(seen):,})")
