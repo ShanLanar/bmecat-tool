@@ -107,10 +107,6 @@ def _cli():
               file=sys.stderr)
         sys.exit(1)
 
-    # Ausgabe-Datei aus Eingabeliste ausschließen
-    out_abs = str(Path(args.out).resolve())
-    paths = [p for p in paths if str(Path(p).resolve()) != out_abs]
-
     print(f"  Merge von {len(paths)} Datei(en) → {args.out}")
     merge(paths, args.out)
 
