@@ -98,6 +98,7 @@ def convert(in_path: str, out_path: str) -> int:
     rows = []
     for (version, code8), names in entries.items():
         is_unspsc = version.startswith("13.")
+        out_version = ("UNSPSC " + version) if is_unspsc else version
         if not is_unspsc:
             # eClass: alles DE, kein EN
             name_de = names[0]
@@ -114,7 +115,7 @@ def convert(in_path: str, out_path: str) -> int:
 
         parent8 = parent_code8(code8)
         rows.append({
-            "version":     version,
+            "version":     out_version,
             "code":        code8_to_eclass(code8),
             "name_de":     name_de,
             "name_en":     name_en,
