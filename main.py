@@ -483,6 +483,11 @@ class App(tk.Tk):
         from lib.config_tab import ConfigTab
         self._config_tab = ConfigTab(_tab3, self, THEMES[self._theme])
 
+        _tab4 = tk.Frame(self._notebook, bg=_T("BG"))
+        self._notebook.add(_tab4, text="  eClass Katalog  ")
+        from lib.eclass_catalog_browser import EclassCatalogBrowser
+        self._eclass_browser = EclassCatalogBrowser(_tab4, self, THEMES[self._theme])
+
         # ── Fusszeile ─────────────────────────────────────────────────────────
         footer_wrap = tk.Frame(self, bg=_T("BG2"))
         footer_wrap.grid(row=2, column=0, sticky="ew")
