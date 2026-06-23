@@ -37,6 +37,7 @@ _MFR_AID_END   = re.compile(r'(?i)(</manufacturer_aid>)')
 _KEYWORD_PAT   = re.compile(r'(?i)<keyword>(.*?)</keyword>')
 _EAN_PAT       = re.compile(
     r'(?is)<(?:ean|international_pid[^>]*)>(.*?)</(?:ean|international_pid)>')
+_RFGI_PAT      = re.compile(r'(?is)<reference_feature_group_id>(.*?)</reference_feature_group_id>')
 
 
 def _get_brjcat_features(article: str) -> dict:
@@ -299,6 +300,72 @@ def rule_keyword_dedup(article: str) -> tuple[str, bool]:
     return article, True
 
 
+_eclass_catalog_cache = None
+
+def _get_eclass_catalog():
+    global _eclass_catalog_cache
+    if _eclass_catalog_cache is None:
+        try:
+            from lib.eclass_catalog import load_catalog
+            _eclass_catalog_cache = load_catalog()
+        except Exception:
+            _eclass_catalog_cache = None
+    return _eclass_catalog_cache
+
+
+# ── Regel: eClass-Hierarchienamen als Keywords ────────────────────────────────
+
+def rule_eclass_keywords(article: str) -> tuple[str, bool]:
+    """
+    Fügt eClass-Hierarchienamen (Segment → Klasse) als <KEYWORD> ein.
+    Quelle: REFERENCE_FEATURE_GROUP_ID aus einem ECLASS-Block.
+    Nur Einträge mit name_de, keine Duplikate (case-insensitiv).
+    """
+    eclass_code = None
+    for af_m in _AF_PAT.finditer(article):
+        block = af_m.group(1)
+        rs_m  = _RS_PAT.search(block)
+        if not rs_m or "eclass" not in rs_m.group(1).lower():
+            continue
+        gi_m = _RFGI_PAT.search(block)
+        if gi_m:
+            eclass_code = gi_m.group(1).strip()
+            break
+
+    if not eclass_code:
+        return article, False
+
+    cat = _get_eclass_catalog()
+    if not cat or not cat.known():
+        return article, False
+
+    try:
+        hier = cat.hierarchy(eclass_code)
+    except Exception:
+        return article, False
+
+    existing = {m.group(1).strip().lower() for m in _KEYWORD_PAT.finditer(article)}
+    new_tags = []
+    for entry in hier:
+        name = (entry.get("name_de") or "").strip()
+        if name and name.lower() not in existing:
+            new_tags.append(f"        <KEYWORD>{_xml_escape(name)}</KEYWORD>")
+            existing.add(name.lower())
+
+    if not new_tags:
+        return article, False
+
+    kw_block = "\n".join(new_tags)
+    last_kw  = list(_KEYWORD_PAT.finditer(article))
+    if last_kw:
+        pos     = last_kw[-1].end()
+        article = article[:pos] + "\n" + kw_block + article[pos:]
+    else:
+        article = _DETAILS_END.sub(f"{kw_block}\n\\1", article, count=1)
+
+    return article, True
+
+
 _AID_SUFFIX_PAT = re.compile(r'\s*\([A-Z0-9]{4,30}\)\s*$')
 
 
@@ -367,25 +434,27 @@ def rule_delivery_time(article: str) -> tuple[str, bool]:
 
 
 RULES = [
-    ("description_long",  rule_description_long),
-    ("manufacturer_name", rule_manufacturer_name),
-    ("manufacturer_normalize", rule_manufacturer_normalize),
-    ("ean_keyword",       rule_ean_keyword),
-    ("keyword_dedup",     rule_keyword_dedup),
-    ("clean_desc_short",  rule_clean_desc_short),
-    ("gtin_fix",          rule_gtin_fix),
-    ("delivery_time",     rule_delivery_time),
+    ("description_long",      rule_description_long),
+    ("manufacturer_name",     rule_manufacturer_name),
+    ("manufacturer_normalize",rule_manufacturer_normalize),
+    ("eclass_keywords",       rule_eclass_keywords),
+    ("ean_keyword",           rule_ean_keyword),
+    ("keyword_dedup",         rule_keyword_dedup),
+    ("clean_desc_short",      rule_clean_desc_short),
+    ("gtin_fix",              rule_gtin_fix),
+    ("delivery_time",         rule_delivery_time),
 ]
 
 RULE_VERBS = {
-    "description_long":  "Langbeschreibung ergänzt",
-    "manufacturer_name": "Hersteller ergänzt",
+    "description_long":       "Langbeschreibung ergänzt",
+    "manufacturer_name":      "Hersteller ergänzt",
     "manufacturer_normalize": "Herstellername normalisiert",
-    "ean_keyword":       "EAN als Keyword eingefügt",
-    "keyword_dedup":     "Keyword-Duplikate bereinigt",
-    "clean_desc_short":  "AID-Suffix aus Kurzbeschreibung entfernt",
-    "gtin_fix":          "EAN-Prüfziffer korrigiert",
-    "delivery_time":     "Lieferzeit auf 1 Tag gesetzt",
+    "eclass_keywords":        "eClass-Kategorienamen als Keywords eingefügt",
+    "ean_keyword":            "EAN als Keyword eingefügt",
+    "keyword_dedup":          "Keyword-Duplikate bereinigt",
+    "clean_desc_short":       "AID-Suffix aus Kurzbeschreibung entfernt",
+    "gtin_fix":               "EAN-Prüfziffer korrigiert",
+    "delivery_time":          "Lieferzeit auf 1 Tag gesetzt",
 }
 
 

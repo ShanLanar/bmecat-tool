@@ -37,6 +37,31 @@ _DLG_PAT       = re.compile(r'<DESCRIPTION_LONG>(.*?)</DESCRIPTION_LONG>', re.IG
 _MFR_PAT       = re.compile(r'<MANUFACTURER_NAME>(.*?)</MANUFACTURER_NAME>', re.IGNORECASE)
 _KW_PAT        = re.compile(r'<KEYWORD>(.*?)</KEYWORD>', re.IGNORECASE)
 _DETAILS_END   = re.compile(r'(</ARTICLE_DETAILS>)', re.IGNORECASE)
+_AF_PAT        = re.compile(r'(?is)<article_features>(.*?)</article_features>')
+_RS_PAT        = re.compile(r'(?is)<reference_feature_system_name>(.*?)</reference_feature_system_name>')
+_RFGI_PAT      = re.compile(r'(?is)<reference_feature_group_id>(.*?)</reference_feature_group_id>')
+
+
+# ── eClass-Kontext aus Artikel-XML ────────────────────────────────────────────
+
+def _get_eclass_hierarchy(article: str) -> list[dict]:
+    """Extrahiert den eClass-Code und gibt die Hierarchie-Namen zurück."""
+    for af_m in _AF_PAT.finditer(article):
+        block = af_m.group(1)
+        rs_m  = _RS_PAT.search(block)
+        if not rs_m or "eclass" not in rs_m.group(1).lower():
+            continue
+        gi_m = _RFGI_PAT.search(block)
+        if gi_m:
+            code = gi_m.group(1).strip()
+            try:
+                from lib.eclass_catalog import load_catalog
+                cat = load_catalog()
+                if cat.known():
+                    return cat.hierarchy(code)
+            except Exception:
+                pass
+    return []
 
 
 # ── Config laden ──────────────────────────────────────────────────────────────
@@ -92,8 +117,8 @@ def _needs_improvement(article: str, cfg: dict) -> dict:
     if tasks.get("improve_desc_long") and not dlg and dsh:
         needs["desc_long"] = dsh  # aus Kurzbeschreibung erzeugen
 
-    if tasks.get("normalize_mfr") and mfr and len(mfr) > 30:
-        needs["manufacturer"] = mfr  # zu langer Name → normalisieren
+    if tasks.get("normalize_mfr") and mfr:
+        needs["manufacturer"] = mfr
 
     return needs
 
@@ -118,10 +143,10 @@ def _call_api(prompt: str, model: str) -> str | None:
 
 def _build_prompt(aid: str, needs: dict, article: str, tasks: dict) -> str:
     """Baut einen kompakten Prompt für alle benötigten Verbesserungen."""
-    # Kontext sammeln
-    kws = _KW_PAT.findall(article)[:5]
+    kws   = _KW_PAT.findall(article)[:5]
     mfr_m = _MFR_PAT.search(article)
     mfr   = mfr_m.group(1).strip() if mfr_m else ""
+    hier  = _get_eclass_hierarchy(article)
 
     lines = [
         "Du verbesserst Produktdaten für einen deutschen B2B-Bürobedarf-Katalog.",
@@ -132,6 +157,10 @@ def _build_prompt(aid: str, needs: dict, article: str, tasks: dict) -> str:
 
     if mfr:
         lines.append(f"Hersteller: {mfr}")
+    if hier:
+        path = " > ".join(e["name_de"] for e in hier if e.get("name_de"))
+        if path:
+            lines.append(f"eClass-Kategorie: {path}")
     if kws:
         lines.append(f"Keywords: {', '.join(kws)}")
     if needs.get("desc_short"):
@@ -147,13 +176,21 @@ def _build_prompt(aid: str, needs: dict, article: str, tasks: dict) -> str:
         lines.append('- "desc_long": Sachliche Langbeschreibung (2-3 Sätze, Deutsch, aus Kurzbeschreibung + Keywords)')
 
     if "manufacturer" in needs and tasks.get("normalize_mfr"):
-        lines.append(f'- "manufacturer": Normalisierter Herstellername (kurz, ohne GmbH/AG/Europe) für: {needs["manufacturer"]}')
+        lines.append(
+            f'- "manufacturer": Normalisierter Herstellername für: "{needs["manufacturer"]}"'
+            "\n  Kürze auf den gebräuchlichen Markennamen (ohne GmbH/AG/Corp/Europe/Deutschland)."
+            '\n  Beispiele: "HEWLETT-PACKARD GMBH" → "HP", "EPSON DEUTSCHLAND GMBH" → "Epson",'
+            '\n  "STAEDTLER MARS GMBH & CO KG" → "Staedtler", "MICROSOFT CORPORATION" → "Microsoft",'
+            '\n  "SAMSUNG ELECTRONICS CO LTD" → "Samsung", "3M DEUTSCHLAND GMBH" → "3M"'
+        )
 
     if tasks.get("suggest_keywords"):
-        lines.append('- "keywords": Array mit 3-5 zusätzlichen deutschen Suchbegriffen')
+        leaf = next((e["name_de"] for e in reversed(hier) if e.get("name_de")), "")
+        ctx  = f" (passend zur Kategorie: {leaf})" if leaf else ""
+        lines.append(f'- "keywords": Array mit 3-5 zusätzlichen deutschen Suchbegriffen{ctx}')
 
     lines.append("")
-    lines.append('Beispiel: {"desc_short": "...", "desc_long": "...", "manufacturer": "..."}')
+    lines.append('Beispiel: {"desc_short": "...", "manufacturer": "...", "keywords": ["Begriff1", "Begriff2"]}')
 
     return "\n".join(lines)
 

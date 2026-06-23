@@ -160,7 +160,7 @@ AI_ENRICHMENT = {
         "improve_desc_short": True,
         "improve_desc_long":  True,
         "normalize_mfr":      True,
-        "suggest_keywords":   False,
+        "suggest_keywords":   True,
     }
 }
 
