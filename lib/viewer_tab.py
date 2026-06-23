@@ -317,8 +317,10 @@ class ViewerTab:
                 for sup in cfg.get('suppliers', {}).values():
                     if not sup.get('enabled', True):
                         continue
-                    for name in ([sup.get('db_supplier_name', sup.get('label', ''))]
-                                 + list(sup.get('db_supplier_names', {}).values())):
+                    db_names = sup.get('db_supplier_names', {})
+                    name_list = (list(db_names.values()) if db_names
+                                 else [sup.get('db_supplier_name', sup.get('label', ''))])
+                    for name in name_list:
                         if name and name not in [n.replace(' ✗', '') for n in all_names]:
                             mark = '' if name in sups_in_db else ' ✗'
                             all_names.append(f"{name}{mark}")
