@@ -370,18 +370,16 @@ class App(tk.Tk):
                         gcol = 0; grow += 1
             for i in range(ncols):
                 left.columnconfigure(i, weight=1)
-            for i in range(ncols, 6):
+            for i in range(ncols, 4):
                 left.columnconfigure(i, weight=0)
             canvas.configure(scrollregion=canvas.bbox("all"))
 
         def _on_canvas_configure(e):
             canvas.itemconfig(canvas_win, width=e.width)
             w = e.width
-            ncols = (6 if w >= 900 else
-                     5 if w >= 720 else
-                     4 if w >= 560 else
-                     3 if w >= 400 else
-                     2 if w >= 260 else 1)
+            ncols = (4 if w >= 400 else
+                     3 if w >= 290 else
+                     2 if w >= 185 else 1)
             _apply_layout(ncols)
         canvas.bind("<Configure>", _on_canvas_configure)
 
@@ -411,7 +409,7 @@ class App(tk.Tk):
                 relief="flat", bd=0,
                 cursor="hand2",
                 padx=6, pady=5,
-                wraplength=130,
+                wraplength=95,
                 justify="center",
                 command=lambda tid=task["id"]: (
                     self._task_btns[tid][1].set(
