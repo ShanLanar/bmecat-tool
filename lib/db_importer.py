@@ -392,13 +392,17 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
 
     # Streaming-Parse (iterparse für große Dateien)
     ctx = ET.iterparse(xml_path, events=('end',))
+    skipped_no_aid = 0
     for event, elem in ctx:
         if _tag(elem) != 'ARTICLE':
             continue
         try:
             art = _parse_article(elem, prefix)
-            # Catalog-Mapping eintragen
             pid = art['supplier_pid']
+            if not pid:
+                skipped_no_aid += 1
+                continue  # Artikel ohne SUPPLIER_AID überspringen
+            # Catalog-Mapping eintragen
             if pid in catalog_map:
                 art['catalog_group_id'], art['catalog_sub_group_id'] = catalog_map[pid]
             batch.append(art)
@@ -411,40 +415,53 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
         finally:
             elem.clear()
 
+    if skipped_no_aid:
+        p(f"DB-Import [{sup_name}]: {skipped_no_aid} Artikel ohne SUPPLIER_AID übersprungen",
+          tag="warn")
+
     if batch:
         _flush(batch)
 
     # Stale-Cleanup: Artikel dieses Lieferanten die in diesem Lauf nicht
     # angefasst wurden (last_seen < import_start) → veraltet oder aus Katalog entfernt
+    #
+    # Sicherheits-Guard: wenn gar keine Artikel verarbeitet wurden (z.B. leere
+    # oder fehlerhafte XML-Datei), NICHT löschen — sonst verlieren wir alle
+    # vorhandenen Artikel komplett.
+    total_processed = stats['new'] + stats['updated'] + stats['unchanged']
     dropped_articles: list[dict] = []
-    try:
-        # Erst die IDs/product_ids holen bevor gelöscht wird
-        stale_rows = con.execute(
-            "SELECT product_id FROM articles WHERE supplier_id=? AND last_seen < ?",
-            (supplier_id, import_start)
-        ).fetchall()
-        dropped_articles = [{"product_id": r["product_id"],
-                             "supplier_name": sup_name} for r in stale_rows]
-        with transaction(con):
-            deleted = con.execute(
-                "DELETE FROM articles WHERE supplier_id=? AND last_seen < ?",
+    if total_processed == 0:
+        p(f"DB-Import [{sup_name}]: Stale-Cleanup übersprungen "
+          f"(0 Artikel verarbeitet — XML leer oder fehlerhaft?)", tag="warn")
+    else:
+        try:
+            # Erst die IDs/product_ids holen bevor gelöscht wird
+            stale_rows = con.execute(
+                "SELECT product_id FROM articles WHERE supplier_id=? AND last_seen < ?",
                 (supplier_id, import_start)
-            ).rowcount
-        if deleted:
-            p(f"DB-Import [{sup_name}]: {deleted} Artikel nicht mehr im Katalog "
-              f"→ entfernt", tag="dim")
-            for a in dropped_articles[:5]:
-                p(f"  entfernt: {a['product_id']}", tag="dim")
-                # Dropped-Event an Collector weiterleiten
-                try:
-                    p("", tag="dim", _dropped=a)
-                except TypeError:
-                    pass   # progress_cb unterstützt _dropped nicht → ok
-            if len(dropped_articles) > 5:
-                p(f"  … und {len(dropped_articles)-5} weitere", tag="dim")
-    except Exception as exc:
-        log.warning(f"Stale-Cleanup Fehler: {exc}")
-        dropped_articles = []
+            ).fetchall()
+            dropped_articles = [{"product_id": r["product_id"],
+                                 "supplier_name": sup_name} for r in stale_rows]
+            with transaction(con):
+                deleted = con.execute(
+                    "DELETE FROM articles WHERE supplier_id=? AND last_seen < ?",
+                    (supplier_id, import_start)
+                ).rowcount
+            if deleted:
+                p(f"DB-Import [{sup_name}]: {deleted} Artikel nicht mehr im Katalog "
+                  f"→ entfernt", tag="dim")
+                for a in dropped_articles[:5]:
+                    p(f"  entfernt: {a['product_id']}", tag="dim")
+                    # Dropped-Event an Collector weiterleiten
+                    try:
+                        p("", tag="dim", _dropped=a)
+                    except TypeError:
+                        pass   # progress_cb unterstützt _dropped nicht → ok
+                if len(dropped_articles) > 5:
+                    p(f"  … und {len(dropped_articles)-5} weitere", tag="dim")
+        except Exception as exc:
+            log.warning(f"Stale-Cleanup Fehler: {exc}")
+            dropped_articles = []
 
     total = stats['new'] + stats['updated'] + stats['unchanged']
     p(f"DB-Import [{sup_name}]: {total} Artikel "
