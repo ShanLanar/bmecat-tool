@@ -310,7 +310,7 @@ class App(tk.Tk):
         self._widget_refs["sel_buttons"] = _bf_top
 
         canvas = tk.Canvas(left_outer, bg=_T("BG2"), highlightthickness=0)
-        canvas.grid(row=2, column=0, sticky="ns")
+        canvas.grid(row=2, column=0, sticky="nsew")
 
         vsb = ttk.Scrollbar(left_outer, orient="vertical", command=canvas.yview)
         vsb.grid(row=2, column=1, sticky="ns")
