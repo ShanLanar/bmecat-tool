@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def _now() -> str:
@@ -171,6 +171,11 @@ def open_db(db_path: str) -> sqlite3.Connection:
     con.row_factory = sqlite3.Row
     con.executescript(DDL)
     _migrate(con)
+    # Performance-PRAGMAs (nach DDL/Migration setzen, damit WAL schon aktiv ist)
+    con.execute("PRAGMA synchronous  = NORMAL")    # sicher mit WAL, ~3-5× schnellere Writes
+    con.execute("PRAGMA cache_size   = -65536")    # 64 MB Page-Cache
+    con.execute("PRAGMA mmap_size    = 268435456") # 256 MB Memory-Mapped I/O
+    con.execute("PRAGMA temp_store   = MEMORY")    # Temp-Tabellen im RAM
     con.commit()
     return con
 
@@ -204,8 +209,20 @@ def _migrate(con: sqlite3.Connection):
             con.execute("ALTER TABLE article_features ADD COLUMN funit TEXT DEFAULT ''")
         if "value_index" not in cols:
             con.execute("ALTER TABLE article_features ADD COLUMN value_index INTEGER DEFAULT 0")
-        con.execute("DELETE FROM schema_version")
-        con.execute("INSERT INTO schema_version VALUES (?)", (SCHEMA_VERSION,))
+    if current < 5:
+        # v5: fehlende Indizes für Stale-Cleanup, Keyword-Suche, Hersteller-Filter
+        con.executescript("""
+            CREATE INDEX IF NOT EXISTS idx_art_last_seen
+                ON articles(supplier_id, last_seen);
+            CREATE INDEX IF NOT EXISTS idx_kw_keyword
+                ON article_keywords(keyword);
+            CREATE INDEX IF NOT EXISTS idx_art_manufacturer
+                ON articles(manufacturer_name);
+            CREATE INDEX IF NOT EXISTS idx_artcat_node
+                ON article_catalog_map(catalog_node_id);
+        """)
+    con.execute("DELETE FROM schema_version")
+    con.execute("INSERT INTO schema_version VALUES (?)", (SCHEMA_VERSION,))
 
 
 @contextmanager
