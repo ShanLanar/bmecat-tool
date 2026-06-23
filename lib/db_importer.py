@@ -46,8 +46,30 @@ def _clean_source(source: str) -> str:
     return _posixpath.basename(source.replace('\\', '/'))
 
 
-def _txt(elem, path: str, default: str = '') -> str:
+def _ns(path: str) -> str:
+    """Wandelt 'FOO/BAR' in '{*}FOO/{*}BAR' um für namespace-agnostische Suche."""
+    return '/'.join(f'{{*}}{p.lstrip(".")}' if not p.startswith('{') else p
+                    for p in path.replace('./', '').split('/'))
+
+
+def _find(elem, path: str):
+    """elem.find() namespace-agnostisch (unterstützt xmlns=... und kein Namespace)."""
     node = elem.find(path)
+    if node is None:
+        node = elem.find(_ns(path))
+    return node
+
+
+def _findall(elem, path: str):
+    """elem.findall() namespace-agnostisch."""
+    result = elem.findall(path)
+    if not result:
+        result = elem.findall(_ns(path))
+    return result
+
+
+def _txt(elem, path: str, default: str = '') -> str:
+    node = _find(elem, path)
     if node is None:
         return default
     return (node.text or '').strip()
@@ -170,11 +192,11 @@ def _parse_article(art_elem, prefix: str) -> dict:
         or ''
     )
 
-    det = art_elem.find('ARTICLE_DETAILS') or art_elem
+    det = _find(art_elem, 'ARTICLE_DETAILS') or art_elem
 
     # Keywords (können mehrfach vorkommen oder als kommasep. Liste)
     keywords = []
-    for kw_elem in art_elem.findall('./ARTICLE_DETAILS/KEYWORD') + art_elem.findall('./KEYWORD'):
+    for kw_elem in _findall(art_elem, './ARTICLE_DETAILS/KEYWORD') + _findall(art_elem, './KEYWORD'):
         text = (kw_elem.text or '').strip()
         if text:
             for part in text.split(','):
@@ -187,8 +209,8 @@ def _parse_article(art_elem, prefix: str) -> dict:
 
     # Features
     features = []
-    for feat_set in art_elem.findall('./ARTICLE_FEATURES'):
-        for feat in feat_set.findall('FEATURE'):
+    for feat_set in _findall(art_elem, './ARTICLE_FEATURES'):
+        for feat in _findall(feat_set, 'FEATURE'):
             fname = _txt(feat, 'FNAME')
             if not fname:
                 continue
@@ -215,12 +237,12 @@ def _parse_article(art_elem, prefix: str) -> dict:
                 })
 
     # ECLASS-Referenz
-    ref_feat = art_elem.find('./ARTICLE_FEATURES')
+    ref_feat = _find(art_elem, './ARTICLE_FEATURES')
     ref_sys  = _txt(ref_feat, 'REFERENCE_FEATURE_SYSTEM_NAME') if ref_feat else ''
     ref_grp  = _txt(ref_feat, 'REFERENCE_FEATURE_GROUP_ID')   if ref_feat else ''
 
     # Preis
-    price_elem = art_elem.find('./ARTICLE_PRICE_DETAILS/ARTICLE_PRICE')
+    price_elem = _find(art_elem, './ARTICLE_PRICE_DETAILS/ARTICLE_PRICE')
     price_type     = (price_elem.get('price_type', 'net_customer') if price_elem is not None else 'net_customer')
     price_amount   = _txt(price_elem, 'PRICE_AMOUNT')   if price_elem is not None else ''
     price_currency = _txt(price_elem, 'PRICE_CURRENCY') if price_elem is not None else 'EUR'
@@ -243,14 +265,14 @@ def _parse_article(art_elem, prefix: str) -> dict:
         lb_int = 1
 
     # Bestelldetails
-    od = art_elem.find('./ARTICLE_ORDER_DETAILS') or ET.Element('x')
+    od = _find(art_elem, './ARTICLE_ORDER_DETAILS') or ET.Element('x')
 
     # Verfügbarkeit
-    av = art_elem.find('./ARTICLE_AVAILABILITY_DETAILS') or ET.Element('x')
+    av = _find(art_elem, './ARTICLE_AVAILABILITY_DETAILS') or ET.Element('x')
 
     # MIME_INFO
     mimes = []
-    for mime in art_elem.findall('./MIME_INFO/MIME'):
+    for mime in _findall(art_elem, './MIME_INFO/MIME'):
         mimes.append({
             'mime_type':    _txt(mime, 'MIME_TYPE'),
             'mime_source':  _clean_source(_txt(mime, 'MIME_SOURCE')),
@@ -262,7 +284,7 @@ def _parse_article(art_elem, prefix: str) -> dict:
 
     # ARTICLE_REFERENCE (Crossselling etc.)
     references = []
-    for ref in art_elem.findall('./ARTICLE_REFERENCE'):
+    for ref in _findall(art_elem, './ARTICLE_REFERENCE'):
         art_id_to = _txt(ref, 'ART_ID_TO')
         if art_id_to:
             references.append({
@@ -272,7 +294,7 @@ def _parse_article(art_elem, prefix: str) -> dict:
 
     # UDX (USER_DEFINED_EXTENSIONS)
     udx = []
-    udx_elem = art_elem.find('./USER_DEFINED_EXTENSIONS')
+    udx_elem = _find(art_elem, './USER_DEFINED_EXTENSIONS')
     if udx_elem is not None:
         for child in udx_elem:
             key = _tag(child).replace('UDX.', '')

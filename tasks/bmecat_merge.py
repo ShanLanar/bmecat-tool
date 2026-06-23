@@ -144,6 +144,18 @@ def run(progress_cb=None, file_progress_cb=None):
     dedup_result = dedup_xmls([out_file], progress_cb=p, file_progress_cb=fp)
     stats["dedup"] = dedup_result
 
+    # SUPPLIER_AID-Pflichtprüfung (immer, auch bei Skip).
+    # Läuft nach dem Skip-Pfad: XML könnte aus einem älteren Lauf stammen,
+    # bevor die Validierung eingeführt wurde, oder der Merge hat einen Bug.
+    # Dieser Schritt ist schnell (ein Regex-Pass, kein volles Enrichment).
+    if os.path.exists(out_file):
+        try:
+            from lib.dead_letter import quarantine_no_aid
+            removed = quarantine_no_aid(out_file, progress_cb=p)
+            stats["quarantined_no_aid"] = removed
+        except Exception as e:
+            p(f"SUPPLIER_AID-Prüfung übersprungen: {e}", tag="dim")
+
     # Artikelanzahl-Plausibilitätsprüfung (blockiert Upload bei zu wenig Artikeln)
     try:
         import config as _cfg

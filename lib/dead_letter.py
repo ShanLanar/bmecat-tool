@@ -15,7 +15,8 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-_AID_PAT = re.compile(r'<SUPPLIER_AID>(.*?)</SUPPLIER_AID>', re.IGNORECASE)
+_AID_PAT     = re.compile(r'<SUPPLIER_AID>(.*?)</SUPPLIER_AID>', re.IGNORECASE)
+_ARTICLE_PAT = re.compile(r'(?is)(<article[\s>].*?</article>)')
 
 
 class DeadLetterQueue:
@@ -70,6 +71,60 @@ class DeadLetterQueue:
 
         self._rejected.clear()
         return out_path
+
+
+def quarantine_no_aid(xml_path: str, progress_cb=None) -> int:
+    """
+    Schneller Pflichtprüf-Pass: entfernt alle Artikel ohne SUPPLIER_AID aus der XML.
+    Quarantänisiert sie in logs/quarantine_no_aid_YYYYMMDD.xml.
+    Gibt Anzahl entfernter Artikel zurück.
+
+    Deutlich schneller als enrich() da keine Enrichment-Regeln laufen.
+    Wird auch bei Merge-Skip aufgerufen.
+    """
+    p = progress_cb or (lambda m, **kw: None)
+
+    content = Path(xml_path).read_text(encoding="utf-8", errors="replace")
+    removed = []
+
+    def _check(m):
+        art = m.group(1)
+        aid_m = _AID_PAT.search(art)
+        if not aid_m or not aid_m.group(1).strip():
+            removed.append(art)
+            return ""   # Artikel aus XML entfernen
+        return art
+
+    new_content = _ARTICLE_PAT.sub(_check, content)
+
+    if not removed:
+        return 0
+
+    # Quarantäne-Datei schreiben
+    try:
+        import config as _cfg
+        log_dir = _cfg.DIRS.get("logs", "logs")
+    except Exception:
+        log_dir = os.path.join(os.path.dirname(xml_path), "..", "logs")
+
+    Path(log_dir).mkdir(parents=True, exist_ok=True)
+    ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
+    q_path   = os.path.join(log_dir, f"quarantine_no_aid_{ts}.xml")
+    with open(q_path, "w", encoding="utf-8") as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+        f.write(f'<!-- Artikel ohne SUPPLIER_AID — {len(removed)} Stück -->\n')
+        f.write('<QUARANTINE>\n')
+        for art in removed:
+            f.write(f'  {art.strip()}\n')
+        f.write('</QUARANTINE>\n')
+
+    Path(xml_path).write_text(new_content, encoding="utf-8")
+
+    p(f"⛔ SUPPLIER_AID-Prüfung: {len(removed)} Artikel ohne SUPPLIER_AID entfernt "
+      f"→ {os.path.basename(q_path)}", tag="warn")
+    log.warning("quarantine_no_aid: %d Artikel aus %s entfernt",
+                len(removed), os.path.basename(xml_path))
+    return len(removed)
 
 
 def validate_article_basic(article_xml: str) -> str | None:
