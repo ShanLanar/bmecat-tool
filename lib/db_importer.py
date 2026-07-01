@@ -241,8 +241,9 @@ def _parse_article(art_elem, prefix: str) -> dict:
     ref_sys  = _txt(ref_feat, 'REFERENCE_FEATURE_SYSTEM_NAME') if ref_feat else ''
     ref_grp  = _txt(ref_feat, 'REFERENCE_FEATURE_GROUP_ID')   if ref_feat else ''
 
-    # Preis
-    price_elem = _find(art_elem, './ARTICLE_PRICE_DETAILS/ARTICLE_PRICE')
+    # Preis: ARTICLE_PRICE_DETAILS > ARTICLE_PRICE
+    price_details = _find(art_elem, './ARTICLE_PRICE_DETAILS')
+    price_elem = _find(price_details, 'ARTICLE_PRICE') if price_details is not None else None
     price_type     = (price_elem.get('price_type', 'net_customer') if price_elem is not None else 'net_customer')
     price_amount   = _txt(price_elem, 'PRICE_AMOUNT')   if price_elem is not None else ''
     price_currency = _txt(price_elem, 'PRICE_CURRENCY') if price_elem is not None else 'EUR'
@@ -250,17 +251,18 @@ def _parse_article(art_elem, prefix: str) -> dict:
     lower_bound    = _txt(price_elem, 'LOWER_BOUND')     if price_elem is not None else '1'
 
     # VALID_START_DATE / VALID_END_DATE: können direkt als Tag oder als DATETIME[@type=...] vorkommen
+    # DATETIME-Tags sind auf Ebene ARTICLE_PRICE_DETAILS, nicht innerhalb ARTICLE_PRICE
     valid_start = _txt(price_elem, 'VALID_START_DATE') if price_elem is not None else ''
     valid_end   = _txt(price_elem, 'VALID_END_DATE')   if price_elem is not None else ''
-    if not valid_start and price_elem is not None:
-        # Fallback: DATETIME[@type="valid_start_date"]
-        for dt in _findall(price_elem, 'DATETIME'):
+    if not valid_start and price_details is not None:
+        # Fallback: DATETIME[@type="valid_start_date"] auf ARTICLE_PRICE_DETAILS Ebene
+        for dt in _findall(price_details, 'DATETIME'):
             if dt.get('type', '').lower() == 'valid_start_date':
                 valid_start = (dt.text or '').strip()
                 break
-    if not valid_end and price_elem is not None:
-        # Fallback: DATETIME[@type="valid_end_date"]
-        for dt in _findall(price_elem, 'DATETIME'):
+    if not valid_end and price_details is not None:
+        # Fallback: DATETIME[@type="valid_end_date"] auf ARTICLE_PRICE_DETAILS Ebene
+        for dt in _findall(price_details, 'DATETIME'):
             if dt.get('type', '').lower() == 'valid_end_date':
                 valid_end = (dt.text or '').strip()
                 break
