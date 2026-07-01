@@ -292,17 +292,25 @@ def _render_article(art: dict, udx_map: dict, con=None, remap_rules: list = None
 
     # Nur exportieren wenn: nrp-Preis UND (kein Datum ODER gültig zum Export-Zeitpunkt)
     is_valid = True
-    if price_type.lower() != 'nrp':  # nur nrp-Preise
+    skip_reason = None
+
+    if price_type.lower() != 'nrp':
         is_valid = False
+        skip_reason = f"price_type={price_type} (nicht nrp)"
+    elif price is None or (isinstance(price, float) and price == 0):
+        is_valid = False
+        skip_reason = f"price={price} (kein oder 0-Preis)"
     else:
         # Datumsprüfung gegen Export-Zeit
         export_now = datetime.now(timezone.utc).isoformat(timespec='date')
         if valid_start and valid_start > export_now:
             is_valid = False
-        if valid_end and valid_end < export_now:
+            skip_reason = f"valid_start={valid_start} (in Zukunft)"
+        elif valid_end and valid_end < export_now:
             is_valid = False
+            skip_reason = f"valid_end={valid_end} (in Vergangenheit)"
 
-    if is_valid and price is not None:
+    if is_valid:
         price_str = f"{price:.2f}" if isinstance(price, float) else str(price or '')
         lines += [
             '      <ARTICLE_PRICE price_type="net_customer">\n',
@@ -314,6 +322,9 @@ def _render_article(art: dict, udx_map: dict, con=None, remap_rules: list = None
             f'        <LOWER_BOUND>{art.get("lower_bound",1)}</LOWER_BOUND>\n',
             '      </ARTICLE_PRICE>\n',
         ]
+    elif skip_reason:
+        # Debug-Kommentar für fehlende Preise (nur lokal sichtbar, nicht exportiert)
+        log.debug(f"Skip price export für {pid}: {skip_reason}")
 
     lines += ['    </ARTICLE_PRICE_DETAILS>\n']
 
