@@ -281,21 +281,41 @@ def _render_article(art: dict, udx_map: dict, con=None, remap_rules: list = None
         '    </ARTICLE_ORDER_DETAILS>\n',
     ]
 
-    # ARTICLE_PRICE_DETAILS
+    # ARTICLE_PRICE_DETAILS – nur gültige nrp-Preise (net_customer)
+    lines += ['    <ARTICLE_PRICE_DETAILS>\n']
+
+    # Preis-Validierung
+    price_type = art.get('price_type', 'net_customer')
     price = art.get('price_amount')
-    price_str = f"{price:.2f}" if isinstance(price, float) else str(price or '')
-    lines += [
-        '    <ARTICLE_PRICE_DETAILS>\n',
-        '      <ARTICLE_PRICE price_type="net_customer">\n',
-        f'        <VALID_START_DATE>{xml_escape(art.get("valid_start_date",""))}</VALID_START_DATE>\n',
-        f'        <VALID_END_DATE>{xml_escape(art.get("valid_end_date",""))}</VALID_END_DATE>\n',
-        f'        <PRICE_AMOUNT>{price_str}</PRICE_AMOUNT>\n',
-        f'        <PRICE_CURRENCY>{xml_escape(art.get("price_currency","EUR"))}</PRICE_CURRENCY>\n',
-        f'        <TAX>{art.get("tax",19)}</TAX>\n',
-        f'        <LOWER_BOUND>{art.get("lower_bound",1)}</LOWER_BOUND>\n',
-        '      </ARTICLE_PRICE>\n',
-        '    </ARTICLE_PRICE_DETAILS>\n',
-    ]
+    valid_start = art.get('valid_start_date', '').strip()
+    valid_end = art.get('valid_end_date', '').strip()
+
+    # Nur exportieren wenn: net_customer UND (kein Datum ODER gültig zum Export-Zeitpunkt)
+    is_valid = True
+    if price_type != 'net_customer':
+        is_valid = False
+    else:
+        # Datumsprüfung gegen Export-Zeit
+        export_now = datetime.now(timezone.utc).isoformat(timespec='date')
+        if valid_start and valid_start > export_now:
+            is_valid = False
+        if valid_end and valid_end < export_now:
+            is_valid = False
+
+    if is_valid and price is not None:
+        price_str = f"{price:.2f}" if isinstance(price, float) else str(price or '')
+        lines += [
+            '      <ARTICLE_PRICE price_type="net_customer">\n',
+            f'        <VALID_START_DATE>{xml_escape(valid_start)}</VALID_START_DATE>\n',
+            f'        <VALID_END_DATE>{xml_escape(valid_end)}</VALID_END_DATE>\n',
+            f'        <PRICE_AMOUNT>{price_str}</PRICE_AMOUNT>\n',
+            f'        <PRICE_CURRENCY>{xml_escape(art.get("price_currency","EUR"))}</PRICE_CURRENCY>\n',
+            f'        <TAX>{art.get("tax",19)}</TAX>\n',
+            f'        <LOWER_BOUND>{art.get("lower_bound",1)}</LOWER_BOUND>\n',
+            '      </ARTICLE_PRICE>\n',
+        ]
+
+    lines += ['    </ARTICLE_PRICE_DETAILS>\n']
 
     # ARTICLE_AVAILABILITY_DETAILS
     lines += [
@@ -305,22 +325,34 @@ def _render_article(art: dict, udx_map: dict, con=None, remap_rules: list = None
         '    </ARTICLE_AVAILABILITY_DETAILS>\n',
     ]
 
-    # MIME_INFO
+    # MIME_INFO – image/jpeg mit mime_purpose=normal wird zu thumbnail+detail
     mimes = art.get('mimes', [])
     if mimes:
         lines.append('    <MIME_INFO>\n')
         for m in mimes:
             mime_src = _add_prefix(_extract_filename(m.get('mime_source', '') or ''), prefix)
-            lines += [
-                '      <MIME>\n',
-                f'        <MIME_TYPE>{xml_escape(m.get("mime_type",""))}</MIME_TYPE>\n',
-                f'        <MIME_SOURCE>{xml_escape(mime_src)}</MIME_SOURCE>\n',
-                f'        <MIME_PURPOSE>{xml_escape(m.get("mime_purpose",""))}</MIME_PURPOSE>\n',
-                f'        <MIME_DESC><![CDATA[{m.get("mime_desc","")}]]></MIME_DESC>\n',
-                f'        <MIME_ALT><![CDATA[{m.get("mime_alt","")}]]></MIME_ALT>\n',
-                f'        <MIME_ORDER>{m.get("mime_order",0)}</MIME_ORDER>\n',
-                '      </MIME>\n',
-            ]
+            mime_type = m.get('mime_type', '')
+            mime_purpose = m.get('mime_purpose', '')
+
+            # Determine purposes to export: jpeg/normal → [thumbnail, detail, normal]
+            purposes = []
+            if mime_type.lower() == 'image/jpeg' and mime_purpose.lower() == 'normal':
+                purposes = ['thumbnail', 'detail', 'normal']
+            else:
+                purposes = [mime_purpose] if mime_purpose else ['']
+
+            # Export each purpose as separate MIME entry
+            for purpose in purposes:
+                lines += [
+                    '      <MIME>\n',
+                    f'        <MIME_TYPE>{xml_escape(mime_type)}</MIME_TYPE>\n',
+                    f'        <MIME_SOURCE>{xml_escape(mime_src)}</MIME_SOURCE>\n',
+                    f'        <MIME_PURPOSE>{xml_escape(purpose)}</MIME_PURPOSE>\n',
+                    f'        <MIME_DESC><![CDATA[{m.get("mime_desc","")}]]></MIME_DESC>\n',
+                    f'        <MIME_ALT><![CDATA[{m.get("mime_alt","")}]]></MIME_ALT>\n',
+                    f'        <MIME_ORDER>{m.get("mime_order",0)}</MIME_ORDER>\n',
+                    '      </MIME>\n',
+                ]
         lines.append('    </MIME_INFO>\n')
 
     # ARTICLE_REFERENCE (Crossselling)
