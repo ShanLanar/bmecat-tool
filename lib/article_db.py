@@ -169,13 +169,13 @@ def open_db(db_path: str) -> sqlite3.Connection:
     os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
     con = sqlite3.connect(db_path, check_same_thread=False)
     con.row_factory = sqlite3.Row
-    con.executescript(DDL)
-    _migrate(con)
-    # Performance-PRAGMAs (nach DDL/Migration setzen, damit WAL schon aktiv ist)
+    # Performance-PRAGMAs MÜSSEN VOR DDL gesetzt werden (nicht innerhalb Transaction)
     con.execute("PRAGMA synchronous  = NORMAL")    # sicher mit WAL, ~3-5× schnellere Writes
     con.execute("PRAGMA cache_size   = -65536")    # 64 MB Page-Cache
     con.execute("PRAGMA mmap_size    = 268435456") # 256 MB Memory-Mapped I/O
     con.execute("PRAGMA temp_store   = MEMORY")    # Temp-Tabellen im RAM
+    con.executescript(DDL)
+    _migrate(con)
     con.commit()
     return con
 
