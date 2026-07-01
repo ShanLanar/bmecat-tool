@@ -270,13 +270,12 @@ def _parse_article(art_elem, prefix: str) -> dict:
     except ValueError:
         price_float = None
     try:
-        # TAX kann dezimal sein (z.B. 0.19 = 19%) oder ganz (19), speichern als Integer %
-        tax_float = float(tax_str) if tax_str else 19.0
-        # Wenn < 1: wahrscheinlich dezimal (0.19), sonst ganz (19)
-        if tax_float < 1:
-            tax_int = int(round(tax_float * 100))
-        else:
-            tax_int = int(tax_float)
+        # TAX dezimal speichern (0.19 = 19%, 0.07 = 7%)
+        tax_float = float(tax_str.replace(',', '.')) if tax_str else 0.19
+        # Wenn >= 1: wahrscheinlich als Prozent (19), zu dezimal konvertieren
+        if tax_float >= 1:
+            tax_float = tax_float / 100.0
+        tax_int = int(round(tax_float * 100))  # Speichern als Integer (19 für 0.19)
     except ValueError:
         tax_int = 19
     try:
