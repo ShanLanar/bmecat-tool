@@ -248,15 +248,35 @@ def _parse_article(art_elem, prefix: str) -> dict:
     price_currency = _txt(price_elem, 'PRICE_CURRENCY') if price_elem is not None else 'EUR'
     tax_str        = _txt(price_elem, 'TAX')             if price_elem is not None else '19'
     lower_bound    = _txt(price_elem, 'LOWER_BOUND')     if price_elem is not None else '1'
-    valid_start    = _txt(price_elem, 'VALID_START_DATE') if price_elem is not None else ''
-    valid_end      = _txt(price_elem, 'VALID_END_DATE')   if price_elem is not None else ''
+
+    # VALID_START_DATE / VALID_END_DATE: können direkt als Tag oder als DATETIME[@type=...] vorkommen
+    valid_start = _txt(price_elem, 'VALID_START_DATE') if price_elem is not None else ''
+    valid_end   = _txt(price_elem, 'VALID_END_DATE')   if price_elem is not None else ''
+    if not valid_start and price_elem is not None:
+        # Fallback: DATETIME[@type="valid_start_date"]
+        for dt in _findall(price_elem, 'DATETIME'):
+            if dt.get('type', '').lower() == 'valid_start_date':
+                valid_start = (dt.text or '').strip()
+                break
+    if not valid_end and price_elem is not None:
+        # Fallback: DATETIME[@type="valid_end_date"]
+        for dt in _findall(price_elem, 'DATETIME'):
+            if dt.get('type', '').lower() == 'valid_end_date':
+                valid_end = (dt.text or '').strip()
+                break
 
     try:
         price_float = float(price_amount.replace(',', '.')) if price_amount else None
     except ValueError:
         price_float = None
     try:
-        tax_int = int(float(tax_str)) if tax_str else 19
+        # TAX kann dezimal sein (z.B. 0.19 = 19%) oder ganz (19), speichern als Integer %
+        tax_float = float(tax_str) if tax_str else 19.0
+        # Wenn < 1: wahrscheinlich dezimal (0.19), sonst ganz (19)
+        if tax_float < 1:
+            tax_int = int(round(tax_float * 100))
+        else:
+            tax_int = int(tax_float)
     except ValueError:
         tax_int = 19
     try:
