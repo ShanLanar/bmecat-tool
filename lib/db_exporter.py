@@ -301,8 +301,8 @@ def _render_article(art: dict, udx_map: dict, con=None, remap_rules: list = None
         is_valid = False
         skip_reason = f"price={price} (kein oder 0-Preis)"
     else:
-        # Datumsprüfung gegen Export-Zeit
-        export_now = datetime.now(timezone.utc).isoformat(timespec='date')
+        # Datumsprüfung gegen Export-Zeit (nur Datum, YYYY-MM-DD)
+        export_now = datetime.now(timezone.utc).date().isoformat()
         if valid_start and valid_start > export_now:
             is_valid = False
             skip_reason = f"valid_start={valid_start} (in Zukunft)"
