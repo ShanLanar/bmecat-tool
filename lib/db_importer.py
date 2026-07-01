@@ -256,19 +256,18 @@ def _parse_article(art_elem, prefix: str) -> dict:
     valid_end   = _txt(price_elem, 'VALID_END_DATE')   if price_elem is not None else ''
     if not valid_start and price_details is not None:
         # Fallback: DATETIME[@type="valid_start_date"] auf ARTICLE_PRICE_DETAILS Ebene
-        datetimes = _findall(price_details, 'DATETIME')
-        for dt in datetimes:
+        # Datum steht im Kind-Element <DATE>, nicht direkt im Text von DATETIME
+        for dt in _findall(price_details, 'DATETIME'):
             if dt.get('type', '').lower() == 'valid_start_date':
-                valid_start = (dt.text or '').strip()
+                valid_start = _txt(dt, 'DATE') or (dt.text or '').strip()
                 if valid_start:
                     log.debug(f"Found valid_start_date via DATETIME: {valid_start}")
                 break
     if not valid_end and price_details is not None:
         # Fallback: DATETIME[@type="valid_end_date"] auf ARTICLE_PRICE_DETAILS Ebene
-        datetimes = _findall(price_details, 'DATETIME')
-        for dt in datetimes:
+        for dt in _findall(price_details, 'DATETIME'):
             if dt.get('type', '').lower() == 'valid_end_date':
-                valid_end = (dt.text or '').strip()
+                valid_end = _txt(dt, 'DATE') or (dt.text or '').strip()
                 if valid_end:
                     log.debug(f"Found valid_end_date via DATETIME: {valid_end}")
                 break
