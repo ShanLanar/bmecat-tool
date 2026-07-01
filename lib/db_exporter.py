@@ -285,14 +285,14 @@ def _render_article(art: dict, udx_map: dict, con=None, remap_rules: list = None
     lines += ['    <ARTICLE_PRICE_DETAILS>\n']
 
     # Preis-Validierung
-    price_type = art.get('price_type', 'net_customer')
+    price_type = art.get('price_type', '')
     price = art.get('price_amount')
     valid_start = art.get('valid_start_date', '').strip()
     valid_end = art.get('valid_end_date', '').strip()
 
-    # Nur exportieren wenn: net_customer UND (kein Datum ODER gültig zum Export-Zeitpunkt)
+    # Nur exportieren wenn: nrp-Preis UND (kein Datum ODER gültig zum Export-Zeitpunkt)
     is_valid = True
-    if price_type != 'net_customer':
+    if price_type.lower() != 'nrp':  # nur nrp-Preise
         is_valid = False
     else:
         # Datumsprüfung gegen Export-Zeit
