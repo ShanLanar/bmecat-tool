@@ -637,7 +637,10 @@ def export_changed(db_path: str, base_dir: str, export_dir: str,
     except Exception:
         pass
 
-    # ZIP-Archiv aus den frisch exportierten Dateien bauen, Einzeldateien löschen
+    # ZIP-Archiv aus den frisch exportierten Dateien bauen, Einzeldateien löschen.
+    # Teilverzeichnisse à ZIP_BATCH_SIZE Dateien – flache Verzeichnisse mit
+    # >100k Dateien lassen FTP-Clients (z.B. FileZilla) beim Auflisten timeouten.
+    ZIP_BATCH_SIZE = 300
     zip_path = None
     if moved_files:
         import zipfile
@@ -646,11 +649,14 @@ def export_changed(db_path: str, base_dir: str, export_dir: str,
           f"{os.path.basename(zip_path)} ...".replace(",", "."))
         try:
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                for f in moved_files:
-                    zf.write(f, arcname=os.path.basename(f))
+                for i, f in enumerate(moved_files):
+                    batch = f"teil_{i // ZIP_BATCH_SIZE + 1:04d}"
+                    zf.write(f, arcname=f"{batch}/{os.path.basename(f)}")
             for f in moved_files:
                 os.remove(f)
-            p(f"DB-Export: ZIP erstellt ({os.path.getsize(zip_path) / 1024 / 1024:.1f} MB)",
+            n_batches = (len(moved_files) - 1) // ZIP_BATCH_SIZE + 1
+            p(f"DB-Export: ZIP erstellt ({os.path.getsize(zip_path) / 1024 / 1024:.1f} MB, "
+              f"{n_batches} Teilverzeichnisse à {ZIP_BATCH_SIZE})",
               tag='ok')
         except Exception as exc:
             log.warning(f"ZIP-Erstellung fehlgeschlagen: {exc}")
