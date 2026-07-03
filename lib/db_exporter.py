@@ -577,8 +577,14 @@ def export_changed(db_path: str, base_dir: str, export_dir: str,
     stats        = {'exported': 0, 'blacklisted': 0, 'errors': 0}
     exported_pids: list[tuple] = []   # (product_id, price_amount)
 
-    for art in articles:
+    total_articles = len(articles)
+    progress_step  = max(1, total_articles // 20)   # ~20 Fortschritts-Meldungen
+
+    for idx, art in enumerate(articles, start=1):
         pid = art.get('product_id', 'UNKNOWN')
+        if idx % progress_step == 0 or idx == total_articles:
+            p(f"DB-Export: {idx:,} / {total_articles:,} Artikel verarbeitet "
+              f"({stats['exported']:,} exportiert)".replace(",", "."))
         try:
             processed = post.process(art)
             if processed is None:
@@ -611,14 +617,37 @@ def export_changed(db_path: str, base_dir: str, export_dir: str,
 
     # Staging → Ziel verschieben (atomar auf demselben Volume)
     import glob as _glob
+    moved_files = []
     if stats['errors'] == 0 or stats['exported'] > 0:
         for src_file in _glob.glob(os.path.join(staging_dir, "*.xml")):
             dst_file = os.path.join(export_dir, os.path.basename(src_file))
             os.replace(src_file, dst_file)
+            moved_files.append(dst_file)
     try:
         os.rmdir(staging_dir)
     except Exception:
         pass
+
+    # ZIP-Archiv aus den frisch exportierten Dateien bauen, Einzeldateien löschen
+    zip_path = None
+    if moved_files:
+        import zipfile
+        zip_path = os.path.join(export_dir, f"export_{ts}.zip")
+        p(f"DB-Export: packe {len(moved_files):,} Dateien → "
+          f"{os.path.basename(zip_path)} ...".replace(",", "."))
+        try:
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for f in moved_files:
+                    zf.write(f, arcname=os.path.basename(f))
+            for f in moved_files:
+                os.remove(f)
+            p(f"DB-Export: ZIP erstellt ({os.path.getsize(zip_path) / 1024 / 1024:.1f} MB)",
+              tag='ok')
+        except Exception as exc:
+            log.warning(f"ZIP-Erstellung fehlgeschlagen: {exc}")
+            p(f"⚠ ZIP-Erstellung fehlgeschlagen, Einzeldateien bleiben liegen: {exc}",
+              tag='warn')
+            zip_path = None
 
     # last_export_date + last_exported_price in DB schreiben
     if exported_pids:
@@ -626,6 +655,7 @@ def export_changed(db_path: str, base_dir: str, export_dir: str,
         _track_export_date(con, pids_only)
         _update_exported_price(con, exported_pids)
 
+    stats['zip_path'] = zip_path
     p(f"DB-Export abgeschlossen: {stats['exported']} Dateien → {export_dir}",
       tag='ok')
     if stats['blacklisted']:
