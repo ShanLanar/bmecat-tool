@@ -7,6 +7,7 @@
 import csv
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from typing import Callable
 from xml.sax.saxutils import escape as xml_escape
@@ -120,6 +121,14 @@ def _supplier_prefix(art: dict, prefix_map: dict = None) -> str:
     if prefix_map:
         return prefix_map.get(art.get('supplier_name', ''), '')
     return ''
+
+
+_INVALID_FILENAME_CHARS = re.compile(r'[\\/:*?"<>|]')
+
+
+def _safe_filename(pid: str) -> str:
+    """Ersetzt Zeichen die in Windows/Unix-Dateinamen ungültig sind (z.B. '/' in BRGDIS07/147)."""
+    return _INVALID_FILENAME_CHARS.sub('_', pid)
 
 
 def _extract_filename(source: str) -> str:
@@ -603,7 +612,7 @@ def export_changed(db_path: str, base_dir: str, export_dir: str,
                 stats['price_delta_warnings'] += 1
 
             xml_content = _render_article(processed, udx_map, con=con, remap_rules=remap_rules, prefix_map=prefix_map)
-            filename    = f"{pid}_{ts}.xml"
+            filename    = f"{_safe_filename(pid)}_{ts}.xml"
             out_path    = os.path.join(staging_dir, filename)
 
             with open(out_path, 'w', encoding='utf-8') as f:
