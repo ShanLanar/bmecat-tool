@@ -454,6 +454,9 @@ def _cleanup_export_dir(export_dir: str, keep_days: int = 7,
         log.warning(f"Export-Cleanup Fehler: {exc}")
 
 
+_SQL_CHUNK_SIZE = 500   # SQLite-Limit für IN(...)-Variablen
+
+
 def _track_export_date(con, product_ids: list[str]):
     """Schreibt last_export_date in die articles-Tabelle."""
     now = datetime.now(timezone.utc).isoformat()
@@ -461,11 +464,13 @@ def _track_export_date(con, product_ids: list[str]):
         cols = [r[1] for r in con.execute("PRAGMA table_info(articles)")]
         if 'last_export_date' not in cols:
             con.execute("ALTER TABLE articles ADD COLUMN last_export_date TEXT")
-        placeholders = ','.join('?' * len(product_ids))
-        con.execute(
-            f"UPDATE articles SET last_export_date=? "
-            f"WHERE product_id IN ({placeholders})",
-            [now] + product_ids)
+        for i in range(0, len(product_ids), _SQL_CHUNK_SIZE):
+            chunk = product_ids[i:i + _SQL_CHUNK_SIZE]
+            placeholders = ','.join('?' * len(chunk))
+            con.execute(
+                f"UPDATE articles SET last_export_date=? "
+                f"WHERE product_id IN ({placeholders})",
+                [now] + chunk)
         con.commit()
     except Exception as exc:
         log.warning(f"last_export_date Fehler: {exc}")

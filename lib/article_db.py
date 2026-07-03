@@ -560,41 +560,48 @@ def query_changed(con: sqlite3.Connection,
     return result
 
 
+_SQL_CHUNK_SIZE = 500   # SQLite-Limit für IN(...)-Variablen ist 999 (ältere Versionen) / 32766 (neuere)
+
+
 def query_by_ids(con: sqlite3.Connection, article_ids: list[int]) -> list[dict]:
-    """Lädt Artikel anhand einer ID-Liste (für gefilterten Export aus dem Viewer)."""
+    """Lädt Artikel anhand einer ID-Liste (für gefilterten Export aus dem Viewer).
+    Große Listen werden in Chunks aufgeteilt (SQLite-Limit für IN(...)-Variablen)."""
     if not article_ids:
         return []
-    placeholders = ','.join('?' * len(article_ids))
-    sql = f"""
-        SELECT a.*, s.supplier_name, s.supplier_code, s.supplier_aid, s.supplier_alt_aid,
-               cn.name  AS catalog_node_name,
-               cn.group_id AS catalog_node_group_id,
-               acm.catalog_node_id AS _catalog_node_id
-        FROM articles a
-        JOIN suppliers s ON s.id = a.supplier_id
-        LEFT JOIN article_catalog_map acm ON acm.article_id = a.id
-        LEFT JOIN catalog_nodes cn ON cn.id = acm.catalog_node_id
-        WHERE a.id IN ({placeholders})
-        ORDER BY s.supplier_name, a.product_id
-    """
-    rows = con.execute(sql, article_ids).fetchall()
+
     result = []
-    for row in rows:
-        art = dict(row)
-        art_id = art["id"]
-        art["features"]   = [dict(r) for r in con.execute(
-            "SELECT fname,fvalue,funit,fusage,forder,fsearchable,fselectable,value_index "
-            "FROM article_features WHERE article_id=? ORDER BY forder, fname, value_index", (art_id,))]
-        art["mimes"]      = [dict(r) for r in con.execute(
-            "SELECT mime_type,mime_source,mime_purpose,mime_desc,mime_alt,mime_order "
-            "FROM article_mimes WHERE article_id=? ORDER BY mime_order", (art_id,))]
-        art["keywords"]   = [r["keyword"] for r in con.execute(
-            "SELECT keyword FROM article_keywords WHERE article_id=?", (art_id,))]
-        art["references"] = [dict(r) for r in con.execute(
-            "SELECT ref_type,art_id_to FROM article_references WHERE article_id=?", (art_id,))]
-        art["udx"]        = [dict(r) for r in con.execute(
-            "SELECT key,value FROM article_udx WHERE article_id=?", (art_id,))]
-        result.append(art)
+    for i in range(0, len(article_ids), _SQL_CHUNK_SIZE):
+        chunk = article_ids[i:i + _SQL_CHUNK_SIZE]
+        placeholders = ','.join('?' * len(chunk))
+        sql = f"""
+            SELECT a.*, s.supplier_name, s.supplier_code, s.supplier_aid, s.supplier_alt_aid,
+                   cn.name  AS catalog_node_name,
+                   cn.group_id AS catalog_node_group_id,
+                   acm.catalog_node_id AS _catalog_node_id
+            FROM articles a
+            JOIN suppliers s ON s.id = a.supplier_id
+            LEFT JOIN article_catalog_map acm ON acm.article_id = a.id
+            LEFT JOIN catalog_nodes cn ON cn.id = acm.catalog_node_id
+            WHERE a.id IN ({placeholders})
+            ORDER BY s.supplier_name, a.product_id
+        """
+        rows = con.execute(sql, chunk).fetchall()
+        for row in rows:
+            art = dict(row)
+            art_id = art["id"]
+            art["features"]   = [dict(r) for r in con.execute(
+                "SELECT fname,fvalue,funit,fusage,forder,fsearchable,fselectable,value_index "
+                "FROM article_features WHERE article_id=? ORDER BY forder, fname, value_index", (art_id,))]
+            art["mimes"]      = [dict(r) for r in con.execute(
+                "SELECT mime_type,mime_source,mime_purpose,mime_desc,mime_alt,mime_order "
+                "FROM article_mimes WHERE article_id=? ORDER BY mime_order", (art_id,))]
+            art["keywords"]   = [r["keyword"] for r in con.execute(
+                "SELECT keyword FROM article_keywords WHERE article_id=?", (art_id,))]
+            art["references"] = [dict(r) for r in con.execute(
+                "SELECT ref_type,art_id_to FROM article_references WHERE article_id=?", (art_id,))]
+            art["udx"]        = [dict(r) for r in con.execute(
+                "SELECT key,value FROM article_udx WHERE article_id=?", (art_id,))]
+            result.append(art)
     return result
 
 
