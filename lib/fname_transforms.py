@@ -375,3 +375,76 @@ def apply_fname_transforms(xml_path: str, base_dir: str,
       tag="ok")
 
     return stats
+
+
+# ── FNAME-Konsistenz-Report ───────────────────────────────────────────────────
+
+_NORM_PUNCT_PAT = re.compile(r'[\s:._\-]+')
+
+
+def _normalize_fname(fname: str) -> str:
+    """Normalisiert einen FNAME für den Gruppenvergleich (Groß/Klein, Whitespace, Satzzeichen)."""
+    return _NORM_PUNCT_PAT.sub(' ', fname.strip().lower()).strip()
+
+
+def report_fname_consistency(xml_path: str, base_dir: str, log_dir: str,
+                              progress_cb=None) -> str | None:
+    """
+    Scannt alle FNAMEs (nach Anwendung von fname_renames.csv) und gruppiert
+    sie normalisiert (Groß/Klein, Whitespace, Satzzeichen egal). Gruppen mit
+    mehr als einer verbliebenen Schreibweise sind Kandidaten für weitere
+    Einträge in fname_renames.csv.
+
+    Schreibt logs/fname_consistency_YYYYMMDD_HHMMSS.csv, wenn Kandidaten
+    gefunden wurden. Gibt den Pfad zurück, oder None wenn nichts zu melden ist.
+    """
+    from lib.utils import iter_articles
+    from datetime import datetime
+
+    p = progress_cb or (lambda m, **kw: None)
+
+    if not os.path.exists(xml_path):
+        return None
+
+    fname_map, _ = load_transforms(base_dir)
+
+    # normalized_key -> {variant: count}
+    groups: dict[str, dict[str, int]] = {}
+
+    for art_block in iter_articles(xml_path):
+        for feat_block in _FEATURE_PAT.findall(art_block):
+            fn_m = _FNAME_PAT.search(feat_block)
+            if not fn_m:
+                continue
+            fname_raw   = fn_m.group(2).strip()
+            fname_clean = _ECLASS_ID_PAT.sub("", fname_raw).strip()
+            fname_final = fname_map.get(fname_clean.upper(), fname_clean)
+            if not fname_final:
+                continue
+            key = _normalize_fname(fname_final)
+            variants = groups.setdefault(key, {})
+            variants[fname_final] = variants.get(fname_final, 0) + 1
+
+    # Nur Gruppen mit >1 verbliebener Schreibweise sind Kandidaten
+    candidates = {k: v for k, v in groups.items() if len(v) > 1}
+    if not candidates:
+        p("FNAME-Konsistenz: keine uneinheitlichen Schreibweisen gefunden.", tag="dim")
+        return None
+
+    os.makedirs(log_dir, exist_ok=True)
+    ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_path = os.path.join(log_dir, f"fname_consistency_{ts}.csv")
+
+    with open(out_path, "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["normalized_key", "variant", "count", "vorschlag_to"])
+        for key, variants in sorted(candidates.items(),
+                                     key=lambda kv: -sum(kv[1].values())):
+            sorted_variants = sorted(variants.items(), key=lambda kv: -kv[1])
+            suggestion = sorted_variants[0][0]   # häufigste Schreibweise als Vorschlag
+            for variant, count in sorted_variants:
+                writer.writerow([key, variant, count, suggestion])
+
+    p(f"FNAME-Konsistenz: {len(candidates)} Gruppen mit uneinheitlicher Schreibweise "
+      f"→ {os.path.basename(out_path)}", tag="warn")
+    return out_path

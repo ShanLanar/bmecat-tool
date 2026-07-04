@@ -27,6 +27,7 @@ TEMPLATE_FILES = [
     "udx_fields.csv",
     "fname_renames.csv",
     "fvalue_renames.csv",
+    "keyword_dictionary.csv",
     "supplier_config.yaml",
 ]
 

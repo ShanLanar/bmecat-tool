@@ -109,10 +109,20 @@ def run(progress_cb=None, file_progress_cb=None):
         stats["ampersand_fixes"] = n_fixes
 
         # FNAME/FVALUE-Transformationen
-        from lib.fname_transforms import apply_fname_transforms
+        from lib.fname_transforms import apply_fname_transforms, report_fname_consistency
         import config as _cfg
         ft_stats = apply_fname_transforms(out_file, _cfg.BASE_DIR, progress_cb=p)
         stats["fname_transforms"] = ft_stats
+
+        # FNAME-Konsistenz-Report: findet FNAME-Varianten die noch nicht
+        # über fname_renames.csv vereinheitlicht sind
+        try:
+            report_path = report_fname_consistency(
+                out_file, _cfg.BASE_DIR, DIRS.get("logs", "logs"), progress_cb=p)
+            if report_path:
+                stats["fname_consistency_report"] = report_path
+        except Exception as e:
+            p(f"FNAME-Konsistenz-Report übersprungen: {e}", tag="dim")
 
         # Regelbasierte Anreicherung (Langbeschreibung, Hersteller-Fallbacks)
         from lib.article_enrichment import enrich

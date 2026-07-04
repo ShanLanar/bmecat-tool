@@ -366,6 +366,73 @@ def rule_eclass_keywords(article: str) -> tuple[str, bool]:
     return article, True
 
 
+# ── Regel: Keywords aus Beschreibungstext (kuratiertes Wörterbuch) ───────────
+
+_keyword_dict_cache: list[tuple] | None = None   # [(compiled_pattern, keyword), ...]
+
+
+def _get_keyword_dictionary() -> list[tuple]:
+    """Lädt keyword_dictionary.csv aus BASE_DIR (gecacht). Spalten: term,keyword."""
+    global _keyword_dict_cache
+    if _keyword_dict_cache is not None:
+        return _keyword_dict_cache
+    entries = []
+    try:
+        import config as _cfg, csv
+        path = os.path.join(_cfg.BASE_DIR, "keyword_dictionary.csv")
+        with open(path, "r", encoding="utf-8-sig") as f:
+            for row in csv.DictReader(f):
+                term    = (row.get("term") or "").strip()
+                keyword = (row.get("keyword") or "").strip()
+                if not term or term.startswith("#") or not keyword:
+                    continue
+                pattern = re.compile(r'\b' + re.escape(term) + r'\b', re.IGNORECASE)
+                entries.append((pattern, keyword))
+    except Exception:
+        entries = []
+    _keyword_dict_cache = entries
+    return entries
+
+
+def rule_keyword_from_description(article: str) -> tuple[str, bool]:
+    """
+    Sucht Begriffe aus keyword_dictionary.csv in DESCRIPTION_SHORT/LONG und
+    fügt die zugeordneten kanonischen Keywords ein. Nur Ganzwort-Treffer,
+    keine Duplikate (case-insensitiv).
+    """
+    entries = _get_keyword_dictionary()
+    if not entries:
+        return article, False
+
+    dl_m = _DESC_LONG_PAT.search(article)
+    ds_m = _DESC_SHORT_PAT.search(article)
+    text = (dl_m.group(1) if dl_m else "") + " " + (ds_m.group(1) if ds_m else "")
+    if not text.strip():
+        return article, False
+
+    existing = {m.group(1).strip().lower() for m in _KEYWORD_PAT.finditer(article)}
+    new_tags = []
+    for pattern, keyword in entries:
+        if keyword.lower() in existing:
+            continue
+        if pattern.search(text):
+            new_tags.append(f"        <KEYWORD>{_xml_escape(keyword)}</KEYWORD>")
+            existing.add(keyword.lower())
+
+    if not new_tags:
+        return article, False
+
+    kw_block = "\n".join(new_tags)
+    last_kw  = list(_KEYWORD_PAT.finditer(article))
+    if last_kw:
+        pos     = last_kw[-1].end()
+        article = article[:pos] + "\n" + kw_block + article[pos:]
+    else:
+        article = _DETAILS_END.sub(f"{kw_block}\n\\1", article, count=1)
+
+    return article, True
+
+
 _AID_SUFFIX_PAT = re.compile(r'\s*\([A-Z0-9]{4,30}\)\s*$')
 
 
@@ -438,6 +505,7 @@ RULES = [
     ("manufacturer_name",     rule_manufacturer_name),
     ("manufacturer_normalize",rule_manufacturer_normalize),
     ("eclass_keywords",       rule_eclass_keywords),
+    ("keyword_from_description", rule_keyword_from_description),
     ("ean_keyword",           rule_ean_keyword),
     ("keyword_dedup",         rule_keyword_dedup),
     ("clean_desc_short",      rule_clean_desc_short),
@@ -450,6 +518,7 @@ RULE_VERBS = {
     "manufacturer_name":      "Hersteller ergänzt",
     "manufacturer_normalize": "Herstellername normalisiert",
     "eclass_keywords":        "eClass-Kategorienamen als Keywords eingefügt",
+    "keyword_from_description": "Keywords aus Beschreibungstext eingefügt",
     "ean_keyword":            "EAN als Keyword eingefügt",
     "keyword_dedup":          "Keyword-Duplikate bereinigt",
     "clean_desc_short":       "AID-Suffix aus Kurzbeschreibung entfernt",

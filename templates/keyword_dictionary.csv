@@ -1,0 +1,7 @@
+term,keyword
+# Regelbasierte Keyword-Extraktion aus DESCRIPTION_SHORT/DESCRIPTION_LONG.
+# Spalten: term (im Beschreibungstext gesuchter Begriff, gross/klein egal),
+#          keyword (Kanonischer Keyword-Wert der eingefuegt wird).
+# Zeilen mit # werden ignoriert. Nur bei Ganzwort-Treffer wird das Keyword
+# gesetzt; bereits vorhandene Keywords werden nicht dupliziert.
+# Beispiel: nachfuellbar,Nachfuellbar
