@@ -13,6 +13,7 @@ log = logging.getLogger(__name__)
 # Dateien die beim Erstinstall angelegt werden (aus templates/)
 TEMPLATE_FILES = [
     "postprocess_blacklist.csv",
+    "postprocess_fname_blacklist.csv",
     "postprocess_prices.csv",
     "postprocess_price_types.csv",
     "postprocess_media_global.csv",

@@ -1,0 +1,5 @@
+fname
+# FNAME-Werte die nicht exportiert werden sollen (Feature wird komplett entfernt).
+# Ein Wert pro Zeile. Wildcards: * und ? erlaubt (z.B. *intern*).
+# Gross-/Kleinschreibung wird ignoriert. Zeilen mit # werden ignoriert.
+# Beispiel: Lagerplatz

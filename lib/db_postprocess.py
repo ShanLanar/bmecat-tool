@@ -4,6 +4,7 @@
 #
 # Dateien:
 #   postprocess_blacklist.csv      – product_id/supplier_pid (Wildcards: *GRATIS*)
+#   postprocess_fname_blacklist.csv– FNAME-Werte die nicht exportiert werden (Wildcards: *Marke*)
 #   postprocess_prices.csv         – Preisformeln pro Lieferant/Artikelmuster
 #   postprocess_price_types.csv    – Preis-Typ-Konvertierung (net_list→nrp etc.)
 #   postprocess_suffixes.csv       – AID-Suffix pro Lieferant
@@ -107,6 +108,42 @@ def _apply_fusage(features: list, fusage3: set) -> list:
         f2['fusage'] = 3 if f.get('fname', '') in fusage3 else 1
         result.append(f2)
     return result
+
+
+# ── FNAME-Blacklist ───────────────────────────────────────────────────────────
+
+def _load_fname_blacklist(base_dir: str) -> list:
+    """Gibt Liste von (is_pattern, value) zurück. Wildcards: *Marke*"""
+    path = os.path.join(base_dir, 'postprocess_fname_blacklist.csv')
+    if not os.path.exists(path):
+        return []
+    entries = []
+    with open(path, 'r', encoding='utf-8-sig') as f:
+        for line in f:
+            v = line.strip()
+            if v and not v.startswith('#') and v.lower() != 'fname':
+                is_glob = '*' in v or '?' in v
+                entries.append((is_glob, v))
+    if entries:
+        log.info(f"FNAME-Blacklist: {len(entries)} Einträge geladen")
+    return entries
+
+
+def _is_fname_blacklisted(entries: list, fname: str) -> bool:
+    for is_glob, pattern in entries:
+        if is_glob:
+            if fnmatch.fnmatch(fname, pattern) or fnmatch.fnmatch(fname.upper(), pattern.upper()):
+                return True
+        else:
+            if fname.lower() == pattern.lower():
+                return True
+    return False
+
+
+def _apply_fname_blacklist(features: list, blacklist: list) -> list:
+    if not blacklist:
+        return features
+    return [f for f in features if not _is_fname_blacklisted(blacklist, f.get('fname', ''))]
 
 
 # ── Preisberechnung ───────────────────────────────────────────────────────────
@@ -454,6 +491,7 @@ class PostProcessor:
     def __init__(self, base_dir: str):
         self._base_dir     = base_dir
         self._blacklist    = _load_blacklist(base_dir)
+        self._fname_blacklist = _load_fname_blacklist(base_dir)
         self._fusage3      = _load_fusage3(base_dir)
         self._price_rules  = _load_price_rules(base_dir)
         self._price_warnings: list[str] = _check_price_expiry(self._price_rules)
@@ -480,6 +518,9 @@ class PostProcessor:
         art = dict(article)
         pid = art.get('product_id', '')
         sup = art.get('supplier_name', '')
+
+        # ── FNAME-Blacklist ──────────────────────────────────────────────────
+        art['features'] = _apply_fname_blacklist(art.get('features', []), self._fname_blacklist)
 
         # ── FUSAGE ────────────────────────────────────────────────────────────
         art['features'] = _apply_fusage(art.get('features', []), self._fusage3)
