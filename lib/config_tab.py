@@ -62,6 +62,27 @@ Typische Einträge:
 """
     ),
     (
+        "postprocess_fname_blacklist.csv",
+        "FNAME-Blacklist (Feature-Filter)",
+        """\
+Liste von FNAMEs (Feature-Namen), die beim Export IMMER oder bedingt
+aus den Artikeln entfernt werden – z. B. interne/redaktionelle Felder,
+die nicht im Shop angezeigt werden sollen.
+
+Spalten:
+  fname   – Feature-Name (Wildcards * und ? erlaubt, z. B. *intern*)
+  fvalue  – optional. Leer = Feature immer entfernen.
+            Gesetzt = nur entfernen wenn FVALUE genau diesem Wert
+            entspricht (z. B. "Be Green" nur wenn Wert = CAA017/Nein).
+
+ECLASS-Booleschwerte (CAA016/CAA017) werden sowohl als Rohcode als
+auch als bereits übersetzter Text (Ja/Nein) erkannt.
+
+Kommentarzeilen beginnen mit #.
+Gross-/Kleinschreibung wird bei fname und fvalue ignoriert.
+"""
+    ),
+    (
         "postprocess_prices.csv",
         "Preisformeln (SOC ~73 K Artikel)",
         """\
