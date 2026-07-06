@@ -141,7 +141,7 @@ def _patch_and_export(excel_path: str, csv_in_path: str,
         "v_price[kl_de]":  ("v_attributeskaufland_de", 1),
         "v_price[kl_at]":  ("v_attributeskaufland_at", 1),
         "v_price[kl_fr]":  ("v_attributeskaufland_fr", 1),
-        "v_price[ne_de]":  ("v_netto_de",              1),
+        "v_price[ne_de]":  ("v_attributesnetto_de",    1),
     }
     for col, (sheet, cidx) in vlookup_cols.items():
         if col not in master.columns:
