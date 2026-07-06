@@ -113,37 +113,77 @@ def _apply_fusage(features: list, fusage3: set) -> list:
 # ── FNAME-Blacklist ───────────────────────────────────────────────────────────
 
 def _load_fname_blacklist(base_dir: str) -> list:
-    """Gibt Liste von (is_pattern, value) zurück. Wildcards: *Marke*"""
+    """
+    Gibt Liste von Regeln [{fname, is_glob, fvalue}] zurück.
+    Spalten: fname (Pflicht, Wildcards *Marke* erlaubt), fvalue (optional).
+    Ist fvalue gesetzt, wird das Feature nur bei diesem Wert gefiltert
+    (z.B. 'Be Green' nur wenn FVALUE=CAA017). Leeres fvalue = immer filtern.
+    """
     path = os.path.join(base_dir, 'postprocess_fname_blacklist.csv')
     if not os.path.exists(path):
         return []
     entries = []
-    with open(path, 'r', encoding='utf-8-sig') as f:
-        for line in f:
-            v = line.strip()
-            if v and not v.startswith('#') and v.lower() != 'fname':
-                is_glob = '*' in v or '?' in v
-                entries.append((is_glob, v))
+    try:
+        with open(path, 'r', encoding='utf-8-sig') as f:
+            # Kommentarzeilen (können selbst Kommas enthalten) vor dem CSV-Parsing entfernen
+            lines = [ln for ln in f if not ln.strip().startswith('#')]
+        try:
+            dialect = csv.Sniffer().sniff(''.join(lines[:20]), delimiters=',;')
+        except csv.Error:
+            dialect = csv.excel
+        reader = csv.DictReader(lines, dialect=dialect)
+        for row in reader:
+            fname = (row.get('fname') or '').strip()
+            if not fname:
+                continue
+            entries.append({
+                'fname':   fname,
+                'is_glob': '*' in fname or '?' in fname,
+                'fvalue':  (row.get('fvalue') or '').strip(),
+            })
+    except Exception as e:
+        log.warning(f"FNAME-Blacklist Lesefehler: {e}")
+        return []
     if entries:
         log.info(f"FNAME-Blacklist: {len(entries)} Einträge geladen")
     return entries
 
 
-def _is_fname_blacklisted(entries: list, fname: str) -> bool:
-    for is_glob, pattern in entries:
-        if is_glob:
-            if fnmatch.fnmatch(fname, pattern) or fnmatch.fnmatch(fname.upper(), pattern.upper()):
-                return True
+# ECLASS-Booleschwerte können als Roh-Code (CAA017) oder bereits über
+# fvalue_renames.csv konvertiert (Nein) in der DB stehen — beide Seiten
+# der Regel akzeptieren beide Schreibweisen.
+_ECLASS_BOOL_ALIASES = {'caa016': 'ja', 'caa017': 'nein'}
+
+
+def _fvalue_matches(rule_value: str, actual_value: str) -> bool:
+    rv = rule_value.strip().lower()
+    av = (actual_value or '').strip().lower()
+    if rv == av:
+        return True
+    return _ECLASS_BOOL_ALIASES.get(rv, rv) == _ECLASS_BOOL_ALIASES.get(av, av)
+
+
+def _is_fname_blacklisted(entries: list, fname: str, fvalue: str) -> bool:
+    for rule in entries:
+        pattern = rule['fname']
+        if rule['is_glob']:
+            name_match = (fnmatch.fnmatch(fname, pattern)
+                          or fnmatch.fnmatch(fname.upper(), pattern.upper()))
         else:
-            if fname.lower() == pattern.lower():
-                return True
+            name_match = fname.lower() == pattern.lower()
+        if not name_match:
+            continue
+        if rule['fvalue'] and not _fvalue_matches(rule['fvalue'], fvalue):
+            continue   # fvalue-Bedingung gesetzt, aber nicht erfüllt
+        return True
     return False
 
 
 def _apply_fname_blacklist(features: list, blacklist: list) -> list:
     if not blacklist:
         return features
-    return [f for f in features if not _is_fname_blacklisted(blacklist, f.get('fname', ''))]
+    return [f for f in features
+            if not _is_fname_blacklisted(blacklist, f.get('fname', ''), f.get('fvalue', ''))]
 
 
 # ── Preisberechnung ───────────────────────────────────────────────────────────
