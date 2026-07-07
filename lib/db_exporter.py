@@ -321,16 +321,15 @@ def _render_article(art: dict, udx_map: dict, con=None, remap_rules: list = None
 
     if is_valid:
         price_str = f"{price:.2f}" if isinstance(price, float) else str(price or '')
-        # TAX: DB speichert als Integer (19 = 19/100 = 0.19), Export braucht dezimal
+        # TAX: DB speichert Prozentwert als Ganzzahl (19 = 19%) – Export unverändert als Ganzzahl
         tax_val = art.get('tax', 19)
-        tax_decimal = f"{tax_val / 100:.2f}" if isinstance(tax_val, int) else str(tax_val)
         lines += [
             '      <ARTICLE_PRICE price_type="net_customer">\n',
             f'        <VALID_START_DATE>{xml_escape(valid_start)}</VALID_START_DATE>\n',
             f'        <VALID_END_DATE>{xml_escape(valid_end)}</VALID_END_DATE>\n',
             f'        <PRICE_AMOUNT>{price_str}</PRICE_AMOUNT>\n',
             f'        <PRICE_CURRENCY>{xml_escape(art.get("price_currency","EUR"))}</PRICE_CURRENCY>\n',
-            f'        <TAX>{tax_decimal}</TAX>\n',
+            f'        <TAX>{tax_val}</TAX>\n',
             f'        <LOWER_BOUND>{art.get("lower_bound",1)}</LOWER_BOUND>\n',
             '      </ARTICLE_PRICE>\n',
         ]
