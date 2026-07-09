@@ -180,6 +180,67 @@ def _import_catalog(con, xml_path: str, supplier_id: int, prefix: str,
     return count
 
 
+def _parse_one_price(price_elem, price_details) -> dict:
+    """
+    Parst ein einzelnes <ARTICLE_PRICE>-Element (eine Mengenstaffel).
+    price_details: das umschließende ARTICLE_PRICE_DETAILS (für DATETIME-Fallback).
+    """
+    if price_elem is None:
+        return {
+            'price_type': 'net_customer', 'lower_bound': 1, 'price_amount': None,
+            'price_currency': 'EUR', 'tax': 19,
+            'valid_start_date': '', 'valid_end_date': '',
+        }
+
+    price_type     = price_elem.get('price_type', 'net_customer')
+    price_amount   = _txt(price_elem, 'PRICE_AMOUNT')
+    price_currency = _txt(price_elem, 'PRICE_CURRENCY') or 'EUR'
+    tax_str        = _txt(price_elem, 'TAX')
+    lower_bound    = _txt(price_elem, 'LOWER_BOUND') or '1'
+
+    # VALID_START_DATE / VALID_END_DATE: können direkt als Tag oder als DATETIME[@type=...]
+    # auf ARTICLE_PRICE_DETAILS-Ebene vorkommen (gilt dann für alle Preisstufen gemeinsam)
+    valid_start = _txt(price_elem, 'VALID_START_DATE')
+    valid_end   = _txt(price_elem, 'VALID_END_DATE')
+    if not valid_start and price_details is not None:
+        for dt in _findall(price_details, 'DATETIME'):
+            if dt.get('type', '').lower() == 'valid_start_date':
+                valid_start = _txt(dt, 'DATE') or (dt.text or '').strip()
+                break
+    if not valid_end and price_details is not None:
+        for dt in _findall(price_details, 'DATETIME'):
+            if dt.get('type', '').lower() == 'valid_end_date':
+                valid_end = _txt(dt, 'DATE') or (dt.text or '').strip()
+                break
+
+    try:
+        price_float = float(price_amount.replace(',', '.')) if price_amount else None
+    except ValueError:
+        price_float = None
+    try:
+        # TAX dezimal speichern (0.19 = 19%, 0.07 = 7%)
+        tax_float = float(tax_str.replace(',', '.')) if tax_str else 0.19
+        if tax_float >= 1:
+            tax_float = tax_float / 100.0
+        tax_int = int(round(tax_float * 100))  # Speichern als Integer (19 für 0.19)
+    except ValueError:
+        tax_int = 19
+    try:
+        lb_int = int(float(lower_bound)) if lower_bound else 1
+    except ValueError:
+        lb_int = 1
+
+    return {
+        'price_type':       price_type,
+        'lower_bound':      lb_int,
+        'price_amount':     price_float,
+        'price_currency':   price_currency,
+        'tax':              tax_int,
+        'valid_start_date': valid_start,
+        'valid_end_date':   valid_end,
+    }
+
+
 def _parse_article(art_elem, prefix: str) -> dict:
     """Parst ein <ARTICLE>-Element in ein Artikel-Dict."""
 
@@ -241,54 +302,20 @@ def _parse_article(art_elem, prefix: str) -> dict:
     ref_sys  = _txt(ref_feat, 'REFERENCE_FEATURE_SYSTEM_NAME') if ref_feat else ''
     ref_grp  = _txt(ref_feat, 'REFERENCE_FEATURE_GROUP_ID')   if ref_feat else ''
 
-    # Preis: ARTICLE_PRICE_DETAILS > ARTICLE_PRICE
+    # Preis: ARTICLE_PRICE_DETAILS > ARTICLE_PRICE (können mehrere Mengenstaffeln sein)
     price_details = _find(art_elem, './ARTICLE_PRICE_DETAILS')
-    price_elem = _find(price_details, 'ARTICLE_PRICE') if price_details is not None else None
-    price_type     = (price_elem.get('price_type', 'net_customer') if price_elem is not None else 'net_customer')
-    price_amount   = _txt(price_elem, 'PRICE_AMOUNT')   if price_elem is not None else ''
-    price_currency = _txt(price_elem, 'PRICE_CURRENCY') if price_elem is not None else 'EUR'
-    tax_str        = _txt(price_elem, 'TAX')             if price_elem is not None else '19'
-    lower_bound    = _txt(price_elem, 'LOWER_BOUND')     if price_elem is not None else '1'
+    price_elems = _findall(price_details, 'ARTICLE_PRICE') if price_details is not None else []
+    prices = [_parse_one_price(pe, price_details) for pe in price_elems]
 
-    # VALID_START_DATE / VALID_END_DATE: können direkt als Tag oder als DATETIME[@type=...] vorkommen
-    # DATETIME-Tags sind auf Ebene ARTICLE_PRICE_DETAILS, nicht innerhalb ARTICLE_PRICE
-    valid_start = _txt(price_elem, 'VALID_START_DATE') if price_elem is not None else ''
-    valid_end   = _txt(price_elem, 'VALID_END_DATE')   if price_elem is not None else ''
-    if not valid_start and price_details is not None:
-        # Fallback: DATETIME[@type="valid_start_date"] auf ARTICLE_PRICE_DETAILS Ebene
-        # Datum steht im Kind-Element <DATE>, nicht direkt im Text von DATETIME
-        for dt in _findall(price_details, 'DATETIME'):
-            if dt.get('type', '').lower() == 'valid_start_date':
-                valid_start = _txt(dt, 'DATE') or (dt.text or '').strip()
-                if valid_start:
-                    log.debug(f"Found valid_start_date via DATETIME: {valid_start}")
-                break
-    if not valid_end and price_details is not None:
-        # Fallback: DATETIME[@type="valid_end_date"] auf ARTICLE_PRICE_DETAILS Ebene
-        for dt in _findall(price_details, 'DATETIME'):
-            if dt.get('type', '').lower() == 'valid_end_date':
-                valid_end = _txt(dt, 'DATE') or (dt.text or '').strip()
-                if valid_end:
-                    log.debug(f"Found valid_end_date via DATETIME: {valid_end}")
-                break
-
-    try:
-        price_float = float(price_amount.replace(',', '.')) if price_amount else None
-    except ValueError:
-        price_float = None
-    try:
-        # TAX dezimal speichern (0.19 = 19%, 0.07 = 7%)
-        tax_float = float(tax_str.replace(',', '.')) if tax_str else 0.19
-        # Wenn >= 1: wahrscheinlich als Prozent (19), zu dezimal konvertieren
-        if tax_float >= 1:
-            tax_float = tax_float / 100.0
-        tax_int = int(round(tax_float * 100))  # Speichern als Integer (19 für 0.19)
-    except ValueError:
-        tax_int = 19
-    try:
-        lb_int = int(float(lower_bound)) if lower_bound else 1
-    except ValueError:
-        lb_int = 1
+    # Erste Preisstufe für die Einzelpreis-Legacy-Felder (VENDOSYS-Export unverändert)
+    primary = prices[0] if prices else _parse_one_price(None, price_details)
+    price_type     = primary['price_type']
+    price_float    = primary['price_amount']
+    price_currency = primary['price_currency']
+    tax_int        = primary['tax']
+    lb_int         = primary['lower_bound']
+    valid_start    = primary['valid_start_date']
+    valid_end      = primary['valid_end_date']
 
     # Bestelldetails
     od = _find(art_elem, './ARTICLE_ORDER_DETAILS') or ET.Element('x')
@@ -371,6 +398,7 @@ def _parse_article(art_elem, prefix: str) -> dict:
         'keywords':                    keywords,
         'references':                  references,
         'udx':                         udx,
+        'prices':                      prices,
     }
 
 
@@ -470,12 +498,14 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
     if batch:
         _flush(batch)
 
-    # Stale-Cleanup: Artikel dieses Lieferanten die in diesem Lauf nicht
-    # angefasst wurden (last_seen < import_start) → veraltet oder aus Katalog entfernt
+    # Stale-Cleanup (Soft-Delete): Artikel dieses Lieferanten die in diesem Lauf
+    # nicht angefasst wurden (last_seen < import_start) → im BMEcat nicht mehr
+    # vorhanden → active=0. Bleiben in der DB (für PIM-Export "inaktiv"),
+    # werden aber aus VENDOSYS-Export/Viewer ausgeblendet (query_changed filtert active=1).
     #
     # Sicherheits-Guard: wenn gar keine Artikel verarbeitet wurden (z.B. leere
-    # oder fehlerhafte XML-Datei), NICHT löschen — sonst verlieren wir alle
-    # vorhandenen Artikel komplett.
+    # oder fehlerhafte XML-Datei), NICHT deaktivieren — sonst verlieren wir alle
+    # vorhandenen Artikel komplett aus dem aktiven Bestand.
     total_processed = stats['new'] + stats['updated'] + stats['unchanged']
     dropped_articles: list[dict] = []
     if total_processed == 0:
@@ -483,23 +513,16 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
           f"(0 Artikel verarbeitet — XML leer oder fehlerhaft?)", tag="warn")
     else:
         try:
-            # Erst die IDs/product_ids holen bevor gelöscht wird
-            stale_rows = con.execute(
-                "SELECT product_id FROM articles WHERE supplier_id=? AND last_seen < ?",
-                (supplier_id, import_start)
-            ).fetchall()
+            from lib.article_db import deactivate_stale
+            with transaction(con):
+                stale_rows = deactivate_stale(con, supplier_id, import_start)
             dropped_articles = [{"product_id": r["product_id"],
                                  "supplier_name": sup_name} for r in stale_rows]
-            with transaction(con):
-                deleted = con.execute(
-                    "DELETE FROM articles WHERE supplier_id=? AND last_seen < ?",
-                    (supplier_id, import_start)
-                ).rowcount
-            if deleted:
-                p(f"DB-Import [{sup_name}]: {deleted} Artikel nicht mehr im Katalog "
-                  f"→ entfernt", tag="dim")
+            if dropped_articles:
+                p(f"DB-Import [{sup_name}]: {len(dropped_articles)} Artikel nicht mehr im Katalog "
+                  f"→ deaktiviert", tag="dim")
                 for a in dropped_articles[:5]:
-                    p(f"  entfernt: {a['product_id']}", tag="dim")
+                    p(f"  deaktiviert: {a['product_id']}", tag="dim")
                     # Dropped-Event an Collector weiterleiten
                     try:
                         p("", tag="dim", _dropped=a)

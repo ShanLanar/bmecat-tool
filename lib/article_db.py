@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def _now() -> str:
@@ -79,8 +79,23 @@ CREATE TABLE IF NOT EXISTS articles (
     first_seen                  TEXT NOT NULL,
     last_changed                TEXT NOT NULL,
     last_seen                   TEXT NOT NULL,
+    active                      INTEGER DEFAULT 1,
     UNIQUE(supplier_id, supplier_pid)
 );
+
+CREATE TABLE IF NOT EXISTS article_prices (
+    id               INTEGER PRIMARY KEY,
+    article_id       INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    price_type       TEXT NOT NULL,
+    lower_bound      INTEGER DEFAULT 1,
+    price_amount     REAL,
+    price_currency   TEXT DEFAULT 'EUR',
+    tax              INTEGER DEFAULT 19,
+    valid_start_date TEXT DEFAULT '',
+    valid_end_date   TEXT DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_price_article ON article_prices(article_id);
 
 CREATE TABLE IF NOT EXISTS article_features (
     id          INTEGER PRIMARY KEY,
@@ -220,6 +235,25 @@ def _migrate(con: sqlite3.Connection):
                 ON articles(manufacturer_name);
             CREATE INDEX IF NOT EXISTS idx_artcat_node
                 ON article_catalog_map(catalog_node_id);
+        """)
+    if current < 6:
+        # v6: Soft-Delete (active-Flag) + Mengenstaffel-Preise (article_prices)
+        cols = [r[1] for r in con.execute("PRAGMA table_info(articles)").fetchall()]
+        if "active" not in cols:
+            con.execute("ALTER TABLE articles ADD COLUMN active INTEGER DEFAULT 1")
+        con.executescript("""
+            CREATE TABLE IF NOT EXISTS article_prices (
+                id               INTEGER PRIMARY KEY,
+                article_id       INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+                price_type       TEXT NOT NULL,
+                lower_bound      INTEGER DEFAULT 1,
+                price_amount     REAL,
+                price_currency   TEXT DEFAULT 'EUR',
+                tax              INTEGER DEFAULT 19,
+                valid_start_date TEXT DEFAULT '',
+                valid_end_date   TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_price_article ON article_prices(article_id);
         """)
     con.execute("DELETE FROM schema_version")
     con.execute("INSERT INTO schema_version VALUES (?)", (SCHEMA_VERSION,))
@@ -363,7 +397,7 @@ def _article_hash(article: dict) -> str:
     skip = {"content_hash", "first_seen", "last_changed", "last_seen", "id", "supplier_id"}
     payload = {k: v for k, v in article.items() if k not in skip}
     # Unter-Listen kanonisch sortieren
-    for key in ("features", "mimes", "keywords", "references", "udx"):
+    for key in ("features", "mimes", "keywords", "references", "udx", "prices"):
         if key in payload and isinstance(payload[key], list):
             payload[key] = sorted(
                 payload[key],
@@ -412,8 +446,10 @@ def upsert_article(con: sqlite3.Connection, supplier_id: int, article: dict) -> 
 
     if existing:
         if existing["content_hash"] == article["content_hash"]:
+            # Preise sind Teil des content_hash – bei Hash-Gleichheit unverändert,
+            # article_prices muss hier nicht neu geschrieben werden.
             con.execute(
-                "UPDATE articles SET last_seen=? WHERE id=?",
+                "UPDATE articles SET last_seen=?, active=1 WHERE id=?",
                 (now, existing["id"])
             )
             return "unchanged", existing["id"]
@@ -437,7 +473,8 @@ def upsert_article(con: sqlite3.Connection, supplier_id: int, article: dict) -> 
                 reference_feature_system=:reference_feature_system,
                 reference_feature_group_id=:reference_feature_group_id,
                 catalog_group_id=:catalog_group_id, catalog_sub_group_id=:catalog_sub_group_id,
-                content_hash=:content_hash, last_changed=:last_changed, last_seen=:last_seen
+                content_hash=:content_hash, last_changed=:last_changed, last_seen=:last_seen,
+                active=1
             WHERE id=:id
         """, {**article, "last_changed": now, "last_seen": now, "id": art_id})
         status = "updated"
@@ -474,7 +511,7 @@ def upsert_article(con: sqlite3.Connection, supplier_id: int, article: dict) -> 
 
     # Sub-Tabellen neu schreiben
     for tbl in ("article_features", "article_mimes", "article_keywords",
-                "article_references", "article_udx"):
+                "article_references", "article_udx", "article_prices"):
         con.execute(f"DELETE FROM {tbl} WHERE article_id=?", (art_id,))
 
     for f in article.get("features", []):
@@ -509,7 +546,42 @@ def upsert_article(con: sqlite3.Connection, supplier_id: int, article: dict) -> 
             "INSERT INTO article_udx(article_id,key,value) VALUES (?,?,?)",
             (art_id, u.get("key",""), u.get("value",""))
         )
+    for pr in article.get("prices", []):
+        con.execute(
+            "INSERT INTO article_prices(article_id,price_type,lower_bound,price_amount,"
+            "price_currency,tax,valid_start_date,valid_end_date) VALUES (?,?,?,?,?,?,?,?)",
+            (art_id, pr.get("price_type",""), pr.get("lower_bound",1),
+             pr.get("price_amount"), pr.get("price_currency","EUR"),
+             pr.get("tax",19), pr.get("valid_start_date",""), pr.get("valid_end_date",""))
+        )
     return status, art_id
+
+
+def get_article_prices(con: sqlite3.Connection, article_id: int) -> list[dict]:
+    """Gibt alle Preisstufen eines Artikels zurück, sortiert nach Typ und Menge."""
+    rows = con.execute(
+        "SELECT price_type, lower_bound, price_amount, price_currency, tax, "
+        "valid_start_date, valid_end_date FROM article_prices "
+        "WHERE article_id=? ORDER BY price_type, lower_bound",
+        (article_id,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def deactivate_stale(con: sqlite3.Connection, supplier_id: int, cutoff: str) -> list[dict]:
+    """
+    Soft-Delete: Artikel die seit `cutoff` nicht mehr gesehen wurden (last_seen < cutoff)
+    werden auf active=0 gesetzt statt gelöscht. Gibt die betroffenen product_ids zurück.
+    """
+    stale_rows = con.execute(
+        "SELECT product_id FROM articles WHERE supplier_id=? AND last_seen<? AND active=1",
+        (supplier_id, cutoff)
+    ).fetchall()
+    con.execute(
+        "UPDATE articles SET active=0 WHERE supplier_id=? AND last_seen<? AND active=1",
+        (supplier_id, cutoff)
+    )
+    return [dict(r) for r in stale_rows]
 
 
 # ── Abfragen ──────────────────────────────────────────────────────────────────
@@ -531,7 +603,7 @@ def query_changed(con: sqlite3.Connection,
         JOIN suppliers s ON s.id = a.supplier_id
         LEFT JOIN article_catalog_map acm ON acm.article_id = a.id
         LEFT JOIN catalog_nodes cn ON cn.id = acm.catalog_node_id
-        WHERE a.last_changed >= ? AND a.last_changed <= ?
+        WHERE a.last_changed >= ? AND a.last_changed <= ? AND a.active = 1
     """
     params = [date_from, date_to]
     if supplier_name:
