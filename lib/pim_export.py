@@ -22,7 +22,7 @@ import logging
 import os
 from typing import Callable
 
-from lib.article_db import open_db, get_catalog_path
+from lib.article_db import open_db
 
 log = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ def _find_price_rule(rules: list, supplier_name: str, product_id: str):
 def _load_articles(con, product_id_pattern: str) -> list[dict]:
     """Lädt alle Artikel deren product_id auf das Muster passt, inkl. Katalog-Zuordnung."""
     rows = con.execute("""
-        SELECT a.id, a.supplier_pid, a.product_id, a.ean, a.manufacturer_name,
+        SELECT a.id, a.supplier_id, a.supplier_pid, a.product_id, a.ean, a.manufacturer_name,
                a.manufacturer_aid, a.delivery_time, a.order_unit, a.content_unit,
                a.no_cu_per_ou, a.price_quantity, a.quantity_min, a.quantity_interval,
                a.tax, a.active, s.supplier_name,
@@ -88,11 +88,51 @@ def _load_articles(con, product_id_pattern: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def _catalog_names(con, catalog_node_id) -> tuple:
+def _load_catalog_index(con, supplier_ids: set) -> tuple[dict, dict]:
+    """
+    Lädt alle Catalog-Knoten der beteiligten Lieferanten EINMAL in den Speicher.
+    Gibt (by_id, by_supplier_and_group) zurück – vermeidet N+1-Queries beim
+    Auflösen der Katalog-Hierarchie pro Artikel.
+    """
+    by_id: dict = {}
+    by_group: dict = {}
+    if not supplier_ids:
+        return by_id, by_group
+    placeholders = ','.join('?' * len(supplier_ids))
+    rows = con.execute(
+        f"SELECT * FROM catalog_nodes WHERE supplier_id IN ({placeholders})",
+        list(supplier_ids)
+    ).fetchall()
+    for r in rows:
+        d = dict(r)
+        by_id[d['id']] = d
+        by_group[(d['supplier_id'], d['group_id'])] = d
+    return by_id, by_group
+
+
+def _resolve_catalog_path(by_id: dict, by_group: dict, node_id) -> list[dict]:
+    """In-Memory-Äquivalent zu get_catalog_path(), ohne DB-Zugriff pro Artikel."""
+    node = by_id.get(node_id)
+    if not node:
+        return []
+    path = [node]
+    visited = {node['id']}
+    cur = node
+    while cur.get('parent_group_id') and cur['parent_group_id'] not in ('0', ''):
+        parent = by_group.get((cur['supplier_id'], cur['parent_group_id']))
+        if not parent or parent['id'] in visited:
+            break
+        path.insert(0, parent)
+        visited.add(parent['id'])
+        cur = parent
+    return path
+
+
+def _catalog_names(by_id: dict, by_group: dict, catalog_node_id) -> tuple:
     """Gibt (kategorie_id, kategorie_name, ober_kategorie_id, ober_kategorie_name) zurück."""
     if not catalog_node_id:
         return '', '', '', ''
-    path = get_catalog_path(con, catalog_node_id)
+    path = _resolve_catalog_path(by_id, by_group, catalog_node_id)
     if not path:
         return '', '', '', ''
     if len(path) >= 2:
@@ -102,23 +142,35 @@ def _catalog_names(con, catalog_node_id) -> tuple:
     return leaf['group_id'], leaf['name'], leaf['group_id'], leaf['name']
 
 
-def _price_tiers(con, article_id: int, price_type: str) -> list[dict]:
-    rows = con.execute(
-        "SELECT lower_bound, price_amount FROM article_prices "
-        "WHERE article_id=? AND price_type=? ORDER BY lower_bound",
-        (article_id, price_type)
-    ).fetchall()
-    return [dict(r) for r in rows]
+def _load_all_prices(con, product_id_pattern: str) -> dict:
+    """
+    Lädt ALLE Preisstufen der betroffenen Artikel in EINER Query.
+    Gibt {article_id: {price_type: [{'lower_bound','price_amount'}, ...]}} zurück.
+    """
+    rows = con.execute("""
+        SELECT ap.article_id, ap.price_type, ap.lower_bound, ap.price_amount
+        FROM article_prices ap
+        JOIN articles a ON a.id = ap.article_id
+        WHERE a.product_id LIKE ?
+        ORDER BY ap.article_id, ap.price_type, ap.lower_bound
+    """, (product_id_pattern,)).fetchall()
+    result: dict = {}
+    for r in rows:
+        result.setdefault(r['article_id'], {}).setdefault(r['price_type'], []).append(
+            {'lower_bound': r['lower_bound'], 'price_amount': r['price_amount']})
+    return result
 
 
-def _build_row(con, art: dict, price_rules: list) -> dict:
+def _build_row(art: dict, price_rules: list, prices_by_article: dict,
+              cat_by_id: dict, cat_by_group: dict) -> dict:
     pid      = art['supplier_pid']
     prod_id  = art['product_id']
     prefix   = prod_id[:-len(pid)] if pid and prod_id.endswith(pid) else ''
 
-    kat_id, kat_name, ober_id, ober_name = _catalog_names(con, art.get('_catalog_node_id'))
+    kat_id, kat_name, ober_id, ober_name = _catalog_names(
+        cat_by_id, cat_by_group, art.get('_catalog_node_id'))
 
-    ek_tiers = _price_tiers(con, art['id'], 'net_list')[:MAX_TIERS]
+    ek_tiers = prices_by_article.get(art['id'], {}).get('net_list', [])[:MAX_TIERS]
     rule = _find_price_rule(price_rules, art['supplier_name'], prod_id)
 
     row = {
@@ -186,12 +238,21 @@ def export_pim(db_path: str, base_dir: str, out_dir: str,
     p(f"PIM-Export: {len(price_rules)} Preisformeln geladen")
 
     articles = _load_articles(con, f"{product_id_prefix}%")
-    p(f"PIM-Export: {len(articles)} Artikel mit Präfix '{product_id_prefix}' gefunden")
+    total = len(articles)
+    p(f"PIM-Export: {total:,} Artikel mit Präfix '{product_id_prefix}' gefunden".replace(",", "."))
+
+    p("PIM-Export: lade Preisstufen und Katalog-Hierarchie ...")
+    prices_by_article = _load_all_prices(con, f"{product_id_prefix}%")
+    supplier_ids = {a['supplier_id'] for a in articles}
+    cat_by_id, cat_by_group = _load_catalog_index(con, supplier_ids)
 
     rows_active, rows_inactive = [], []
     no_rule = 0
-    for art in articles:
-        row = _build_row(con, art, price_rules)
+    progress_step = max(1, total // 20)   # ~20 Fortschritts-Meldungen
+    for idx, art in enumerate(articles, start=1):
+        if idx % progress_step == 0 or idx == total:
+            p(f"PIM-Export: {idx:,} / {total:,} Artikel verarbeitet".replace(",", "."))
+        row = _build_row(art, price_rules, prices_by_article, cat_by_id, cat_by_group)
         if row["vk_staffel_1"] == "":
             no_rule += 1
         if art.get('active', 1):
