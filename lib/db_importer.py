@@ -307,8 +307,15 @@ def _parse_article(art_elem, prefix: str) -> dict:
     price_elems = _findall(price_details, 'ARTICLE_PRICE') if price_details is not None else []
     prices = [_parse_one_price(pe, price_details) for pe in price_elems]
 
-    # Erste Preisstufe für die Einzelpreis-Legacy-Felder (VENDOSYS-Export unverändert)
-    primary = prices[0] if prices else _parse_one_price(None, price_details)
+    # Preisstufe für die Einzelpreis-Legacy-Felder (VENDOSYS-Export unverändert).
+    # Bevorzugt einen direkt gelieferten 'nrp'-Preis (niedrigste Staffel), falls
+    # vorhanden – sonst die erste Preisstufe in Dokumentreihenfolge (die
+    # Preistyp-Konvertierung in postprocess_price_types.csv greift danach).
+    nrp_prices = [p for p in prices if p['price_type'] == 'nrp']
+    if nrp_prices:
+        primary = min(nrp_prices, key=lambda p: p['lower_bound'])
+    else:
+        primary = prices[0] if prices else _parse_one_price(None, price_details)
     price_type     = primary['price_type']
     price_float    = primary['price_amount']
     price_currency = primary['price_currency']

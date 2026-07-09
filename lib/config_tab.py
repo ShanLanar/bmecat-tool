@@ -121,7 +121,7 @@ Spalten:
   date_to_offset_days   – Gültig bis = heute + N Tage
 
 Aktuell konfiguriert:
-  Büroring:  net_customer → nrp,  ab 2024-01-01,  +365 Tage ab heute
+  Büroring:  net_list → nrp,  ab 2024-01-01,  +365 Tage ab heute
 
 Der Export schreibt immer price_type="net_customer" im VENDOSYS-XML.
 Diese Konvertierung setzt nur den internen DB-Typ für die Zwischenbuchführung.
