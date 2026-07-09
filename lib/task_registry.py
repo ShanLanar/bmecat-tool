@@ -126,6 +126,14 @@ TASKS = [
     },
     # ── Extras ────────────────────────────────────────────────────────────────
     {
+        "id":      "pim_export",
+        "name":    "PIM-Artikelexport (Softcarrier)",
+        "desc":    "PIM-Artikelexport_aktiv.txt / _inaktiv.txt aus der Artikel-DB erzeugen (Ablösung altes PIM)",
+        "fn":      "tasks.pim_export:run",
+        "default": False,
+        "group":   "Extras",
+    },
+    {
         "id":      "fname_analyse",
         "name":    "FNAME-Analyse",
         "desc":    "Alle FNAMEs aus XMLs extrahieren, Kollisionen prüfen, fname_alle.csv erzeugen",

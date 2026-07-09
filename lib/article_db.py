@@ -572,14 +572,17 @@ def deactivate_stale(con: sqlite3.Connection, supplier_id: int, cutoff: str) -> 
     """
     Soft-Delete: Artikel die seit `cutoff` nicht mehr gesehen wurden (last_seen < cutoff)
     werden auf active=0 gesetzt statt gelöscht. Gibt die betroffenen product_ids zurück.
+    last_changed wird mitgesetzt, damit die Deaktivierung im nächsten
+    VENDOSYS-Export-Zeitfenster auftaucht (Artikel wird mit ONLINE=0 gemeldet,
+    nicht einfach aus dem Export ausgelassen).
     """
     stale_rows = con.execute(
         "SELECT product_id FROM articles WHERE supplier_id=? AND last_seen<? AND active=1",
         (supplier_id, cutoff)
     ).fetchall()
     con.execute(
-        "UPDATE articles SET active=0 WHERE supplier_id=? AND last_seen<? AND active=1",
-        (supplier_id, cutoff)
+        "UPDATE articles SET active=0, last_changed=? WHERE supplier_id=? AND last_seen<? AND active=1",
+        (_now(), supplier_id, cutoff)
     )
     return [dict(r) for r in stale_rows]
 
@@ -603,7 +606,7 @@ def query_changed(con: sqlite3.Connection,
         JOIN suppliers s ON s.id = a.supplier_id
         LEFT JOIN article_catalog_map acm ON acm.article_id = a.id
         LEFT JOIN catalog_nodes cn ON cn.id = acm.catalog_node_id
-        WHERE a.last_changed >= ? AND a.last_changed <= ? AND a.active = 1
+        WHERE a.last_changed >= ? AND a.last_changed <= ?
     """
     params = [date_from, date_to]
     if supplier_name:

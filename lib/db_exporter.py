@@ -340,9 +340,13 @@ def _render_article(art: dict, udx_map: dict, con=None, remap_rules: list = None
     lines += ['    </ARTICLE_PRICE_DETAILS>\n']
 
     # ARTICLE_AVAILABILITY_DETAILS
+    # ONLINE=0 wenn entweder der Lieferant den Artikel selbst offline setzt
+    # (art.online) ODER der Artikel nicht mehr im übermittelten BMEcat vorhanden
+    # ist (art.active, Soft-Delete). Beides muss zu ONLINE=0 führen.
+    is_online = 1 if (art.get("online", 1) and art.get("active", 1)) else 0
     lines += [
         '    <ARTICLE_AVAILABILITY_DETAILS>\n',
-        f'      <ONLINE>{art.get("online",1)}</ONLINE>\n',
+        f'      <ONLINE>{is_online}</ONLINE>\n',
         f'      <SEARCHABLE>{art.get("searchable",1)}</SEARCHABLE>\n',
         '    </ARTICLE_AVAILABILITY_DETAILS>\n',
     ]

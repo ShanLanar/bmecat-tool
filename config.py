@@ -20,14 +20,15 @@ DB_PATH    = os.path.join(BASE_DIR, "article_db.sqlite")
 EXPORT_DIR = os.path.join(BASE_DIR, "export_vendosys")
 
 DIRS = {
-    "in":        os.path.join(BASE_DIR, "in"),
-    "in2":       os.path.join(BASE_DIR, "in2"),
-    "in_bme":    os.path.join(BASE_DIR, "in_BME"),
-    "vertrieb":  os.path.join(BASE_DIR, "in_vertrieb"),
-    "logs":      os.path.join(BASE_DIR, "logs"),
-    "sql":       os.path.join(BASE_DIR, "sql"),
-    "unzip":     os.path.join(BASE_DIR, "unzip"),
-    "ndw_share": r"\\obs.abe-brands.de\OBS\data\DOWNLOADS\780104811",
+    "in":         os.path.join(BASE_DIR, "in"),
+    "in2":        os.path.join(BASE_DIR, "in2"),
+    "in_bme":     os.path.join(BASE_DIR, "in_BME"),
+    "vertrieb":   os.path.join(BASE_DIR, "in_vertrieb"),
+    "logs":       os.path.join(BASE_DIR, "logs"),
+    "sql":        os.path.join(BASE_DIR, "sql"),
+    "unzip":      os.path.join(BASE_DIR, "unzip"),
+    "pim_export": os.path.join(BASE_DIR, "pim_export"),
+    "ndw_share":  r"\\obs.abe-brands.de\OBS\data\DOWNLOADS\780104811",
 }
 
 TOOLS = {
