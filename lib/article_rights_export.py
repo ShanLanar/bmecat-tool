@@ -5,6 +5,12 @@
 # der Liste der SKUs (= product_id), die in diesem Katalog freigeschaltet
 # werden sollen.
 #
+# Verzeichnisstruktur: <out_dir>/<Katalog-Code>/<Zielsystem-Katalognummer>.csv
+# (z.B. export_artikelrechte/AS/57.csv für Allago, export_artikelrechte/AS/102.csv
+# für OfficeXL) – ein Ordner je Katalog, damit sich die Katalognummern der
+# Zielsysteme zwischen den 7 Katalogen (AS/WS/WZ/BRG/GREEN/FR/IT) nicht
+# überschreiben.
+#
 # Format je Datei: Kopfzeile "sku", danach eine product_id pro Zeile (kein
 # Trennzeichen, keine Anführungszeichen – exakt wie das alte Velocity-Template).
 #
@@ -90,8 +96,13 @@ def _softcarrier_split_skus(con, it_groups: set) -> tuple:
     return fr_skus, it_skus
 
 
-def _write_file(out_dir: str, katalog: str, target: str, skus: list) -> str:
-    path = os.path.join(out_dir, f"{katalog}_{target}.txt")
+def _write_file(out_dir: str, katalog: str, catalog_id: int, skus: list) -> str:
+    """Dateiname = Zielsystem-Katalognummer (Allago/Oxl), in eigenem Ordner
+    je Katalog-Code (AS/WS/WZ/...), damit sich die Nummern zwischen den
+    Katalogen nicht überschreiben."""
+    subdir = os.path.join(out_dir, katalog)
+    os.makedirs(subdir, exist_ok=True)
+    path = os.path.join(subdir, f"{catalog_id}.csv")
     with open(path, "w", encoding="utf-8", newline="") as f:
         f.write("sku\n")
         for sku in skus:
@@ -119,30 +130,30 @@ def export_article_rights(db_path: str, base_dir: str, out_dir: str,
 
     for code, supplier_name, allago_id, oxl_id in _SIMPLE_CATALOGS:
         skus = _active_skus(con, supplier_name)
-        allago_path = _write_file(out_dir, code, "Allago", skus)
-        oxl_path    = _write_file(out_dir, code, "Oxl", skus)
+        allago_path = _write_file(out_dir, code, allago_id, skus)
+        oxl_path    = _write_file(out_dir, code, oxl_id, skus)
         stats[code] = {"count": len(skus), "allago_path": allago_path, "oxl_path": oxl_path}
-        p(f"Artikelrechte {code}: {len(skus)} Artikel -> {os.path.basename(allago_path)} / "
-          f"{os.path.basename(oxl_path)}", tag="ok")
+        p(f"Artikelrechte {code}: {len(skus)} Artikel -> {code}/{os.path.basename(allago_path)} / "
+          f"{code}/{os.path.basename(oxl_path)}", tag="ok")
 
     # BRG Green
     code, supplier_name, allago_id, oxl_id = _GREEN_CATALOG
     skus = _green_skus(con, supplier_name)
-    allago_path = _write_file(out_dir, code, "Allago", skus)
-    oxl_path    = _write_file(out_dir, code, "Oxl", skus)
+    allago_path = _write_file(out_dir, code, allago_id, skus)
+    oxl_path    = _write_file(out_dir, code, oxl_id, skus)
     stats[code] = {"count": len(skus), "allago_path": allago_path, "oxl_path": oxl_path}
-    p(f"Artikelrechte {code}: {len(skus)} Artikel -> {os.path.basename(allago_path)} / "
-      f"{os.path.basename(oxl_path)}", tag="ok")
+    p(f"Artikelrechte {code}: {len(skus)} Artikel -> {code}/{os.path.basename(allago_path)} / "
+      f"{code}/{os.path.basename(oxl_path)}", tag="ok")
 
     # Softcarrier FR/IT-Split
     fr_skus, it_skus = _softcarrier_split_skus(con, it_groups)
     for (code, supplier_name, allago_id, oxl_id), skus in (
         (_FR_CATALOG, fr_skus), (_IT_CATALOG, it_skus)
     ):
-        allago_path = _write_file(out_dir, code, "Allago", skus)
-        oxl_path    = _write_file(out_dir, code, "Oxl", skus)
+        allago_path = _write_file(out_dir, code, allago_id, skus)
+        oxl_path    = _write_file(out_dir, code, oxl_id, skus)
         stats[code] = {"count": len(skus), "allago_path": allago_path, "oxl_path": oxl_path}
-        p(f"Artikelrechte {code}: {len(skus)} Artikel -> {os.path.basename(allago_path)} / "
-          f"{os.path.basename(oxl_path)}", tag="ok")
+        p(f"Artikelrechte {code}: {len(skus)} Artikel -> {code}/{os.path.basename(allago_path)} / "
+          f"{code}/{os.path.basename(oxl_path)}", tag="ok")
 
     return stats
