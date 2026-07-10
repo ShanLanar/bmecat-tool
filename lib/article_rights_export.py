@@ -73,7 +73,7 @@ def _green_skus(con, supplier_name: str) -> list:
         JOIN suppliers s ON s.id = a.supplier_id
         JOIN article_features f ON f.article_id = a.id
         WHERE s.supplier_name = ? AND a.active = 1 AND a.online = 1
-          AND f.fname = ?
+          AND LOWER(f.fname) = LOWER(?)
     """, (supplier_name, _GREEN_FNAME)).fetchall()
     skus = sorted({r['product_id'] for r in all_rows if _fvalue_matches(_GREEN_FVALUE, r['fvalue'])})
     return skus
