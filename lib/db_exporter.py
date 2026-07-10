@@ -556,11 +556,6 @@ def export_changed(db_path: str, base_dir: str, export_dir: str,
     # Export-Cleanup: Dateien älter als EXPORT_KEEP_DAYS Tage löschen
     _cleanup_export_dir(export_dir, keep_days=7, progress_cb=p)
 
-    # Atomarer Export: erst in Staging-Verzeichnis schreiben,
-    # dann nach Abschluss in Ziel-Verzeichnis verschieben
-    staging_dir = os.path.join(export_dir, f"_staging_{ts}")
-    os.makedirs(staging_dir, exist_ok=True)
-
     con        = open_db(db_path)
     udx_map    = _load_udx_fields(base_dir)
     post        = PostProcessor(base_dir)
@@ -592,80 +587,65 @@ def export_changed(db_path: str, base_dir: str, export_dir: str,
     total_articles = len(articles)
     progress_step  = max(1, total_articles // 20)   # ~20 Fortschritts-Meldungen
 
-    for idx, art in enumerate(articles, start=1):
-        pid = art.get('product_id', 'UNKNOWN')
-        if idx % progress_step == 0 or idx == total_articles:
-            p(f"DB-Export: {idx:,} / {total_articles:,} Artikel verarbeitet "
-              f"({stats['exported']:,} exportiert)".replace(",", "."))
-        try:
-            processed = post.process(art)
-            if processed is None:
-                stats['blacklisted'] += 1
-                continue
-
-            if processed.get('_price_zero'):
-                stats.setdefault('price_zero', 0)
-                stats['price_zero'] += 1
-            # Preisdelta-Warnung
-            new_price = processed.get('price_amount')
-            delta_warn = _check_price_delta(con, pid, new_price)
-            if delta_warn:
-                p(f"⚠ {delta_warn}", tag="warn")
-                stats.setdefault('price_delta_warnings', 0)
-                stats['price_delta_warnings'] += 1
-
-            xml_content = _render_article(processed, udx_map, con=con, remap_rules=remap_rules, prefix_map=prefix_map)
-            filename    = f"{_safe_filename(pid)}_{ts}.xml"
-            out_path    = os.path.join(staging_dir, filename)
-
-            with open(out_path, 'w', encoding='utf-8') as f:
-                f.write(xml_content)
-
-            exported_pids.append((pid, new_price))
-            stats['exported'] += 1
-        except Exception as exc:
-            log.warning(f"Export-Fehler {pid}: {exc}")
-            stats['errors'] += 1
-
-    # Staging → Ziel verschieben (atomar auf demselben Volume)
-    import glob as _glob
-    moved_files = []
-    if stats['errors'] == 0 or stats['exported'] > 0:
-        for src_file in _glob.glob(os.path.join(staging_dir, "*.xml")):
-            dst_file = os.path.join(export_dir, os.path.basename(src_file))
-            os.replace(src_file, dst_file)
-            moved_files.append(dst_file)
-    try:
-        os.rmdir(staging_dir)
-    except Exception:
-        pass
-
-    # ZIP-Archiv aus den frisch exportierten Dateien bauen, Einzeldateien löschen.
-    # Teilverzeichnisse à ZIP_BATCH_SIZE Dateien – flache Verzeichnisse mit
-    # >100k Dateien lassen FTP-Clients (z.B. FileZilla) beim Auflisten timeouten.
+    # XMLs werden direkt ins ZIP geschrieben (keine Einzeldateien mehr) – vermeidet
+    # write+move+read+delete (4 Dateisystem-Operationen pro Artikel). Teilverzeichnisse
+    # à ZIP_BATCH_SIZE Dateien – flache Verzeichnisse mit >100k Dateien lassen
+    # FTP-Clients (z.B. FileZilla) beim Auflisten timeouten.
     ZIP_BATCH_SIZE = 300
-    zip_path = None
-    if moved_files:
-        import zipfile
-        zip_path = os.path.join(export_dir, f"export_{ts}.zip")
-        p(f"DB-Export: packe {len(moved_files):,} Dateien → "
-          f"{os.path.basename(zip_path)} ...".replace(",", "."))
+    zip_path = os.path.join(export_dir, f"export_{ts}.zip")
+    p(f"DB-Export: verarbeite und packe direkt in {os.path.basename(zip_path)} ...")
+
+    import zipfile
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for idx, art in enumerate(articles, start=1):
+            pid = art.get('product_id', 'UNKNOWN')
+            if idx % progress_step == 0 or idx == total_articles:
+                p(f"DB-Export: {idx:,} / {total_articles:,} Artikel verarbeitet "
+                  f"({stats['exported']:,} exportiert)".replace(",", "."))
+            try:
+                processed = post.process(art)
+                if processed is None:
+                    stats['blacklisted'] += 1
+                    continue
+
+                if processed.get('_price_zero'):
+                    stats.setdefault('price_zero', 0)
+                    stats['price_zero'] += 1
+                # Preisdelta-Warnung
+                new_price = processed.get('price_amount')
+                delta_warn = _check_price_delta(con, pid, new_price)
+                if delta_warn:
+                    p(f"⚠ {delta_warn}", tag="warn")
+                    stats.setdefault('price_delta_warnings', 0)
+                    stats['price_delta_warnings'] += 1
+
+                xml_content = _render_article(processed, udx_map, con=con, remap_rules=remap_rules, prefix_map=prefix_map)
+                filename    = f"{_safe_filename(pid)}_{ts}.xml"
+                batch       = stats['exported'] // ZIP_BATCH_SIZE + 1
+                zf.writestr(f"teil_{batch:04d}/{filename}", xml_content)
+
+                exported_pids.append((pid, new_price))
+                stats['exported'] += 1
+            except Exception as exc:
+                log.warning(f"Export-Fehler {pid}: {exc}")
+                stats['errors'] += 1
+
+    if post.no_price_rule_pids:
+        p(f"⚠ {len(post.no_price_rule_pids)} SOC-Artikel ohne Preisregel, nicht exportiert",
+          tag="warn")
+        log.debug("SOC ohne Preisregel: " + ", ".join(post.no_price_rule_pids))
+
+    if stats['exported'] == 0:
         try:
-            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                for i, f in enumerate(moved_files):
-                    batch = f"teil_{i // ZIP_BATCH_SIZE + 1:04d}"
-                    zf.write(f, arcname=f"{batch}/{os.path.basename(f)}")
-            for f in moved_files:
-                os.remove(f)
-            n_batches = (len(moved_files) - 1) // ZIP_BATCH_SIZE + 1
-            p(f"DB-Export: ZIP erstellt ({os.path.getsize(zip_path) / 1024 / 1024:.1f} MB, "
-              f"{n_batches} Teilverzeichnisse à {ZIP_BATCH_SIZE})",
-              tag='ok')
-        except Exception as exc:
-            log.warning(f"ZIP-Erstellung fehlgeschlagen: {exc}")
-            p(f"⚠ ZIP-Erstellung fehlgeschlagen, Einzeldateien bleiben liegen: {exc}",
-              tag='warn')
-            zip_path = None
+            os.remove(zip_path)
+        except OSError:
+            pass
+        zip_path = None
+    else:
+        n_batches = (stats['exported'] - 1) // ZIP_BATCH_SIZE + 1
+        p(f"DB-Export: ZIP erstellt ({os.path.getsize(zip_path) / 1024 / 1024:.1f} MB, "
+          f"{n_batches} Teilverzeichnisse à {ZIP_BATCH_SIZE})",
+          tag='ok')
 
     # last_export_date + last_exported_price in DB schreiben
     if exported_pids:

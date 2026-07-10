@@ -45,7 +45,11 @@ def _read_csv(path: str) -> list[dict]:
             f.seek(0)
             reader = csv.DictReader(f, dialect=dialect)
             for row in reader:
-                rows.append({k.strip(): (v or '').strip() for k, v in row.items()})
+                # k ist None, wenn eine Zeile mehr Felder hat als die Kopfzeile
+                # (DictReader sammelt den Überschuss unter dem Schlüssel None) –
+                # solche Overflow-Werte sind keine echten Spalten, ignorieren.
+                rows.append({k.strip(): (v or '').strip()
+                             for k, v in row.items() if k is not None})
     except Exception as e:
         log.warning(f"CSV-Lesefehler {os.path.basename(path)}: {e}")
     return rows
@@ -584,6 +588,7 @@ class PostProcessor:
         self._media        = _load_media_rules(base_dir)
         self._global_media = _load_global_media_rules(base_dir)
         self._hook         = _load_hook(base_dir)
+        self.no_price_rule_pids: list[str] = []
 
     def is_blacklisted(self, article: dict) -> bool:
         return _is_blacklisted(
@@ -634,7 +639,7 @@ class PostProcessor:
         if not art.get('_price_rule_applied'):
             sup_norm = sup.lower().replace('ü', 'u').replace(' ', '')
             if 'softcarrier' in sup_norm or 'soc' in sup_norm:
-                log.info(f"SOC ohne Preisregel, nicht exportiert: {pid}")
+                self.no_price_rule_pids.append(pid)
                 return None
 
         # ── Preis-Typ-Konvertierung ───────────────────────────────────────────
