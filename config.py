@@ -28,6 +28,7 @@ DIRS = {
     "sql":        os.path.join(BASE_DIR, "sql"),
     "unzip":      os.path.join(BASE_DIR, "unzip"),
     "pim_export": os.path.join(BASE_DIR, "pim_export"),
+    "article_rights": os.path.join(BASE_DIR, "export_artikelrechte"),
     "ndw_share":  r"\\obs.abe-brands.de\OBS\data\DOWNLOADS\780104811",
 }
 

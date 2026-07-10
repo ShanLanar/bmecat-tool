@@ -30,6 +30,7 @@ TEMPLATE_FILES = [
     "fvalue_renames.csv",
     "keyword_dictionary.csv",
     "supplier_config.yaml",
+    "softcarrier_it_groups.csv",
 ]
 
 

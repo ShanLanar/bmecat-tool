@@ -128,6 +128,24 @@ Diese Konvertierung setzt nur den internen DB-Typ für die Zwischenbuchführung.
 """
     ),
     (
+        "softcarrier_it_groups.csv",
+        "Softcarrier IT-Kategorien (Artikelrechte)",
+        """\
+Liste von Softcarrier-Katalog-Gruppen-IDs (catalog_group_id), die dem
+Katalog "IT" statt "Freizeit & Hobby" (FR) zugeordnet werden – für den
+Artikelrechte-Export (Allago + OfficeXL).
+
+Spalte: group_id
+
+Ein Softcarrier-Artikel landet im IT-Export, wenn seine catalog_group_id
+in dieser Liste steht – sonst im FR-Export (Freizeit & Hobby).
+
+Übernommen 1:1 aus der alten SQL-Query. Neue Softcarrier-Kategorien, die
+hier nicht eingetragen sind, landen automatisch in FR – bewusst so
+akzeptiert (gleiche Systematik wie bei fehlenden Preisformeln).
+"""
+    ),
+    (
         "postprocess_media_global.csv",
         "MIME-Regeln global",
         """\

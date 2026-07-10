@@ -134,6 +134,14 @@ TASKS = [
         "group":   "Extras",
     },
     {
+        "id":      "article_rights",
+        "name":    "Artikelrechte-Export (Allago + OfficeXL)",
+        "desc":    "SKU-Listen je Katalog (AS/WS/WZ/BRG/GREEN/FR/IT) für Allago + OfficeXL erzeugen (Ablösung altes SQL/Velocity)",
+        "fn":      "tasks.article_rights:run",
+        "default": False,
+        "group":   "Extras",
+    },
+    {
         "id":      "fname_analyse",
         "name":    "FNAME-Analyse",
         "desc":    "Alle FNAMEs aus XMLs extrahieren, Kollisionen prüfen, fname_alle.csv erzeugen",
