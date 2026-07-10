@@ -23,7 +23,6 @@ import os
 from typing import Callable
 
 from lib.article_db import open_db
-from lib.db_postprocess import _fvalue_matches
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +36,9 @@ _SIMPLE_CATALOGS = [
 
 _GREEN_CATALOG = ("GREEN", "Büroring", 79, 88)
 _GREEN_FNAME = "Be Green"
-_GREEN_FVALUE = "Ja"
+# Beobachtete Wahr-Werte für "Be green" in der DB: Rohcode (CAA016), übersetzt
+# (Ja) und Boolean aus dem BMEcat-Rohtext (true). Alles case-insensitive.
+_GREEN_TRUE_VALUES = {"ja", "true", "caa016", "1", "wahr"}
 
 # Softcarrier wird per Katalog-Gruppen-ID aufgeteilt (siehe _load_it_groups)
 _FR_CATALOG = ("FR", "Softcarrier", 197, 107)   # NICHT in it_groups
@@ -65,8 +66,6 @@ def _active_skus(con, supplier_name: str) -> list:
 
 
 def _green_skus(con, supplier_name: str) -> list:
-    # fvalue-Vergleich (Rohcode CAA016 oder übersetzt "Ja") in Python, da
-    # ECLASS-Alias-Logik nicht trivial in SQL abbildbar ist.
     all_rows = con.execute("""
         SELECT a.product_id, f.fvalue
         FROM articles a
@@ -75,7 +74,8 @@ def _green_skus(con, supplier_name: str) -> list:
         WHERE s.supplier_name = ? AND a.active = 1 AND a.online = 1
           AND LOWER(f.fname) = LOWER(?)
     """, (supplier_name, _GREEN_FNAME)).fetchall()
-    skus = sorted({r['product_id'] for r in all_rows if _fvalue_matches(_GREEN_FVALUE, r['fvalue'])})
+    skus = sorted({r['product_id'] for r in all_rows
+                   if (r['fvalue'] or '').strip().lower() in _GREEN_TRUE_VALUES})
     return skus
 
 
