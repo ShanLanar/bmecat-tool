@@ -220,16 +220,56 @@ def _load_price_rules(base_dir: str) -> list:
         pattern = row.get('product_id_pattern', '*') or '*'
         regex   = re.compile('^' + re.escape(pattern).replace(r'\*', '.*') + '$', re.I)
         rules.append({
-            'supplier':  row.get('supplier', ''),
-            'pattern':   regex,
-            'fn':        _parse_price_formula(formula),
-            'to_type':   row.get('to_type',   '').strip(),
-            'date_from': row.get('date_from',  '').strip(),
-            'date_to':   row.get('date_to',    '').strip(),
+            'supplier':     row.get('supplier', ''),
+            'pattern':      regex,
+            'raw_pattern':  pattern,
+            'fn':           _parse_price_formula(formula),
+            'to_type':      row.get('to_type',   '').strip(),
+            'date_from':    row.get('date_from',  '').strip(),
+            'date_to':      row.get('date_to',    '').strip(),
         })
     if rules:
         log.info(f"Preisformeln: {len(rules)} geladen")
     return rules
+
+
+def build_price_rule_index(rules: list) -> tuple[dict, list]:
+    """
+    Trennt Preisregeln in exakte product_id-Treffer (Dict, O(1)-Lookup) und
+    echte Wildcard-Muster (kleine Liste, linear geprüft).
+
+    Vermeidet den O(n×m)-Scan über alle Regeln pro Artikel – bei z.B. 73.000
+    Softcarrier-Einzelregeln (eine pro Artikel, keine Wildcards) bedeutete das
+    bislang bis zu 73.000 Regex-Vergleiche PRO ARTIKEL, insbesondere teuer für
+    Artikel ohne passende Regel (Schleife muss komplett durchlaufen).
+
+    Gibt (exact_index, wildcard_rules) zurück – exact_index ist
+    {PRODUCT_ID (upper): [rule, ...]} in ursprünglicher Datei-Reihenfolge.
+    """
+    exact: dict = {}
+    wildcard: list = []
+    for order, rule in enumerate(rules):
+        rule = {**rule, '_order': order}
+        raw = rule.get('raw_pattern', '*')
+        if '*' in raw or '?' in raw:
+            wildcard.append(rule)
+        else:
+            exact.setdefault(raw.upper(), []).append(rule)
+    return exact, wildcard
+
+
+def match_price_rule(exact_index: dict, wildcard_rules: list, pid: str, supplier: str):
+    """O(1)-im-Schnitt-Ersatz für die lineare Preisregel-Suche. Erhält die
+    ursprüngliche Datei-Reihenfolge als Priorität (erste passende Regel gewinnt)."""
+    candidates = exact_index.get(pid.upper(), []) + wildcard_rules
+    if not candidates:
+        return None
+    for rule in sorted(candidates, key=lambda r: r['_order']):
+        if rule['supplier'] and rule['supplier'].lower() != supplier.lower():
+            continue
+        if rule['pattern'].match(pid):
+            return rule
+    return None
 
 
 # ── Preis-Typ-Konvertierung ───────────────────────────────────────────────────
@@ -534,6 +574,7 @@ class PostProcessor:
         self._fname_blacklist = _load_fname_blacklist(base_dir)
         self._fusage3      = _load_fusage3(base_dir)
         self._price_rules  = _load_price_rules(base_dir)
+        self._price_rule_exact, self._price_rule_wildcard = build_price_rule_index(self._price_rules)
         self._price_warnings: list[str] = _check_price_expiry(self._price_rules)
         self._price_types  = _load_price_type_rules(base_dir)
         self._suffixes     = _load_suffix_rules(base_dir)
@@ -566,31 +607,28 @@ class PostProcessor:
         art['features'] = _apply_fusage(art.get('features', []), self._fusage3)
 
         # ── Preisformel ───────────────────────────────────────────────────────
-        for rule in self._price_rules:
-            if rule['supplier'] and rule['supplier'].lower() != sup.lower():
-                continue
-            if rule['pattern'].match(pid):
-                art['price_amount'] = rule['fn'](art.get('price_amount'))
-                if rule.get('to_type'):
-                    art['price_type'] = rule['to_type']
-                if rule.get('date_from'):
-                    art['valid_start_date'] = rule['date_from']
-                if rule.get('date_to'):
-                    from datetime import date, timedelta
-                    raw = rule['date_to']
-                    if raw.startswith('+'):
-                        # Syntax: +365 → heute + 365 Tage (rollierend)
-                        try:
-                            art['valid_end_date'] = (
-                                date.today() + timedelta(days=int(raw[1:]))
-                            ).isoformat()
-                        except ValueError:
-                            art['valid_end_date'] = raw
-                    else:
-                        # Festes Datum: 2027-12-31
+        rule = match_price_rule(self._price_rule_exact, self._price_rule_wildcard, pid, sup)
+        if rule:
+            art['price_amount'] = rule['fn'](art.get('price_amount'))
+            if rule.get('to_type'):
+                art['price_type'] = rule['to_type']
+            if rule.get('date_from'):
+                art['valid_start_date'] = rule['date_from']
+            if rule.get('date_to'):
+                from datetime import date, timedelta
+                raw = rule['date_to']
+                if raw.startswith('+'):
+                    # Syntax: +365 → heute + 365 Tage (rollierend)
+                    try:
+                        art['valid_end_date'] = (
+                            date.today() + timedelta(days=int(raw[1:]))
+                        ).isoformat()
+                    except ValueError:
                         art['valid_end_date'] = raw
-                art['_price_rule_applied'] = True
-                break
+                else:
+                    # Festes Datum: 2027-12-31
+                    art['valid_end_date'] = raw
+            art['_price_rule_applied'] = True
 
         # ── SOC ohne Preisregel → nicht exportieren ──────────────────────────
         if not art.get('_price_rule_applied'):

@@ -23,6 +23,7 @@ import os
 from typing import Callable
 
 from lib.article_db import open_db
+from lib.db_postprocess import build_price_rule_index, match_price_rule
 
 log = logging.getLogger(__name__)
 
@@ -60,15 +61,6 @@ def _tax_to_comma(tax_int) -> str:
         return f"{int(tax_int) / 100:.2f}".replace('.', ',')
     except (TypeError, ValueError):
         return ''
-
-
-def _find_price_rule(rules: list, supplier_name: str, product_id: str):
-    for rule in rules:
-        if rule['supplier'] and rule['supplier'].lower() != supplier_name.lower():
-            continue
-        if rule['pattern'].match(product_id):
-            return rule
-    return None
 
 
 def _load_articles(con, product_id_pattern: str) -> list[dict]:
@@ -161,8 +153,8 @@ def _load_all_prices(con, product_id_pattern: str) -> dict:
     return result
 
 
-def _build_row(art: dict, price_rules: list, prices_by_article: dict,
-              cat_by_id: dict, cat_by_group: dict) -> dict:
+def _build_row(art: dict, price_rule_exact: dict, price_rule_wildcard: list,
+              prices_by_article: dict, cat_by_id: dict, cat_by_group: dict) -> dict:
     pid      = art['supplier_pid']
     prod_id  = art['product_id']
     prefix   = prod_id[:-len(pid)] if pid and prod_id.endswith(pid) else ''
@@ -171,7 +163,7 @@ def _build_row(art: dict, price_rules: list, prices_by_article: dict,
         cat_by_id, cat_by_group, art.get('_catalog_node_id'))
 
     ek_tiers = prices_by_article.get(art['id'], {}).get('net_list', [])[:MAX_TIERS]
-    rule = _find_price_rule(price_rules, art['supplier_name'], prod_id)
+    rule = match_price_rule(price_rule_exact, price_rule_wildcard, prod_id, art['supplier_name'])
 
     row = {
         "artikelnummer":     pid,
@@ -235,7 +227,9 @@ def export_pim(db_path: str, base_dir: str, out_dir: str,
 
     from lib.db_postprocess import _load_price_rules
     price_rules = _load_price_rules(base_dir)
-    p(f"PIM-Export: {len(price_rules)} Preisformeln geladen")
+    price_rule_exact, price_rule_wildcard = build_price_rule_index(price_rules)
+    p(f"PIM-Export: {len(price_rules)} Preisformeln geladen "
+      f"({len(price_rule_exact)} exakt, {len(price_rule_wildcard)} Wildcard)")
 
     articles = _load_articles(con, f"{product_id_prefix}%")
     total = len(articles)
@@ -252,7 +246,7 @@ def export_pim(db_path: str, base_dir: str, out_dir: str,
     for idx, art in enumerate(articles, start=1):
         if idx % progress_step == 0 or idx == total:
             p(f"PIM-Export: {idx:,} / {total:,} Artikel verarbeitet".replace(",", "."))
-        row = _build_row(art, price_rules, prices_by_article, cat_by_id, cat_by_group)
+        row = _build_row(art, price_rule_exact, price_rule_wildcard, prices_by_article, cat_by_id, cat_by_group)
         if row["vk_staffel_1"] == "":
             no_rule += 1
         if art.get('active', 1):
