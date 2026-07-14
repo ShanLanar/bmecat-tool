@@ -603,6 +603,7 @@ BUTTON_TIPS = {
     "Verbindungstest": "FTP/SFTP-Verbindung zu den Lieferanten-Servern testen, ohne einen Lauf zu starten.",
     "Konfiguration":   "Zugangsdaten, Pfade und E-Mail-Benachrichtigungen konfigurieren.",
     "Scheduler":       "Automatische tägliche Läufe einrichten (Windows Task Scheduler).",
+    "BMEcat laden":    "Eine lokale BMEcat-1.2-Datei ohne vorherigen Download direkt in die Artikel-Datenbank importieren.",
     "Theme: ABE":      "Zur hellen ABE-Farbgebung wechseln.",
     "Theme: Classic":  "Zur dunklen Classic-Farbgebung wechseln.",
     "Starten":         "Alle aktivierten Tasks in der richtigen Reihenfolge ausführen.",

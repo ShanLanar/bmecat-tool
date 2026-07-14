@@ -409,13 +409,39 @@ def _parse_article(art_elem, prefix: str) -> dict:
     }
 
 
+def extract_supplier_name(xml_path: str, max_bytes: int = 2 * 1024 * 1024) -> str:
+    """
+    Liest die ersten max_bytes der Datei und gibt den Inhalt des ersten
+    <SUPPLIER_NAME>-Elements zurück (CDATA-Hülle entfernt). Für den
+    Bestätigungsdialog beim manuellen BMEcat-Import – kein Vollparse,
+    da die Datei mehrere hundert MB groß sein kann.
+    """
+    try:
+        with open(xml_path, 'r', encoding='utf-8', errors='replace') as f:
+            chunk = f.read(max_bytes)
+    except OSError:
+        return ''
+    m = re.search(r'<SUPPLIER_NAME[^>]*>(.*?)</SUPPLIER_NAME>', chunk,
+                  re.IGNORECASE | re.DOTALL)
+    if not m:
+        return ''
+    name = m.group(1).strip()
+    name = re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', name, flags=re.DOTALL).strip()
+    return name
+
+
 # ── Import-Einstiegspunkt ─────────────────────────────────────────────────────
 
 def import_xml(db_path: str, xml_path: str, base_dir: str,
-               progress_cb: Callable = None) -> dict:
+               progress_cb: Callable = None,
+               supplier_name: str = None, prefix: str = None) -> dict:
     """
     Importiert eine verarbeitete BMEcat-XML-Datei in die Datenbank.
     Gibt Import-Statistik zurück.
+
+    supplier_name/prefix: wenn gesetzt, überschreiben sie den
+    Konfig-Lookup über supplier_config.yaml (für manuelle Importe ohne
+    Eintrag in der Config, z.B. Ad-hoc-BMEcat-1.2-Dateien).
     """
     p = progress_cb or (lambda m, **kw: None)
     xml_name = os.path.basename(xml_path)
@@ -423,9 +449,9 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
     # Supplier-Konfiguration
     sup_map   = _load_supplier_map(base_dir)
     sup_cfg   = sup_map.get(xml_name, {})
-    sup_name  = sup_cfg.get('supplier_name', xml_name.replace('.xml', ''))
+    sup_name  = supplier_name or sup_cfg.get('supplier_name', xml_name.replace('.xml', ''))
     sup_altid = sup_cfg.get('supplier_alt_aid', '')
-    prefix    = sup_cfg.get('prefix', '')
+    prefix    = prefix if prefix is not None else sup_cfg.get('prefix', '')
 
     p(f"DB-Import [{sup_name}]: lese {xml_name} ...")
 

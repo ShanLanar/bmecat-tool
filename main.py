@@ -234,6 +234,10 @@ class App(tk.Tk):
                               self._open_scheduler, BUTTON_TIPS["Scheduler"])
         self._widget_refs["scheduler_btn"] = sch_btn
 
+        import_btn = _ghost_btn(hbf, "BMEcat laden",
+                                self._open_manual_import, BUTTON_TIPS["BMEcat laden"])
+        self._widget_refs["manual_import_btn"] = import_btn
+
         # Theme-Umschalter
         theme_lbl = "◑ Classic" if self._theme == "ABE" else "◑ ABE"
         self._theme_btn = tk.Button(
@@ -593,6 +597,78 @@ class App(tk.Tk):
     def _open_scheduler(self):
         from tasks.scheduler import open_scheduler_dialog
         open_scheduler_dialog(self)
+
+    def _open_manual_import(self):
+        """Lokale BMEcat-1.2-Datei ohne Download direkt in die DB importieren.
+        Lieferantenname wird aus SUPPLIER_NAME vorgeschlagen, per Dialog bestätigt
+        oder angepasst. Rest der Import-Mechanik ist unverändert (kein Prefix,
+        kein Postprocessing – das läuft wie gehabt erst beim Export)."""
+        if self._running:
+            messagebox.showwarning("Lauf aktiv",
+                                   "Es läuft bereits ein Vorgang. Bitte warten.", parent=self)
+            return
+
+        from tkinter.filedialog import askopenfilename
+        xml_path = askopenfilename(
+            title="BMEcat-1.2-Datei auswählen",
+            filetypes=[("BMEcat-XML", "*.xml"), ("Alle Dateien", "*.*")],
+            parent=self,
+        )
+        if not xml_path:
+            return
+
+        from lib.db_importer import extract_supplier_name
+        suggested = extract_supplier_name(xml_path)
+
+        from tkinter.simpledialog import askstring
+        supplier_name = askstring(
+            "Lieferantenname bestätigen",
+            f"Aus der Datei übernommener Lieferantenname (SUPPLIER_NAME):\n"
+            f"Für Zuordnung/Filterung in der Datenbank verwendet – bei Bedarf anpassen.",
+            initialvalue=suggested,
+            parent=self,
+        )
+        if supplier_name is None:
+            return
+        supplier_name = supplier_name.strip()
+        if not supplier_name:
+            messagebox.showwarning("Kein Name",
+                                   "Ohne Lieferantenname kann nicht importiert werden.",
+                                   parent=self)
+            return
+
+        self._running = True
+        import_btn = self._widget_refs.get("manual_import_btn")
+        if import_btn:
+            import_btn.config(state="disabled")
+        self._run_btn.config(state="disabled")
+        self._set_status("Manueller Import läuft...", _T("YELLOW"))
+
+        def _worker():
+            try:
+                from lib.db_importer import import_xml
+                stats = import_xml(
+                    db_path=config.DB_PATH,
+                    xml_path=xml_path,
+                    base_dir=config.BASE_DIR,
+                    progress_cb=self._append_log,
+                    supplier_name=supplier_name,
+                )
+                total = stats['new'] + stats['updated'] + stats['unchanged']
+                self._append_log(
+                    f"Manueller Import abgeschlossen: {total} Artikel "
+                    f"(Lieferant: {supplier_name})", tag="ok")
+            except Exception as exc:
+                self._append_log(f"Manueller Import fehlgeschlagen: {exc}", tag="err")
+            finally:
+                self._running = False
+                self.after(0, lambda: (
+                    import_btn.config(state="normal") if import_btn else None,
+                    self._run_btn.config(state="normal"),
+                    self._set_status("Bereit", _T("FG_DIM")),
+                ))
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _open_config(self):
         from lib.config_editor import ConfigEditor
