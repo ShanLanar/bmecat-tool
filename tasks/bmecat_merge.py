@@ -67,6 +67,7 @@ def run(progress_cb=None, file_progress_cb=None):
     skip_merge = False
     try:
         from lib.utils import file_hash
+        import lib.bmecat_merge as _merge_mod
         current_hashes = {}
         fname_csv   = os.path.join(_cfg.BASE_DIR, "fname_renames.csv")
         fvalue_csv  = os.path.join(_cfg.BASE_DIR, "fvalue_renames.csv")
@@ -76,6 +77,10 @@ def run(progress_cb=None, file_progress_cb=None):
             ("kw",             kw_file),
             ("fname_renames",  fname_csv),
             ("fvalue_renames", fvalue_csv),
+            # Merge-Code selbst mit einbeziehen: sonst bleibt eine bereits
+            # gemergte Datei nach einer Logikänderung (z.B. Rename-Regeln)
+            # ewig gecacht, weil Merge-Skip nur die Quelldateien vergleicht.
+            ("merge_code",     _merge_mod.__file__),
         ]:
             if os.path.exists(path):
                 current_hashes[label] = file_hash(path)
