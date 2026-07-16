@@ -471,9 +471,19 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
     # und pro Eintrag einzeln abfangen statt die ganze Schleife zu riskieren.
     catalog_map: dict[str, tuple[str, str]] = {}
     catalog_map_errors = 0
+    # Elemente, deren Text der Parent (ARTICLE_TO_CATALOGGROUP_MAP) beim
+    # eigenen 'end'-Event noch lesen muss – dürfen NICHT vorher geleert
+    # werden. iterparse feuert 'end' von innen nach außen: ART_ID/
+    # CATALOG_GROUP_ID/CATALOG_SUB_GROUP_ID sind beim eigenen 'end' schon
+    # durch, bevor der umschließende Knoten drankommt. Ein pauschales
+    # _el.clear() auf jedes Element (wie zuvor) leert diese Kind-Texte also,
+    # bevor der Parent sie lesen kann – ART_ID kam dadurch immer leer zurück
+    # und die komplette Katalog-Zuordnung lief ins Leere.
+    _KEEP_UNCLEARED = {'ART_ID', 'CATALOG_GROUP_ID', 'CATALOG_SUB_GROUP_ID'}
     try:
         for _ev, _el in ET.iterparse(xml_path, events=('end',)):
-            if _tag(_el) == 'ARTICLE_TO_CATALOGGROUP_MAP':
+            tag = _tag(_el)
+            if tag == 'ARTICLE_TO_CATALOGGROUP_MAP':
                 try:
                     raw_aid = (_txt(_el, 'ART_ID') or '').strip()
                     grp = _txt(_el, 'CATALOG_GROUP_ID')
@@ -495,7 +505,9 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
                 except Exception as exc:
                     catalog_map_errors += 1
                     log.warning(f"ARTICLE_TO_CATALOGGROUP_MAP Eintrag übersprungen: {exc}")
-            _el.clear()
+                _el.clear()
+            elif tag not in _KEEP_UNCLEARED:
+                _el.clear()
     except Exception as exc:
         p(f"⚠ Katalog-Zuordnung (ARTICLE_TO_CATALOGGROUP_MAP) abgebrochen bei "
           f"{len(catalog_map)} gesammelten Einträgen: {exc}", tag="warn")
