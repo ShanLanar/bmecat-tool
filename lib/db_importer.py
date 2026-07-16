@@ -464,20 +464,34 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
     with transaction(con):
         _import_catalog(con, xml_path, supplier_id, prefix, progress_cb=p)
 
-    # ARTICLE_TO_CATALOGGROUP_MAP sammeln via iterparse (kein Full-Memory-Load)
+    # ARTICLE_TO_CATALOGGROUP_MAP sammeln via iterparse (kein Full-Memory-Load).
+    # Bricht ein einzelner Eintrag oder ein XML-Fehler weiter hinten in der
+    # Datei die Schleife ab, gehen sonst ALLE danach folgenden Zuordnungen
+    # lautlos verloren – deshalb hier laut warnen statt nur debug-loggen,
+    # und pro Eintrag einzeln abfangen statt die ganze Schleife zu riskieren.
     catalog_map: dict[str, tuple[str, str]] = {}
+    catalog_map_errors = 0
     try:
         for _ev, _el in ET.iterparse(xml_path, events=('end',)):
             if _tag(_el) == 'ARTICLE_TO_CATALOGGROUP_MAP':
-                raw_aid = (_txt(_el, 'ART_ID') or '').strip()
-                aid = raw_aid.replace(prefix, '', 1) if prefix and raw_aid.startswith(prefix) else raw_aid
-                grp = _txt(_el, 'CATALOG_GROUP_ID')
-                sub = _txt(_el, 'CATALOG_SUB_GROUP_ID')
-                if aid:
-                    catalog_map[aid] = (grp, sub)
+                try:
+                    raw_aid = (_txt(_el, 'ART_ID') or '').strip()
+                    aid = raw_aid.replace(prefix, '', 1) if prefix and raw_aid.startswith(prefix) else raw_aid
+                    grp = _txt(_el, 'CATALOG_GROUP_ID')
+                    sub = _txt(_el, 'CATALOG_SUB_GROUP_ID')
+                    if aid:
+                        catalog_map[aid] = (grp, sub)
+                except Exception as exc:
+                    catalog_map_errors += 1
+                    log.warning(f"ARTICLE_TO_CATALOGGROUP_MAP Eintrag übersprungen: {exc}")
                 _el.clear()
     except Exception as exc:
-        log.debug(f"catalog_map Sammlung: {exc}")
+        p(f"⚠ Katalog-Zuordnung (ARTICLE_TO_CATALOGGROUP_MAP) abgebrochen bei "
+          f"{len(catalog_map)} gesammelten Einträgen: {exc}", tag="warn")
+        log.warning(f"catalog_map Sammlung abgebrochen: {exc}")
+    if catalog_map_errors:
+        p(f"⚠ {catalog_map_errors} ARTICLE_TO_CATALOGGROUP_MAP-Einträge übersprungen "
+          f"(fehlerhaft)", tag="warn")
 
     stats = {'new': 0, 'updated': 0, 'unchanged': 0, 'errors': 0}
     batch_size = 500
