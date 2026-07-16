@@ -476,11 +476,22 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
             if _tag(_el) == 'ARTICLE_TO_CATALOGGROUP_MAP':
                 try:
                     raw_aid = (_txt(_el, 'ART_ID') or '').strip()
-                    aid = raw_aid.replace(prefix, '', 1) if prefix and raw_aid.startswith(prefix) else raw_aid
                     grp = _txt(_el, 'CATALOG_GROUP_ID')
                     sub = _txt(_el, 'CATALOG_SUB_GROUP_ID')
-                    if aid:
-                        catalog_map[aid] = (grp, sub)
+                    if raw_aid:
+                        # ART_ID entspricht bei den meisten Lieferanten direkt der
+                        # nativen SUPPLIER_AID (kein von uns hinzugefügtes Präfix) –
+                        # z.B. Büroring-Eigenmarken heißen bereits "BRG103213", das
+                        # "BRG" ist Teil der nativen ID, nicht unser prefix. Deshalb
+                        # zuerst der Rohwert als Schlüssel (matcht supplier_pid direkt);
+                        # die abgeschnittene Variante nur als Fallback für den Fall,
+                        # dass ein Lieferant sein ART_ID tatsächlich zusätzlich
+                        # mit unserem Präfix versieht.
+                        catalog_map[raw_aid] = (grp, sub)
+                        if prefix and raw_aid.startswith(prefix):
+                            stripped = raw_aid[len(prefix):]
+                            if stripped:
+                                catalog_map.setdefault(stripped, (grp, sub))
                 except Exception as exc:
                     catalog_map_errors += 1
                     log.warning(f"ARTICLE_TO_CATALOGGROUP_MAP Eintrag übersprungen: {exc}")
