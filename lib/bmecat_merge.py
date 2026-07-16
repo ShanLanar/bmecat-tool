@@ -58,14 +58,22 @@ def _rename_feature(block: str) -> str:
     """
     Für ECLASS-9.0-Features aus udx_src:
     FNAME=Code + FDESCR=Klartext → FNAME="Klartext (Code)"
+
+    Büroring liefert bei manchen Features FNAME bereits als Klartext,
+    identisch mit FDESCR (z.B. FNAME=FDESCR="GTIN"). In dem Fall macht
+    das Anhängen keinen Sinn ("GTIN (GTIN)") – und verhindert obendrein,
+    dass ein gleichnamiges Feature aus einem anderen Block (z.B. jCat)
+    beim FNAME-Dedup noch als Duplikat erkannt wird, weil der Name durch
+    die Umbenennung nicht mehr exakt übereinstimmt.
     """
     n_m = _FNAME_PAT.search(block)
     d_m = _FDESCR_PAT.search(block)
     if n_m and d_m:
         old_name = n_m.group(1).strip()
         descr    = d_m.group(1).strip()
-        new_name = f"{descr} ({old_name})"
-        block    = _FNAME_PAT.sub(f"<FNAME>{new_name}</FNAME>", block, count=1)
+        if descr.lower() != old_name.lower():
+            new_name = f"{descr} ({old_name})"
+            block    = _FNAME_PAT.sub(f"<FNAME>{new_name}</FNAME>", block, count=1)
     return block
 
 
