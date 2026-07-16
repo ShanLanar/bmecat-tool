@@ -766,9 +766,16 @@ def deduplicate_fnames(xml_path: str, progress_cb=None) -> dict:
         os.replace(temp, xml_path)
         p(f"  {name}: {total_removed} doppelte Features entfernt "
           f"in {len(affected_arts)} Artikel(n)", tag="warn")
-        for a in affected_arts:
+        # Detail-Zeilen sind pro Aufruf teuer (GUI-Insert + Datei-Append) –
+        # bei mehreren tausend betroffenen Artikeln kostet das reine Loggen
+        # sonst Minuten, ohne dass danach noch etwas verarbeitet wird.
+        _DETAIL_LIMIT = 50
+        for a in affected_arts[:_DETAIL_LIMIT]:
             dupes = ", ".join(a["removed"])
             p(f"    AID {a['aid']}: entfernt → {dupes}", tag="warn")
+        if len(affected_arts) > _DETAIL_LIMIT:
+            p(f"    … und {len(affected_arts) - _DETAIL_LIMIT} weitere Artikel "
+              f"(gekürzt, siehe Details bei Bedarf im XML-Diff)", tag="warn")
     else:
         p(f"  {name}: keine doppelten FNAMEs gefunden", tag="ok")
 
