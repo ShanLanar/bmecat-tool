@@ -484,7 +484,7 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
                 except Exception as exc:
                     catalog_map_errors += 1
                     log.warning(f"ARTICLE_TO_CATALOGGROUP_MAP Eintrag übersprungen: {exc}")
-                _el.clear()
+            _el.clear()
     except Exception as exc:
         p(f"⚠ Katalog-Zuordnung (ARTICLE_TO_CATALOGGROUP_MAP) abgebrochen bei "
           f"{len(catalog_map)} gesammelten Einträgen: {exc}", tag="warn")
