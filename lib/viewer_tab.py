@@ -31,6 +31,24 @@ _COLS = [
 _SORT_KEYS = {k: k for k, *_ in _COLS}
 
 
+def _fmt_local(iso_utc: str) -> str:
+    """
+    Wandelt einen in der DB gespeicherten UTC-Zeitstempel (_now() in
+    article_db.py) für die Anzeige in die lokale Zeitzone um. Ohne diese
+    Umrechnung stand hier die reine UTC-Uhrzeit, in der Sommerzeit also
+    zwei Stunden hinter der Wanduhr.
+    """
+    if not iso_utc:
+        return ""
+    try:
+        dt = datetime.datetime.fromisoformat(iso_utc)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        return dt.astimezone().strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return iso_utc[:16].replace("T", " ")
+
+
 class ViewerTab:
     def __init__(self, parent: tk.Frame, app, colors: dict):
         self._parent    = parent
@@ -384,7 +402,7 @@ class ViewerTab:
                                             or a.get("catalog_group_id") or "")
                     p = a.get("price_amount")
                     a["price_display"] = f"{p:.2f} €" if isinstance(p, float) else str(p or "")
-                    a["last_changed"] = (a.get("last_changed") or "")[:16].replace("T", " ")
+                    a["last_changed"] = _fmt_local(a.get("last_changed") or "")
                 self._all = articles
                 self._parent.after(0, self._apply_local)
                 self._parent.after(0, self._load_filter_options)
@@ -434,7 +452,7 @@ class ViewerTab:
 
         self._tree.delete(*self._tree.get_children())
         for a in chunk:
-            exp = (a.get("last_export_date") or "")[:16].replace("T", " ")
+            exp = _fmt_local(a.get("last_export_date") or "")
             self._tree.insert("", "end", iid=str(a["id"]), values=(
                 a.get("product_id", ""),
                 a.get("ean", ""),
@@ -442,7 +460,7 @@ class ViewerTab:
                 a.get("supplier_name", ""),
                 a.get("catalog_display", ""),
                 a.get("price_display", ""),
-                a.get("last_changed", "")[:16].replace("T", " "),
+                a.get("last_changed", ""),
                 exp,
             ))
 
