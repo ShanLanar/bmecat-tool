@@ -206,6 +206,18 @@ def _render_article(art: dict, udx_map: dict, con=None, remap_rules: list = None
     sup    = art.get('supplier_name', '')
     prefix = _supplier_prefix(art, prefix_map)
 
+    # VARIATION_GROUP: UDX.SOE.EPAG_ID gruppiert Varianten (z.B. Farben)
+    # eines Produkts unter einer gemeinsamen ID – hat Vorrang vor der
+    # Artikelnummer, weil sonst jede Variante ihre eigene, unverbundene
+    # Gruppe wäre. Nur wenn vorhanden; sonst wie bisher variation_group/pid.
+    epag_id = next(
+        (u.get('value', '').strip() for u in art.get('udx', [])
+         if (u.get('key') or '').strip().upper() == 'SOE.EPAG_ID'
+         and u.get('value', '').strip()),
+        None
+    )
+    variation_group = epag_id or art.get('variation_group', pid)
+
     lines = ['<?xml version="1.0" encoding="UTF-8"?>\n',
              '<VENDOSYS_CAT version="1.0">\n',
              '  <HEADER>\n',
@@ -227,7 +239,7 @@ def _render_article(art: dict, udx_map: dict, con=None, remap_rules: list = None
              f'      <EAN>{xml_escape(art.get("ean",""))}</EAN>\n',
              f'      <PRODUCT_TYPE>{xml_escape(art.get("product_type","SINGLE"))}</PRODUCT_TYPE>\n',
              f'      <CATEGORY>{xml_escape(art.get("category",""))}</CATEGORY>\n',
-             f'      <VARIATION_GROUP><![CDATA[{art.get("variation_group", pid)}]]></VARIATION_GROUP>\n',
+             f'      <VARIATION_GROUP><![CDATA[{variation_group}]]></VARIATION_GROUP>\n',
              f'      <DESCRIPTION_SHORT><![CDATA[{art.get("description_short","")}]]></DESCRIPTION_SHORT>\n',
              f'      <DESCRIPTION_LONG><![CDATA[{art.get("description_long","")}]]></DESCRIPTION_LONG>\n',
              f'      <MANUFACTURER_AID>{xml_escape(art.get("manufacturer_aid",""))}</MANUFACTURER_AID>\n',
