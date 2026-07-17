@@ -254,12 +254,25 @@ def _render_article(art: dict, udx_map: dict, con=None, remap_rules: list = None
 
     # ARTICLE_FEATURES
     features = art.get('features', [])
+    # UDX.SOE.SELECTIONFEATURE benennt das Merkmal, über das Varianten
+    # ausgewählt werden (z.B. "Farbe") – das benannte Merkmal muss dafür
+    # als FSELECTABLE=1 markiert sein, sonst kann der Shop es nicht als
+    # Auswahl-Option anbieten.
+    selection_fname = next(
+        (u.get('value', '').strip() for u in art.get('udx', [])
+         if (u.get('key') or '').strip().upper() == 'SOE.SELECTIONFEATURE'
+         and u.get('value', '').strip()),
+        None
+    )
     if features:
         lines.append('    <ARTICLE_FEATURES>\n')
         for f in features:
             fval  = f.get('fvalue', '') or ''
             funit = f.get('funit', '') or ''
             ford  = f.get('forder', '')
+            fselectable = f.get('fselectable', 0)
+            if selection_fname and f['fname'].strip().lower() == selection_fname.lower():
+                fselectable = 1
             lines += [
                 '      <FEATURE>\n',
                 f'        <FNAME><![CDATA[{f["fname"]}]]></FNAME>\n',
@@ -271,7 +284,7 @@ def _render_article(art: dict, udx_map: dict, con=None, remap_rules: list = None
                 f'        <FUSAGE>{f.get("fusage",1)}</FUSAGE>\n',
                 f'        <FORDER>{ford if ford else ""}</FORDER>\n',
                 f'        <FSEARCHABLE>{f.get("fsearchable",1)}</FSEARCHABLE>\n',
-                f'        <FSELECTABLE>{f.get("fselectable",0)}</FSELECTABLE>\n',
+                f'        <FSELECTABLE>{fselectable}</FSELECTABLE>\n',
                 '      </FEATURE>\n',
             ]
         lines.append('    </ARTICLE_FEATURES>\n')
