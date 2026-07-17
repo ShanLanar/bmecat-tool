@@ -178,6 +178,7 @@ def run(progress_cb=None, file_progress_cb=None):
     _optional = [
         ("custom_categories.csv",      "Eigene Kategorie-Namen"),
         ("postprocess_blacklist.csv",  "Artikel-Blacklist"),
+        ("postprocess_offline.csv",    "Artikel-Offline-Liste (ONLINE=0)"),
         ("postprocess_prices.csv",     "Preisformeln"),
         ("channel_category_mapping.csv","Kanal-Kategorie-Mapping"),
     ]

@@ -115,6 +115,13 @@ PIPELINE = [
                 "file": "postprocess_blacklist.csv",
             },
             {
+                "nr": "1b",
+                "label": "Offline-Liste",
+                "color": "#c62828",
+                "desc": "Artikel bleiben im Export, bekommen aber ONLINE=0 (im Gegensatz zur\nBlacklist: Artikel bleibt im Shop erhalten, wird nur nicht mehr verkäuflich\nangezeigt). Gleiche Syntax wie Blacklist.",
+                "file": "postprocess_offline.csv",
+            },
+            {
                 "nr": "2",
                 "label": "FNAME-Blacklist",
                 "color": "#880e4f",

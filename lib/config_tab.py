@@ -62,6 +62,25 @@ Typische Einträge:
 """
     ),
     (
+        "postprocess_offline.csv",
+        "Artikel offline setzen (bleiben im Export)",
+        """\
+Liste von Artikeln, die WEITER exportiert werden, aber mit ONLINE=0.
+
+Unterschied zur Blacklist: die Blacklist lässt den Artikel komplett aus
+dem Export weg. Diese Liste hier exportiert ihn ganz normal, setzt aber
+<ONLINE>0</ONLINE> – der Artikel bleibt im Shop erhalten (URL, SEO,
+Bestellhistorie, Bewertungen), wird aber als nicht verkäuflich markiert.
+
+Einträge:
+  • Einfache Artikel-ID (Supplier-AID, ohne Präfix): BMCLSK2025T1
+  • Mit Präfix (product_id):                         BRGBMCLSK2025T1
+  • Glob-Wildcards erlaubt:                          *GRATIS*
+
+Kommentarzeilen beginnen mit #.
+"""
+    ),
+    (
         "postprocess_fname_blacklist.csv",
         "FNAME-Blacklist (Feature-Filter)",
         """\

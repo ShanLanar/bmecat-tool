@@ -327,6 +327,7 @@ STEPS = [
             "• fvalue_renames.csv – Feature-Werte normalisieren\n"
             "• postprocess_prices.csv – Preisformeln je Artikel\n"
             "• postprocess_blacklist.csv – Artikel dauerhaft ausblenden\n"
+            "• postprocess_offline.csv – Artikel offline (ONLINE=0), bleibt im Export\n"
             "• custom_categories.csv – Eigene Kategorie-Namen\n"
             "• channel_category_mapping.csv – Marktplatz-Zuordnungen\n\n"
             "Dateien > 64 KB werden nur angezeigt (nicht editierbar) – "

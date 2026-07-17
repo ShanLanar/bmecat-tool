@@ -1,0 +1,7 @@
+# Offline-Liste – product_id oder supplier_pid pro Zeile
+# Wildcards: *GRATIS* (Glob-Syntax)
+#
+# Unterschied zu postprocess_blacklist.csv: Artikel hier werden WEITER
+# exportiert, aber mit <ONLINE>0</ONLINE> statt komplett übersprungen zu
+# werden – bleibt im Shop erhalten (URL/SEO/Bestellhistorie), wird aber
+# als nicht verkäuflich markiert.

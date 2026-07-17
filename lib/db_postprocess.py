@@ -4,6 +4,11 @@
 #
 # Dateien:
 #   postprocess_blacklist.csv      – product_id/supplier_pid (Wildcards: *GRATIS*)
+#   postprocess_offline.csv        – product_id/supplier_pid (Wildcards) die weiter
+#                                     exportiert werden, aber mit ONLINE=0 (im
+#                                     Gegensatz zur Blacklist: Artikel bleibt im Shop
+#                                     erhalten, z.B. für URL/SEO/Bestellhistorie,
+#                                     wird nur als nicht verkäuflich markiert)
 #   postprocess_fname_blacklist.csv– FNAME-Werte die nicht exportiert werden (Wildcards: *Marke*)
 #   postprocess_prices.csv         – Preisformeln pro Lieferant/Artikelmuster
 #   postprocess_price_types.csv    – Preis-Typ-Konvertierung (net_list→nrp etc.)
@@ -57,9 +62,8 @@ def _read_csv(path: str) -> list[dict]:
 
 # ── Blacklist ─────────────────────────────────────────────────────────────────
 
-def _load_blacklist(base_dir: str) -> list:
+def _load_pattern_list(path: str) -> list:
     """Gibt Liste von (is_pattern, value) zurück. Wildcards: *GRATIS*"""
-    path = os.path.join(base_dir, 'postprocess_blacklist.csv')
     if not os.path.exists(path):
         return []
     entries = []
@@ -69,12 +73,24 @@ def _load_blacklist(base_dir: str) -> list:
             if v and not v.startswith('#'):
                 is_glob = '*' in v or '?' in v
                 entries.append((is_glob, v))
+    return entries
+
+
+def _load_blacklist(base_dir: str) -> list:
+    entries = _load_pattern_list(os.path.join(base_dir, 'postprocess_blacklist.csv'))
     if entries:
         log.info(f"Blacklist: {len(entries)} Einträge geladen")
     return entries
 
 
-def _is_blacklisted(entries: list, product_id: str, supplier_pid: str) -> bool:
+def _load_offline_list(base_dir: str) -> list:
+    entries = _load_pattern_list(os.path.join(base_dir, 'postprocess_offline.csv'))
+    if entries:
+        log.info(f"Offline-Liste: {len(entries)} Einträge geladen")
+    return entries
+
+
+def _matches_pattern_list(entries: list, product_id: str, supplier_pid: str) -> bool:
     for is_glob, pattern in entries:
         for val in (product_id, supplier_pid):
             if is_glob:
@@ -575,6 +591,7 @@ class PostProcessor:
     def __init__(self, base_dir: str):
         self._base_dir     = base_dir
         self._blacklist    = _load_blacklist(base_dir)
+        self._offline_list = _load_offline_list(base_dir)
         self._fname_blacklist = _load_fname_blacklist(base_dir)
         self._fusage3      = _load_fusage3(base_dir)
         self._price_rules  = _load_price_rules(base_dir)
@@ -591,8 +608,15 @@ class PostProcessor:
         self.no_price_rule_pids: list[str] = []
 
     def is_blacklisted(self, article: dict) -> bool:
-        return _is_blacklisted(
+        return _matches_pattern_list(
             self._blacklist,
+            article.get('product_id', ''),
+            article.get('supplier_pid', ''),
+        )
+
+    def is_forced_offline(self, article: dict) -> bool:
+        return _matches_pattern_list(
+            self._offline_list,
             article.get('product_id', ''),
             article.get('supplier_pid', ''),
         )
@@ -604,6 +628,10 @@ class PostProcessor:
         art = dict(article)
         pid = art.get('product_id', '')
         sup = art.get('supplier_name', '')
+
+        # ── Offline-Liste: Artikel bleibt im Export, aber ONLINE=0 ────────────
+        if self.is_forced_offline(art):
+            art['online'] = 0
 
         # ── FNAME-Blacklist ──────────────────────────────────────────────────
         art['features'] = _apply_fname_blacklist(art.get('features', []), self._fname_blacklist)

@@ -606,7 +606,7 @@ def export_changed(db_path: str, base_dir: str, export_dir: str,
     articles  = apply_ean_dedup(articles, priority)
     p(f"DB-Export: {len(articles)} Artikel nach EAN-Dedup")
 
-    stats        = {'exported': 0, 'blacklisted': 0, 'errors': 0}
+    stats        = {'exported': 0, 'blacklisted': 0, 'offline': 0, 'errors': 0}
     exported_pids: list[tuple] = []   # (product_id, price_amount)
 
     total_articles = len(articles)
@@ -632,6 +632,8 @@ def export_changed(db_path: str, base_dir: str, export_dir: str,
                 if processed is None:
                     stats['blacklisted'] += 1
                     continue
+                if post.is_forced_offline(processed):
+                    stats['offline'] += 1
 
                 if processed.get('_price_zero'):
                     stats.setdefault('price_zero', 0)
@@ -683,6 +685,8 @@ def export_changed(db_path: str, base_dir: str, export_dir: str,
       tag='ok')
     if stats['blacklisted']:
         p(f"  Blacklist: {stats['blacklisted']} Artikel übersprungen", tag='dim')
+    if stats['offline']:
+        p(f"  Offline-Liste: {stats['offline']} Artikel mit ONLINE=0 exportiert", tag='dim')
     if stats['errors']:
         p(f"  Fehler: {stats['errors']}", tag='warn')
     if stats.get('price_zero', 0):
