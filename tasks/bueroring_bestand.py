@@ -166,6 +166,9 @@ def _patch_and_export(excel_path: str, csv_in_path: str,
         "p_attributes[marketplace_1][de]":  "v_price[cr_de]",
         "p_attributes[marketplace_4][de]":  "v_price[kl_de]",
         "p_attributes[marketplace_13][de]": "v_price[ne_de]",
+        # Marktkauf – Untermarktplatz von Netto DE, teilt sich dessen Preisspalte:
+        # sobald ein netto_de-Preis existiert, auch auf 16 anbieten.
+        "p_attributes[marketplace_16][de]": "v_price[ne_de]",
     }
     for flag, price_col in flag_map.items():
         if flag in master.columns and price_col in master.columns:
