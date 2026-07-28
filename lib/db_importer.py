@@ -447,10 +447,13 @@ def _parse_article(art_elem, prefix: str) -> dict:
         })
 
     # ARTICLE_REFERENCE (Crossselling etc.)
+    # art_id_to steht in der Quelle nativ (ohne Präfix, wie supplier_pid) –
+    # Selbstreferenzen (Artikel verweist auf sich selbst) kommen in
+    # Lieferanten-Feeds gelegentlich fehlerhaft vor und werden hier verworfen.
     references = []
     for ref in _findall(art_elem, './ARTICLE_REFERENCE'):
         art_id_to = _txt(ref, 'ART_ID_TO')
-        if art_id_to:
+        if art_id_to and art_id_to != supplier_pid:
             references.append({
                 'ref_type':  ref.get('type', 'similar'),
                 'art_id_to': art_id_to,

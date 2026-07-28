@@ -696,8 +696,9 @@ class PostProcessor:
         # ── Crossselling ──────────────────────────────────────────────────────
         if pid in self._crosssell:
             existing = {r['art_id_to'] for r in art.get('references', [])}
+            own_pid = art.get('supplier_pid', '')
             for ref in self._crosssell[pid]:
-                if ref['art_id_to'] not in existing:
+                if ref['art_id_to'] not in existing and ref['art_id_to'] != own_pid:
                     art.setdefault('references', []).append(ref)
 
         # ── Referenztypen remappen ────────────────────────────────────────────
