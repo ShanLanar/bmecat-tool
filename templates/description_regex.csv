@@ -1,0 +1,6 @@
+field,pattern,replacement,flags
+# field: short | long | both
+# pattern/replacement: Python-Regex (Backreferences \1, \2 ... erlaubt)
+# flags: optional, aktuell nur "i" (case-insensitive)
+# Beispiel (auskommentiert):
+# short,Büroring,,i

@@ -328,6 +328,8 @@ STEPS = [
             "• postprocess_prices.csv – Preisformeln je Artikel\n"
             "• postprocess_blacklist.csv – Artikel dauerhaft ausblenden\n"
             "• postprocess_offline.csv – Artikel offline (ONLINE=0), bleibt im Export\n"
+            "• description_regex.csv – Text-Ersetzungen in Kurz-/Langbeschreibung (vor Import)\n"
+            "• udx_inject.csv – SOE.EPAG_ID/SELECTIONFEATURE nachtragen (vor Import)\n"
             "• custom_categories.csv – Eigene Kategorie-Namen\n"
             "• channel_category_mapping.csv – Marktplatz-Zuordnungen\n\n"
             "Dateien > 64 KB werden nur angezeigt (nicht editierbar) – "

@@ -1,0 +1,7 @@
+supplier_pid,epag_id,selectionfeature
+# supplier_pid: native Artikel-ID des Lieferanten (ohne Präfix), z.B. BRG103213
+# epag_id / selectionfeature: mind. eins von beiden angeben
+# Wird NUR eingetragen, wenn die Quelle für den Artikel noch KEINE
+# USER_DEFINED_EXTENSIONS mitliefert - sonst bleibt die Quelle unangetastet.
+# Beispiel (auskommentiert):
+# BRG103213,22922956,Farbe

@@ -6,6 +6,7 @@
 # Supplier-Konfiguration kommt aus supplier_config.yaml (db_supplier_name,
 # db_supplier_alt_aid, prefix).
 
+import csv
 import logging
 import os
 import re
@@ -110,6 +111,109 @@ def _load_supplier_map(base_dir: str) -> dict:
                     'prefix':           prefix,
                 }
     return result
+
+
+# ── Beschreibungs-Regex (vor Import) ──────────────────────────────────────────
+
+def _load_description_regex(base_dir: str) -> list:
+    """
+    description_regex.csv: Spalten field,pattern,replacement,flags
+      field:  short | long | both
+      flags:  optional, aktuell nur 'i' (case-insensitive) unterstützt
+    Wird auf DESCRIPTION_SHORT/DESCRIPTION_LONG angewendet, bevor der
+    Artikel in die DB geschrieben wird. Regeln werden in Dateireihenfolge
+    nacheinander angewendet.
+    """
+    path = os.path.join(base_dir, 'description_regex.csv')
+    if not os.path.exists(path):
+        return []
+    rules = []
+    try:
+        with open(path, 'r', encoding='utf-8-sig') as f:
+            # Kommentarzeilen (beginnend mit #) vor dem CSV-Parsing entfernen
+            lines = [ln for ln in f if not ln.lstrip().startswith('#')]
+            for row in csv.DictReader(lines):
+                field = (row.get('field') or '').strip().lower()
+                pattern = row.get('pattern') or ''
+                replacement = row.get('replacement') or ''
+                if not field or not pattern:
+                    continue
+                flag_str = (row.get('flags') or '').strip().lower()
+                re_flags = re.IGNORECASE if 'i' in flag_str else 0
+                try:
+                    compiled = re.compile(pattern, re_flags)
+                except re.error as exc:
+                    log.warning(f"description_regex.csv: ungültiges Pattern {pattern!r}: {exc}")
+                    continue
+                rules.append({'field': field, 'pattern': compiled, 'replacement': replacement})
+    except Exception as e:
+        log.warning(f"description_regex.csv Lesefehler: {e}")
+        return []
+    if rules:
+        log.info(f"Beschreibungs-Regex: {len(rules)} Regeln geladen")
+    return rules
+
+
+def _apply_description_regex(art: dict, rules: list) -> None:
+    """Wendet die Regex-Regeln in-place auf description_short/description_long an."""
+    for rule in rules:
+        for field in ('description_short', 'description_long'):
+            if rule['field'] not in (field.replace('description_', ''), 'both'):
+                continue
+            val = art.get(field) or ''
+            if val:
+                try:
+                    art[field] = rule['pattern'].sub(rule['replacement'], val)
+                except re.error as exc:
+                    log.warning(f"description_regex.csv: Ersetzung fehlgeschlagen ({exc})")
+
+
+# ── UDX-Injektion (vor Import) ────────────────────────────────────────────────
+
+def _load_udx_inject(base_dir: str) -> dict:
+    """
+    udx_inject.csv: Spalten supplier_pid,epag_id,selectionfeature
+    Trägt UDX.SOE.EPAG_ID / UDX.SOE.SELECTIONFEATURE für den Artikel nach,
+    aber NUR wenn die Quelle für diesen Artikel noch keine
+    USER_DEFINED_EXTENSIONS mitliefert (siehe _apply_udx_inject).
+    Gibt {supplier_pid: {'epag_id':.., 'selectionfeature':..}} zurück.
+    """
+    path = os.path.join(base_dir, 'udx_inject.csv')
+    if not os.path.exists(path):
+        return {}
+    result = {}
+    try:
+        with open(path, 'r', encoding='utf-8-sig') as f:
+            lines = [ln for ln in f if not ln.lstrip().startswith('#')]
+            for row in csv.DictReader(lines):
+                pid = (row.get('supplier_pid') or '').strip()
+                if not pid:
+                    continue
+                epag_id = (row.get('epag_id') or '').strip()
+                selfeat = (row.get('selectionfeature') or '').strip()
+                if not epag_id and not selfeat:
+                    continue
+                result[pid] = {'epag_id': epag_id, 'selectionfeature': selfeat}
+    except Exception as e:
+        log.warning(f"udx_inject.csv Lesefehler: {e}")
+        return {}
+    if result:
+        log.info(f"UDX-Injektion: {len(result)} Artikel konfiguriert")
+    return result
+
+
+def _apply_udx_inject(art: dict, inject_map: dict) -> None:
+    """Trägt SOE.EPAG_ID/SOE.SELECTIONFEATURE nach, nur wenn art['udx'] leer ist
+    (d.h. die Quelle selbst keine USER_DEFINED_EXTENSIONS für den Artikel hat)."""
+    if art.get('udx'):
+        return
+    entry = inject_map.get(art.get('supplier_pid', ''))
+    if not entry:
+        return
+    if entry.get('epag_id'):
+        art['udx'].append({'key': 'SOE.EPAG_ID', 'value': entry['epag_id']})
+    if entry.get('selectionfeature'):
+        art['udx'].append({'key': 'SOE.SELECTIONFEATURE', 'value': entry['selectionfeature']})
 
 
 # ── BMEcat-Parser ─────────────────────────────────────────────────────────────
@@ -455,6 +559,9 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
 
     p(f"DB-Import [{sup_name}]: lese {xml_name} ...")
 
+    desc_regex_rules = _load_description_regex(base_dir)
+    udx_inject_map    = _load_udx_inject(base_dir)
+
     con = open_db(db_path)
     import_start = _now()   # Zeitstempel für Stale-Cleanup
     supplier_id = get_or_create_supplier(con, sup_name,
@@ -551,6 +658,10 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
             # Catalog-Mapping eintragen
             if pid in catalog_map:
                 art['catalog_group_id'], art['catalog_sub_group_id'] = catalog_map[pid]
+            if desc_regex_rules:
+                _apply_description_regex(art, desc_regex_rules)
+            if udx_inject_map:
+                _apply_udx_inject(art, udx_inject_map)
             batch.append(art)
             if len(batch) >= batch_size:
                 _flush(batch)

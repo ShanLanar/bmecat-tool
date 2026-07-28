@@ -89,11 +89,14 @@ PIPELINE = [
             "  • Katalogbaum aus CATALOG_STRUCTURE importiert\n"
             "  • ARTICLE_TO_CATALOGGROUP_MAP verknüpft Artikel mit Kategorien\n"
             "  • URL-Bereinigung: MIME_SOURCE 'https://...' → 'dateiname.jpg'\n"
+            "  • Beschreibungs-Regex: Text-Ersetzungen in DESCRIPTION_SHORT/LONG\n"
+            "  • UDX-Injektion: SOE.EPAG_ID/SELECTIONFEATURE nachtragen, falls die\n"
+            "    Quelle für den Artikel keine USER_DEFINED_EXTENSIONS mitliefert\n"
             "  • Stale-Cleanup: Artikel die nicht mehr im Katalog sind, werden\n"
             "    entfernt und in weggefallen_*.csv dokumentiert\n\n"
             "Backup: nach jedem Import automatisch nach backups/ kopiert (7 Tage)."
         ),
-        "files": [],
+        "files": ["description_regex.csv", "udx_inject.csv"],
         "note": "article_db.sqlite  |  backups/article_db_YYYYMMDD.sqlite",
     },
     {

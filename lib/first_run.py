@@ -15,6 +15,8 @@ TEMPLATE_FILES = [
     "postprocess_blacklist.csv",
     "postprocess_offline.csv",
     "postprocess_fname_blacklist.csv",
+    "description_regex.csv",
+    "udx_inject.csv",
     "postprocess_prices.csv",
     "postprocess_price_types.csv",
     "postprocess_media_global.csv",

@@ -81,6 +81,46 @@ Kommentarzeilen beginnen mit #.
 """
     ),
     (
+        "description_regex.csv",
+        "Beschreibungs-Regex (vor Import)",
+        """\
+Regex-Ersetzungen für DESCRIPTION_SHORT/DESCRIPTION_LONG – laufen beim
+DB-Import, BEVOR der Artikel in die Datenbank geschrieben wird.
+
+Spalten:
+  • field        short | long | both
+  • pattern      Python-Regex
+  • replacement  Ersetzungstext (Rückreferenzen \\1, \\2 ... erlaubt)
+  • flags        optional, aktuell nur "i" (case-insensitive)
+
+Regeln werden in Dateireihenfolge nacheinander angewendet (Regel 2 sieht
+schon das Ergebnis von Regel 1). Kommentarzeilen beginnen mit #.
+
+Beispiel: alle Vorkommen von "Büroring" aus der Kurzbeschreibung entfernen:
+  short,Büroring,,i
+"""
+    ),
+    (
+        "udx_inject.csv",
+        "UDX-Injektion (vor Import)",
+        """\
+Trägt UDX.SOE.EPAG_ID / UDX.SOE.SELECTIONFEATURE für einzelne Artikel
+nach, falls der Lieferant sie nicht selbst mitliefert. Läuft beim
+DB-Import, VOR dem Schreiben in die Datenbank.
+
+Wichtig: wird NUR eingetragen, wenn der Artikel in der Quelle noch
+KEINE USER_DEFINED_EXTENSIONS hat – existieren dort schon welche, bleibt
+die Quelle unangetastet (kein Überschreiben).
+
+Spalten:
+  • supplier_pid       native Artikel-ID ohne Präfix, z.B. BRG103213
+  • epag_id            optional
+  • selectionfeature   optional (mind. eine der beiden Spalten angeben)
+
+Kommentarzeilen beginnen mit #.
+"""
+    ),
+    (
         "postprocess_fname_blacklist.csv",
         "FNAME-Blacklist (Feature-Filter)",
         """\
