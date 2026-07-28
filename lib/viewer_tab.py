@@ -556,6 +556,12 @@ class ViewerTab:
             txt.insert("end", f"\n── Keywords ──────────────────────────────\n")
             txt.insert("end", "  " + ", ".join(art["keywords"]) + "\n")
 
+        if art.get("references"):
+            txt.insert("end", "\n── Referenzen ─────────────────────────────\n")
+            for r in art["references"]:
+                txt.insert("end",
+                    f"  [{r.get('ref_type',''):12}] {r.get('art_id_to','')}\n")
+
         txt.configure(state="disabled")
 
     # ── Export ────────────────────────────────────────────────────────────────
