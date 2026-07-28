@@ -129,7 +129,8 @@ def download_basis(progress_cb=None, file_progress_cb=None):
 def run(progress_cb=None, file_progress_cb=None):
     """
     Büroring Standard-Task:
-    Download (BMEcat + Bestand) → Merge + Keywords → Bestand+Preis → Brickfox-Upload
+    Download (BMEcat + Bestand) → Merge + Keywords → Brickfox-Upload
+    Bestand+Preis (Excel → Brickfox): eigenständiger Task bueroring_bestand.run()
     Bilder und Dokumente: separater Task run_bilder_dokumente()
     """
     cfg     = CONNECTIONS["bueroring"]
@@ -155,15 +156,14 @@ def run(progress_cb=None, file_progress_cb=None):
     p(f"║    ⚙ Merge: {udx_name} + {basis_name}")
     p(f"║      → bueroring_merged.xml                            ║")
     p("║    ⚙ Keywords, FNAME/FVALUE, Enrichment, DB-Import     ║")
-    p("║    ⚙ Bestand+Preis → Bestand_und_Preise.xlsx           ║")
     p("╠══════════════════════════════════════════════════════════╣")
     p("║  UPLOADS (→ abe.brickfox.net)                          ║")
     p("║    ↑ bueroring_merged.xml  → /incoming/bueroring.xml   ║")
     p("║      (FTP c_abe_ftp_2)                                  ║")
-    p("║    ↑ Products_bueroring_*.csv  → /incoming/            ║")
-    p("║      (FTP c_abe_ftp_3 – ERP Preis+Bestand)             ║")
-    p("║    ↑ csv_autoimport_bueroring_*.csv → /incoming/       ║")
-    p("║      (FTP c_abe_ftp_5 – Exchange Stammdaten)           ║")
+    p("╠══════════════════════════════════════════════════════════╣")
+    p("║  Bestand+Preis (Excel → Brickfox CSV) läuft NICHT mehr  ║")
+    p("║  hier mit – eigenständiger Task 'Büroring – Bestand+     ║")
+    p("║  Preis' im Vorbereitung-Bereich.                        ║")
     p("╚══════════════════════════════════════════════════════════╝")
 
     # ── Preflight: lokale Konfigurationsdateien prüfen ────────────────────────
@@ -171,7 +171,6 @@ def run(progress_cb=None, file_progress_cb=None):
     _base = _cfg.BASE_DIR
     _required = [
         ("keywords_exploded.csv",      "Keywords für Volltextsuche"),
-        ("Bestand_und_Preise.xlsx",    "Excel-Vorlage Bestand+Preis"),
         ("fname_renames.csv",          "Feature-Namen-Mapping"),
         ("fvalue_renames.csv",         "Feature-Werte-Mapping"),
     ]
@@ -281,14 +280,9 @@ def run(progress_cb=None, file_progress_cb=None):
     from tasks.db_import import run_for_supplier
     run_for_supplier('bueroring', progress_cb=p)
 
-    # ── Bestand+Preis ─────────────────────────────────────────────────────────
-    p("Bueroring: starte Bestand+Preis ...")
-    try:
-        from tasks.bueroring_bestand import run as run_bestand
-        run_bestand(progress_cb=p, file_progress_cb=fp)
-    except FileNotFoundError as e:
-        p(f"FEHLER: Bestand+Preis übersprungen – {e}", tag="warn")
-        log.warning("Bestand+Preis übersprungen: %s", e)
+    # Bestand+Preis (Excel → Products/CsvExchange → Brickfox) läuft nicht mehr
+    # automatisch mit – eigenständiger Task tasks.bueroring_bestand:run(),
+    # damit Preis-/Bestandsupdates ohne XML-Download/-Merge/-Upload laufen können.
 
     # ── Brickfox-Upload: bueroring_merged.xml als bueroring.xml ──────────────
     from tasks.others import upload_bmecat_xmls

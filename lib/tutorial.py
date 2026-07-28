@@ -626,7 +626,7 @@ TASK_TIPS = {
     "setup_check":        "Prüft Git-Stand, 7-Zip, alle FTP-Passwörter, Pflichtdateien und Verzeichnisse – kein Netzwerkzugriff. Bei Fehlern wird der gesamte Lauf abgebrochen.",
     "cleanup":            "Löscht alte XML/CSV/ZIP-Dateien aus dem Arbeitsverzeichnis. Immer zuerst ausführen.",
     "parallel_download":  "Lädt Büroring, Softcarrier und Nordwest gleichzeitig herunter – spart ca. 3 Minuten Wartezeit.",
-    "bueroring":          "Büroring komplett: Download (~470 MB) → Merge+Keywords → Bestand → Upload auf Brickfox+Mercateo.",
+    "bueroring":          "Büroring komplett: Download (~470 MB) → Merge+Keywords → Upload auf Brickfox+Mercateo. Bestand+Preis läuft separat (Task 'Büroring – Bestand+Preis').",
     "bueroring_bilder":   "Büroring Bilder und Dokumente herunterladen und entpacken. Nicht täglich nötig – nur wenn neue Bilddaten erwartet werden.",
     "bueroring_merge":    "Nur Merge ohne Download. Nützlich wenn Download erfolgreich war aber Merge fehlgeschlagen ist.",
     "buecat_merge":       "Manueller Merge-Trigger: direkt steuern welche Dateien zusammengeführt werden.",

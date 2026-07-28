@@ -42,9 +42,17 @@ TASKS = [
     {
         "id":      "bueroring",
         "name":    "Büroring – Komplett",
-        "desc":    "Download + Merge + Keywords + Bestand+Preis + Brickfox-Upload",
+        "desc":    "Download + Merge + Keywords + Brickfox-Upload (ohne Bestand+Preis)",
         "fn":      "tasks.bueroring:run",
         "default": True,
+        "group":   "Büroring",
+    },
+    {
+        "id":      "bueroring_bestand",
+        "name":    "Büroring – Bestand+Preis",
+        "desc":    "Excel patchen + Products/CsvExchange erzeugen + Brickfox-Upload – eigenständig, ohne BMEcat-Download/-Merge/-Upload",
+        "fn":      "tasks.bueroring_bestand:run",
+        "default": False,
         "group":   "Büroring",
     },
     {
