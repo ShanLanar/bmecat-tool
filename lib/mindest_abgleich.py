@@ -131,7 +131,10 @@ def generate_conditionsfile(avail_csv: str, mindest_table: dict,
         aid_upper = aid.upper()
 
         if aid_upper in mindest_table:
-            if stock >= MINIMUM_STOCK:
+            # Individuelle Mindestmenge aus Spalte M für diese AID
+            # (=SVERWEIS-Zweig der Excel-Formel: WENN(B<SVERWEIS(A;L:M;2;0)...).
+            threshold = mindest_table[aid_upper]
+            if stock >= threshold:
                 exported.append(aid)
             else:
                 n_below += 1
