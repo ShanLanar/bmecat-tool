@@ -71,8 +71,17 @@ def erstelle_bestandsdaten(in_bme_dir: str, output_path: str,
         lines_written = 1
 
         # ── 1. Dynamische Zeilen aus CSV ──────────────────────────────────────
-        with open(csv_path, encoding="utf-8", errors="replace") as f:
-            raw = f.readlines()
+        # Büroring liefert diese Datei nicht immer als UTF-8 (typisch bei älteren
+        # Windows/ERP-Exports: cp1252). Bei hart codiertem UTF-8+errors="replace"
+        # werden Umlaute in Artikelnummern (z.B. "HÄF...", "RÖS...") unwiderruflich
+        # durch U+FFFD ersetzt, sobald geschrieben ist die Original-ID futsch –
+        # solche Artikel matchen dann nie mehr gegen die availability-CSV.
+        try:
+            with open(csv_path, encoding="utf-8") as f:
+                raw = f.readlines()
+        except UnicodeDecodeError:
+            with open(csv_path, encoding="cp1252", errors="replace") as f:
+                raw = f.readlines()
 
         # Header-Erkennung (identisch zur PS1-Logik)
         if raw and not raw[0].strip().upper().startswith("SUPPLIER_AID;STOCK"):
