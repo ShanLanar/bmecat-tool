@@ -62,47 +62,55 @@ def erstelle_bestandsdaten(in_bme_dir: str, output_path: str,
     if os.path.exists(output_path):
         os.remove(output_path)
 
-    lines_written = 0
+    # ── 1. Dynamische Zeilen aus CSV ──────────────────────────────────────────
+    # Büroring liefert diese Datei nicht immer als UTF-8 (typisch bei älteren
+    # Windows/ERP-Exports: cp1252). Bei hart codiertem UTF-8+errors="replace"
+    # werden Umlaute in Artikelnummern (z.B. "HÄF...", "RÖS...") unwiderruflich
+    # durch U+FFFD ersetzt, sobald geschrieben ist die Original-ID futsch –
+    # solche Artikel matchen dann nie mehr gegen die availability-CSV.
+    try:
+        with open(csv_path, encoding="utf-8") as f:
+            raw = f.readlines()
+    except UnicodeDecodeError:
+        with open(csv_path, encoding="cp1252", errors="replace") as f:
+            raw = f.readlines()
+
+    # Header-Erkennung (identisch zur PS1-Logik)
+    if raw and not raw[0].strip().upper().startswith("SUPPLIER_AID;STOCK"):
+        raw = ["SUPPLIER_AID;STOCK;OTHER\n"] + raw
+
+    reader = csv.DictReader(
+        (r.strip() for r in raw),
+        fieldnames=["SUPPLIER_AID", "PRICE_CURRENCY", "OTHER"],
+        delimiter=";"
+    )
+    # Dict statt direkt schreiben: Artikel können sowohl im echten Feed als
+    # auch in static_articles.csv stehen (z.B. fixer Bestand für bestimmte
+    # Artikel). Ohne Dedup landete die AID doppelt in der Ausgabedatei –
+    # abhängig davon, welche Zeile ein Konsument zuerst liest, gewann mal
+    # der echte, mal der fixe Bestand. static_articles.csv gewinnt jetzt
+    # immer, weil es zuletzt angewendet wird.
+    entries: dict[str, str] = {}
+    for row in reader:
+        aid   = (row.get("SUPPLIER_AID") or "").strip()
+        stock = (row.get("PRICE_CURRENCY") or "").strip()
+        if aid and stock and aid != "SUPPLIER_AID":
+            entries[aid] = stock
+
+    # ── 2. Statische Artikel überschreiben/ergänzen ───────────────────────────
+    for line in STATIC_ARTICLES.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        aid, _, stock = line.partition(";")
+        if aid and stock:
+            entries[aid] = stock
 
     with open(output_path, "w", encoding="utf-8", newline="") as out:
-
-        # Header
         out.write("SUPPLIER_AID;STOCK\n")
-        lines_written = 1
-
-        # ── 1. Dynamische Zeilen aus CSV ──────────────────────────────────────
-        # Büroring liefert diese Datei nicht immer als UTF-8 (typisch bei älteren
-        # Windows/ERP-Exports: cp1252). Bei hart codiertem UTF-8+errors="replace"
-        # werden Umlaute in Artikelnummern (z.B. "HÄF...", "RÖS...") unwiderruflich
-        # durch U+FFFD ersetzt, sobald geschrieben ist die Original-ID futsch –
-        # solche Artikel matchen dann nie mehr gegen die availability-CSV.
-        try:
-            with open(csv_path, encoding="utf-8") as f:
-                raw = f.readlines()
-        except UnicodeDecodeError:
-            with open(csv_path, encoding="cp1252", errors="replace") as f:
-                raw = f.readlines()
-
-        # Header-Erkennung (identisch zur PS1-Logik)
-        if raw and not raw[0].strip().upper().startswith("SUPPLIER_AID;STOCK"):
-            raw = ["SUPPLIER_AID;STOCK;OTHER\n"] + raw
-
-        reader = csv.DictReader(
-            (r.strip() for r in raw),
-            fieldnames=["SUPPLIER_AID", "PRICE_CURRENCY", "OTHER"],
-            delimiter=";"
-        )
-        for row in reader:
-            aid   = (row.get("SUPPLIER_AID") or "").strip()
-            stock = (row.get("PRICE_CURRENCY") or "").strip()
-            if aid and stock and aid != "SUPPLIER_AID":
-                out.write(f"{aid};{stock}\n")
-                lines_written += 1
-
-        # ── 2. Statische Artikel anhängen ─────────────────────────────────────
-        for line in STATIC_ARTICLES.strip().splitlines():
-            out.write(line.strip() + "\n")
-            lines_written += 1
+        for aid, stock in entries.items():
+            out.write(f"{aid};{stock}\n")
+        lines_written = 1 + len(entries)
 
     log.info(f"Bestandsdaten geschrieben: {output_path} ({lines_written} Zeilen)")
     if progress_cb:
