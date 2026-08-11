@@ -88,6 +88,7 @@ CONNECTIONS = {
         "port":     21,
         "remote_path_thumbs":   "/sites/images/allago/thumbnails/generate/",
         "remote_path_category": "/sites/images/allago/category/",
+        "remote_path_products": "/sites/products/catalog_products/",
     },
     "officexl_images": {
         "host":     "217.71.221.26",
@@ -97,6 +98,7 @@ CONNECTIONS = {
         "port":     21,
         "remote_path_thumbs":   "/sites/images/officexl/thumbnails/generate/",
         "remote_path_category": "/sites/images/officexl/category/",
+        "remote_path_products": "/sites/products/catalog_products/",
     },
     "mercateo": {
         "host":     "sftp.unite.services",
