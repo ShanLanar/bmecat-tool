@@ -90,6 +90,14 @@ def run_bestandsdaten_only(progress_cb=None):
     except Exception as e:
         p(f"Mindest-Abgleich übersprungen: {e}", tag="warn")
 
+    # Upload → Mercateo-Unite /catalog/32WQS (Availability + Conditionsfile)
+    try:
+        from tasks.others import upload_mercateo_files
+        conditions_csv = os.path.join(in_bme, "32WQS_conditionsfile.csv")
+        upload_mercateo_files([out, conditions_csv], progress_cb=p)
+    except Exception as e:
+        p(f"Mercateo-Upload übersprungen: {e}", tag="warn")
+
 
 
 # ──────────────────────────────────────────────────────────────────────────────

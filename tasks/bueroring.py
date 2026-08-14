@@ -272,6 +272,14 @@ def run(progress_cb=None, file_progress_cb=None):
     except Exception as e:
         p(f"Mindest-Abgleich übersprungen: {e}", tag="warn")
 
+    # Upload → Mercateo-Unite /catalog/32WQS (Availability + Conditionsfile)
+    try:
+        from tasks.others import upload_mercateo_files
+        conditions_csv = os.path.join(in_bme, "32WQS_conditionsfile.csv")
+        upload_mercateo_files([out_csv, conditions_csv], progress_cb=p, file_progress_cb=fp)
+    except Exception as e:
+        p(f"Mercateo-Upload übersprungen: {e}", tag="warn")
+
     # ── Merge + Keywords ──────────────────────────────────────────────────────
     p("Bueroring: starte Merge + Keywords ...")
     from tasks.bmecat_merge import run as run_merge

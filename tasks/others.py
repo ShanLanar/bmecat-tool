@@ -117,6 +117,37 @@ def upload_availability(csv_path: str, progress_cb=None, file_progress_cb=None):
     p("Mercateo Upload abgeschlossen.", tag="ok")
 
 
+def upload_mercateo_files(paths: list, progress_cb=None, file_progress_cb=None):
+    """
+    Lädt Bestands-/Conditionsfile-CSVs (availability-data-catalog-32WQS.csv,
+    32WQS_conditionsfile.csv) nach Mercateo-Unite /catalog/32WQS hoch.
+    Fehlende Dateien werden übersprungen (mit Warnung). Dateien bleiben lokal
+    erhalten (kein delete_after) – anders als upload_availability(), da
+    nachfolgende Läufe (Mindest-Abgleich, ATP-Merge) sie weiter lesen.
+    """
+    cfg = CONNECTIONS["mercateo"]
+    p   = progress_cb      or (lambda m, **kw: None)
+    fp  = file_progress_cb or None
+
+    existing = [f for f in paths if os.path.exists(f)]
+    for f in paths:
+        if f not in existing:
+            p(f"Mercateo-Upload: übersprungen (nicht gefunden): {os.path.basename(f)}", tag="warn")
+    if not existing:
+        return
+
+    p("Mercateo-Upload: verbinde ...")
+    client = make_client(cfg)
+    client.connect()
+    try:
+        for path in existing:
+            client.upload(path, cfg["remote_path"],
+                          progress_cb=p, file_progress_cb=fp)
+    finally:
+        client.disconnect()
+    p("Mercateo-Upload abgeschlossen.", tag="ok")
+
+
 # ── Bestandsdaten (standalone) ────────────────────────────────────────────────
 
 def run_bestandsdaten_only(progress_cb=None):
