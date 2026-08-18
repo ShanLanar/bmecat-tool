@@ -629,8 +629,10 @@ def _udx_block_to_features(match: re.Match) -> str:
              "\t\t\t<REFERENCE_FEATURE_SYSTEM_NAME>udf_NDW-0.1</REFERENCE_FEATURE_SYSTEM_NAME>"]
 
     for tag_full, value in tags:
-        # "UDX.LAENGE" → "LAENGE", fdescr = "laenge"
-        fname  = tag_full.split(".", 1)[1] if "." in tag_full else tag_full
+        # "UDX.LAENGE" → "LAENGE"; "UDX.SOE.GPSRHERSTELLEREMAIL" → "GPSRHERSTELLEREMAIL"
+        # (rsplit statt split: nur der letzte Teil ist der eigentliche Feldname,
+        # alles davor sind UDX/Namespace-Prefixe wie "UDX." oder "UDX.SOE.")
+        fname  = tag_full.rsplit(".", 1)[-1] if "." in tag_full else tag_full
         fdescr = fname.lower()
         value  = value.strip()
         lines.append(
