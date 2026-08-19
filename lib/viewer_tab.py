@@ -153,7 +153,7 @@ class ViewerTab:
 
     def _build_feature_filters(self, parent):
         c   = self._C
-        self._feat_frm = tk.Frame(parent, bg=c["BG2"], padx=10, pady=(0, 8))
+        self._feat_frm = tk.Frame(parent, bg=c["BG2"], padx=10, pady=4)
         self._feat_frm.grid(row=1, column=0, sticky="ew")
 
         head = tk.Frame(self._feat_frm, bg=c["BG2"])
