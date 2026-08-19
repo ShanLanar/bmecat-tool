@@ -5,10 +5,13 @@
 # Paginierung: 100 Zeilen pro Seite. Sortierung per Spaltenklick.
 
 import os
+import re
 import threading
 import datetime
 import tkinter as tk
 from tkinter import ttk, messagebox
+
+_MAX_DROPDOWN = 1000  # Obergrenze für FNAME/FVALUE-Dropdown-Einträge (Performance)
 
 _FONT      = ("Segoe UI", 10)
 _FONT_MONO = ("Consolas", 9)
@@ -29,6 +32,16 @@ _COLS = [
     ("last_export_date",  "Exportiert",    115, False),
 ]
 _SORT_KEYS = {k: k for k, *_ in _COLS}
+
+
+def _match_text(pattern: str, value: str) -> bool:
+    """Versucht `pattern` als Regex (case-insensitive) gegen `value` zu matchen.
+    Ist `pattern` kein gültiger Regex, fällt es auf eine einfache
+    case-insensitive Teilstring-Suche zurück."""
+    try:
+        return re.search(pattern, value, re.IGNORECASE) is not None
+    except re.error:
+        return pattern.lower() in value.lower()
 
 
 def _fmt_local(iso_utc: str) -> str:
@@ -60,6 +73,11 @@ class ViewerTab:
         self._sort_col  = "last_changed"
         self._sort_rev  = True
         self._exporting = False
+
+        # FNAME/FVALUE-Wertelisten für die Feature-Filter-Dropdowns
+        self._feat_fnames          = []
+        self._feat_fname_to_values = {}
+        self._feat_all_values      = []
 
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(2, weight=1)
@@ -186,26 +204,29 @@ class ViewerTab:
         row_frm = tk.Frame(self._feat_rows_frm, bg=c["BG2"])
         row_frm.pack(fill="x", pady=1)
 
-        fi = c.get("FG_INPUT", c["FG"])
-
-        def entry(var, width):
-            e = tk.Entry(row_frm, textvariable=var, width=width,
-                         bg=c["BG3"], fg=fi, insertbackground=fi,
-                         relief="flat", bd=3, font=_FONT_MONO)
-            e.pack(side="left", padx=(0, 4))
-            return e
+        def combo(var, width):
+            cb = ttk.Combobox(row_frm, textvariable=var, width=width,
+                              font=_FONT_MONO)  # editierbar: Freitext/Regex + Dropdown
+            cb.pack(side="left", padx=(0, 4))
+            return cb
 
         tk.Label(row_frm, text="FNAME:", bg=c["BG2"], fg=c["FG_DIM"],
                  font=_FONT).pack(side="left", padx=(0, 2))
         fname_var = tk.StringVar()
-        entry(fname_var, 22)
+        fname_cb  = combo(fname_var, 22)
+        fname_cb["values"] = self._feat_fnames
 
         tk.Label(row_frm, text="FVALUE:", bg=c["BG2"], fg=c["FG_DIM"],
                  font=_FONT).pack(side="left", padx=(6, 2))
         fvalue_var = tk.StringVar()
-        entry(fvalue_var, 22)
+        fvalue_cb  = combo(fvalue_var, 22)
 
-        fname_var.trace_add("write", lambda *_: self._apply_local())
+        entry_dict = {"frame": row_frm, "fname_var": fname_var, "fvalue_var": fvalue_var,
+                      "fname_cb": fname_cb, "fvalue_cb": fvalue_cb}
+        self._feat_rows.append(entry_dict)
+
+        fname_var.trace_add("write", lambda *_: (self._update_fvalue_options(entry_dict),
+                                                  self._apply_local()))
         fvalue_var.trace_add("write", lambda *_: self._apply_local())
 
         rm_btn = tk.Button(row_frm, text="✕", command=lambda: self._remove_feat_row(entry_dict),
@@ -214,8 +235,7 @@ class ViewerTab:
                            relief="flat", bd=0, cursor="hand2", padx=6, pady=1)
         rm_btn.pack(side="left", padx=(4, 0))
 
-        entry_dict = {"frame": row_frm, "fname_var": fname_var, "fvalue_var": fvalue_var}
-        self._feat_rows.append(entry_dict)
+        self._update_fvalue_options(entry_dict)
 
     def _remove_feat_row(self, entry_dict):
         if len(self._feat_rows) <= 1:
@@ -227,10 +247,48 @@ class ViewerTab:
         self._feat_rows.remove(entry_dict)
         self._apply_local()
 
+    # ── FNAME/FVALUE-Wertelisten (aus den geladenen Artikeln) ───────────────────
+
+    def _build_feature_index(self):
+        """Ermittelt aus self._all alle tatsächlich vorkommenden FNAME/FVALUE-
+        Kombinationen, für die Dropdown-Listen der Feature-Filter."""
+        fname_set = set()
+        fname_to_values = {}
+        for a in self._all:
+            for f in a.get("features") or []:
+                fn = (f.get("fname") or "").strip()
+                fv = (f.get("fvalue") or "").strip()
+                if not fn:
+                    continue
+                fname_set.add(fn)
+                fname_to_values.setdefault(fn, set()).add(fv)
+
+        self._feat_fnames = sorted(fname_set, key=str.lower)[:_MAX_DROPDOWN]
+        self._feat_fname_to_values = {
+            fn: sorted(vals, key=str.lower)[:_MAX_DROPDOWN]
+            for fn, vals in fname_to_values.items()
+        }
+        all_values = {v for vals in fname_to_values.values() for v in vals}
+        self._feat_all_values = sorted(all_values, key=str.lower)[:_MAX_DROPDOWN]
+
+    def _refresh_feat_dropdowns(self):
+        """Aktualisiert die Dropdown-Werte aller vorhandenen Filterzeilen nach einer Suche."""
+        for row in self._feat_rows:
+            row["fname_cb"]["values"] = self._feat_fnames
+            self._update_fvalue_options(row)
+
+    def _update_fvalue_options(self, row: dict):
+        fname = row["fname_var"].get().strip()
+        if fname and fname in self._feat_fname_to_values:
+            row["fvalue_cb"]["values"] = self._feat_fname_to_values[fname]
+        else:
+            row["fvalue_cb"]["values"] = self._feat_all_values
+
     def _article_matches_features(self, art: dict) -> bool:
-        """Prüft Feature-Filter (FNAME/FVALUE) gegen article['features'], UND/ODER-verknüpft."""
-        conditions = [(r["fname_var"].get().strip().lower(),
-                       r["fvalue_var"].get().strip().lower())
+        """Prüft Feature-Filter (FNAME/FVALUE) gegen article['features'], UND/ODER-verknüpft.
+        Leeres FVALUE = alle Werte erlaubt. Jeder Wert wird zuerst als Regex versucht
+        (case-insensitive), bei ungültigem Regex als einfache Teilstring-Suche."""
+        conditions = [(r["fname_var"].get().strip(), r["fvalue_var"].get().strip())
                       for r in self._feat_rows]
         conditions = [(fn, fv) for fn, fv in conditions if fn or fv]
         if not conditions:
@@ -240,8 +298,8 @@ class ViewerTab:
 
         def _cond_match(fn, fv):
             for f in features:
-                fname_ok  = (fn in (f.get("fname")  or "").lower()) if fn else True
-                fvalue_ok = (fv in (f.get("fvalue") or "").lower()) if fv else True
+                fname_ok  = _match_text(fn, f.get("fname")  or "") if fn else True
+                fvalue_ok = _match_text(fv, f.get("fvalue") or "") if fv else True
                 if fname_ok and fvalue_ok:
                     return True
             return False
@@ -516,6 +574,8 @@ class ViewerTab:
                     a["price_display"] = f"{p:.2f} €" if isinstance(p, float) else str(p or "")
                     a["last_changed"] = _fmt_local(a.get("last_changed") or "")
                 self._all = articles
+                self._build_feature_index()
+                self._parent.after(0, self._refresh_feat_dropdowns)
                 self._parent.after(0, self._apply_local)
                 self._parent.after(0, self._load_filter_options)
                 self._parent.after(0, self._update_db_status)
