@@ -62,9 +62,13 @@ class ViewerTab:
         self._exporting = False
 
         parent.columnconfigure(0, weight=1)
-        parent.rowconfigure(1, weight=1)
+        parent.rowconfigure(2, weight=1)
+
+        self._feat_rows = []   # Liste von {fname_var, fvalue_var, row_frame}
+        self._feat_logic_var = tk.StringVar(value="UND")
 
         self._build_filters(parent)
+        self._build_feature_filters(parent)
         self._build_table(parent)
         self._build_pagination(parent)
         self._build_export(parent)
@@ -145,12 +149,113 @@ class ViewerTab:
         tk.Label(r1, text="  (Sofortfilter, kein Neustart nötig)",
                  bg=c["BG2"], fg=c["FG_DIM"], font=_FONT_SM).pack(side="left")
 
+    # ── Feature-Filter (FNAME/FVALUE, Excel-Style UND/ODER) ─────────────────────
+
+    def _build_feature_filters(self, parent):
+        c   = self._C
+        self._feat_frm = tk.Frame(parent, bg=c["BG2"], padx=10, pady=(0, 8))
+        self._feat_frm.grid(row=1, column=0, sticky="ew")
+
+        head = tk.Frame(self._feat_frm, bg=c["BG2"])
+        head.pack(fill="x")
+
+        tk.Label(head, text="Feature-Filter (FNAME / FVALUE):", bg=c["BG2"],
+                 fg=c["FG_DIM"], font=_FONT).pack(side="left")
+
+        tk.Label(head, text="  Verknüpfung:", bg=c["BG2"],
+                 fg=c["FG_DIM"], font=_FONT).pack(side="left", padx=(10, 2))
+        logic_cb = ttk.Combobox(head, textvariable=self._feat_logic_var,
+                                 values=["UND", "ODER"], width=6,
+                                 state="readonly", font=_FONT)
+        logic_cb.pack(side="left")
+        logic_cb.bind("<<ComboboxSelected>>", lambda *_: self._apply_local())
+
+        tk.Button(head, text="+ Filter hinzufügen", command=self._add_feat_row,
+                  font=_FONT_SM, bg=c["BG3"], fg=c["FG"],
+                  activebackground=c["BG"], activeforeground=c["FG"],
+                  relief="flat", bd=0, cursor="hand2",
+                  padx=8, pady=2).pack(side="left", padx=(12, 0))
+
+        self._feat_rows_frm = tk.Frame(self._feat_frm, bg=c["BG2"])
+        self._feat_rows_frm.pack(fill="x", pady=(4, 0))
+
+        self._add_feat_row()
+
+    def _add_feat_row(self):
+        c = self._C
+        row_frm = tk.Frame(self._feat_rows_frm, bg=c["BG2"])
+        row_frm.pack(fill="x", pady=1)
+
+        fi = c.get("FG_INPUT", c["FG"])
+
+        def entry(var, width):
+            e = tk.Entry(row_frm, textvariable=var, width=width,
+                         bg=c["BG3"], fg=fi, insertbackground=fi,
+                         relief="flat", bd=3, font=_FONT_MONO)
+            e.pack(side="left", padx=(0, 4))
+            return e
+
+        tk.Label(row_frm, text="FNAME:", bg=c["BG2"], fg=c["FG_DIM"],
+                 font=_FONT).pack(side="left", padx=(0, 2))
+        fname_var = tk.StringVar()
+        entry(fname_var, 22)
+
+        tk.Label(row_frm, text="FVALUE:", bg=c["BG2"], fg=c["FG_DIM"],
+                 font=_FONT).pack(side="left", padx=(6, 2))
+        fvalue_var = tk.StringVar()
+        entry(fvalue_var, 22)
+
+        fname_var.trace_add("write", lambda *_: self._apply_local())
+        fvalue_var.trace_add("write", lambda *_: self._apply_local())
+
+        rm_btn = tk.Button(row_frm, text="✕", command=lambda: self._remove_feat_row(entry_dict),
+                           font=_FONT_SM, bg=c["BG3"], fg=c["FG_DIM"],
+                           activebackground=c["BG"], activeforeground=c["RED"],
+                           relief="flat", bd=0, cursor="hand2", padx=6, pady=1)
+        rm_btn.pack(side="left", padx=(4, 0))
+
+        entry_dict = {"frame": row_frm, "fname_var": fname_var, "fvalue_var": fvalue_var}
+        self._feat_rows.append(entry_dict)
+
+    def _remove_feat_row(self, entry_dict):
+        if len(self._feat_rows) <= 1:
+            # Letzte Zeile: nur leeren statt entfernen
+            entry_dict["fname_var"].set("")
+            entry_dict["fvalue_var"].set("")
+            return
+        entry_dict["frame"].destroy()
+        self._feat_rows.remove(entry_dict)
+        self._apply_local()
+
+    def _article_matches_features(self, art: dict) -> bool:
+        """Prüft Feature-Filter (FNAME/FVALUE) gegen article['features'], UND/ODER-verknüpft."""
+        conditions = [(r["fname_var"].get().strip().lower(),
+                       r["fvalue_var"].get().strip().lower())
+                      for r in self._feat_rows]
+        conditions = [(fn, fv) for fn, fv in conditions if fn or fv]
+        if not conditions:
+            return True
+
+        features = art.get("features") or []
+
+        def _cond_match(fn, fv):
+            for f in features:
+                fname_ok  = (fn in (f.get("fname")  or "").lower()) if fn else True
+                fvalue_ok = (fv in (f.get("fvalue") or "").lower()) if fv else True
+                if fname_ok and fvalue_ok:
+                    return True
+            return False
+
+        if self._feat_logic_var.get() == "ODER":
+            return any(_cond_match(fn, fv) for fn, fv in conditions)
+        return all(_cond_match(fn, fv) for fn, fv in conditions)
+
     # ── Ergebnistabelle ───────────────────────────────────────────────────────
 
     def _build_table(self, parent):
         c   = self._C
         frm = tk.Frame(parent, bg=c["BG"])
-        frm.grid(row=1, column=0, sticky="nsew", padx=8, pady=(4, 0))
+        frm.grid(row=2, column=0, sticky="nsew", padx=8, pady=(4, 0))
         frm.columnconfigure(0, weight=1)
         frm.rowconfigure(0, weight=1)
 
@@ -193,7 +298,7 @@ class ViewerTab:
     def _build_pagination(self, parent):
         c   = self._C
         frm = tk.Frame(parent, bg=c["BG2"], pady=5)
-        frm.grid(row=2, column=0, sticky="ew")
+        frm.grid(row=3, column=0, sticky="ew")
         frm.columnconfigure(2, weight=1)
 
         btn_cfg = dict(font=_FONT_SM, bg=c["BG3"], fg=c["FG"],
@@ -222,7 +327,7 @@ class ViewerTab:
     def _build_export(self, parent):
         c   = self._C
         frm = tk.Frame(parent, bg=c["BG2"], padx=10, pady=8)
-        frm.grid(row=3, column=0, sticky="ew")
+        frm.grid(row=4, column=0, sticky="ew")
 
         try:
             import config as _cfg
@@ -246,6 +351,13 @@ class ViewerTab:
             activebackground=c["BG"], activeforeground=c["FG"],
             relief="flat", bd=0, cursor="hand2", padx=12, pady=4)
         self._export_btn.pack(side="right", padx=(8, 0))
+
+        self._xlsx_btn = tk.Button(
+            frm, text="Nach Excel exportieren", command=self._run_xlsx_export,
+            font=_FONT, bg=c["BG3"], fg=c["FG"],
+            activebackground=c["BG"], activeforeground=c["FG"],
+            relief="flat", bd=0, cursor="hand2", padx=12, pady=4)
+        self._xlsx_btn.pack(side="right", padx=(8, 0))
 
         self._filter_export_lbl = tk.Label(frm, text="", bg=c["BG2"],
                                             fg=c["FG_DIM"], font=_FONT_SM)
@@ -425,6 +537,7 @@ class ViewerTab:
             data = [a for a in data if artnr in (a.get("product_id") or "").lower()]
         if ean:
             data = [a for a in data if ean in (a.get("ean") or "").lower()]
+        data = [a for a in data if self._article_matches_features(a)]
 
         # Sortierung
         col = self._sort_col
@@ -615,6 +728,81 @@ class ViewerTab:
         self._export_lbl.config(
             text=msg,
             fg=self._C["GREEN"] if ok else self._C["RED"])
+
+    def _run_xlsx_export(self):
+        if not self._filtered:
+            messagebox.showinfo("Keine Artikel", "Keine Artikel im aktuellen Filter.",
+                                parent=self._parent)
+            return
+
+        from tkinter import filedialog
+        try:
+            import config as _cfg
+            init_dir = getattr(_cfg, "EXPORT_DIR", ".")
+        except Exception:
+            init_dir = "."
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = filedialog.asksaveasfilename(
+            parent=self._parent, title="Nach Excel exportieren",
+            initialdir=init_dir, initialfile=f"artikel_export_{ts}.xlsx",
+            defaultextension=".xlsx", filetypes=[("Excel-Datei", "*.xlsx")])
+        if not path:
+            return
+
+        rows = list(self._filtered)
+        self._xlsx_btn.config(state="disabled", text="Exportiere...")
+
+        def _do():
+            try:
+                self._write_xlsx(path, rows)
+                self._parent.after(0, self._on_xlsx_done, path, None)
+            except Exception as exc:
+                self._parent.after(0, self._on_xlsx_done, path, str(exc))
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _write_xlsx(self, path: str, rows: list):
+        import openpyxl
+        from openpyxl.styles import Font
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Artikel"
+
+        headers = [heading for _, heading, *_ in _COLS] + ["Features (FNAME=FVALUE)"]
+        ws.append(headers)
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+
+        for a in rows:
+            feat_txt = "; ".join(
+                f"{f.get('fname','')}={f.get('fvalue','')}"
+                for f in (a.get("features") or []))
+            ws.append([
+                a.get("product_id", ""),
+                a.get("ean", ""),
+                a.get("description_short", ""),
+                a.get("supplier_name", ""),
+                a.get("catalog_display", ""),
+                a.get("price_display", ""),
+                a.get("last_changed", ""),
+                _fmt_local(a.get("last_export_date") or ""),
+                feat_txt,
+            ])
+
+        for i, (_, heading, width, *_r) in enumerate(_COLS, start=1):
+            ws.column_dimensions[chr(64 + i) if i <= 26 else "A"].width = max(10, width // 7)
+        ws.freeze_panes = "A2"
+
+        wb.save(path)
+
+    def _on_xlsx_done(self, path: str, error: str | None):
+        self._xlsx_btn.config(state="normal", text="Nach Excel exportieren")
+        if error:
+            messagebox.showerror("Export fehlgeschlagen", error, parent=self._parent)
+        else:
+            self._export_lbl.config(text=f"Excel: {os.path.basename(path)}",
+                                    fg=self._C["GREEN"])
 
     def _open_export_dir(self):
         try:
