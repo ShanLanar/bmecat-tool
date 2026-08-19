@@ -44,6 +44,50 @@ def _match_text(pattern: str, value: str) -> bool:
         return pattern.lower() in value.lower()
 
 
+_NUM_COMPARE_PAT = re.compile(r'^\s*(<=|>=|<|>|=)\s*(-?\d+(?:[.,]\d+)?)\s*$')
+_NUM_PAT         = re.compile(r'-?\d+(?:[.,]\d+)?')
+
+
+def _parse_number(s: str) -> float | None:
+    """Extrahiert die erste Zahl aus einem String (Komma = Dezimaltrennzeichen,
+    wie in BMEcat-Werten üblich, z.B. '140,000' → 140.0)."""
+    m = _NUM_PAT.search(s.replace(',', '.'))
+    if not m:
+        return None
+    try:
+        return float(m.group())
+    except ValueError:
+        return None
+
+
+def _match_numeric(pattern: str, value: str):
+    """Prüft ob `pattern` ein Zahlenvergleich ist (<5, >=10, =3,5 ...).
+    Gibt True/False zurück wenn ja, None wenn `pattern` kein Zahlenvergleich ist
+    (dann soll der Aufrufer auf Text-/Regex-Matching zurückfallen)."""
+    m = _NUM_COMPARE_PAT.match(pattern)
+    if not m:
+        return None
+    op, num_str = m.groups()
+    target = float(num_str.replace(',', '.'))
+    val_num = _parse_number(value)
+    if val_num is None:
+        return False
+    if op == '<':  return val_num <  target
+    if op == '>':  return val_num >  target
+    if op == '<=': return val_num <= target
+    if op == '>=': return val_num >= target
+    return val_num == target
+
+
+def _match_value(pattern: str, value: str) -> bool:
+    """FVALUE-Matching: erst Zahlenvergleich (<5, >=10, ...) versuchen,
+    sonst Text-/Regex-Matching wie bei FNAME."""
+    result = _match_numeric(pattern, value)
+    if result is not None:
+        return result
+    return _match_text(pattern, value)
+
+
 def _fmt_local(iso_utc: str) -> str:
     """
     Wandelt einen in der DB gespeicherten UTC-Zeitstempel (_now() in
@@ -299,7 +343,7 @@ class ViewerTab:
         def _cond_match(fn, fv):
             for f in features:
                 fname_ok  = _match_text(fn, f.get("fname")  or "") if fn else True
-                fvalue_ok = _match_text(fv, f.get("fvalue") or "") if fv else True
+                fvalue_ok = _match_value(fv, f.get("fvalue") or "") if fv else True
                 if fname_ok and fvalue_ok:
                     return True
             return False
