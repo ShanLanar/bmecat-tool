@@ -190,7 +190,12 @@ class EclassCatalogBrowser:
                 self._tree.after(0, lambda: self._status.config(
                     text=f"Fehler: {exc}", fg=self._C.get("RED", "#c00")))
 
-        threading.Thread(target=_worker, daemon=True).start()
+        # Thread-Start über .after() verzögern, statt direkt aus __init__:
+        # so startet der Thread erst, wenn die Tk-Mainloop im Hauptthread
+        # tatsächlich läuft (sonst wirft tkinter ab Python 3.14
+        # "RuntimeError: main thread is not in main loop", falls der
+        # Worker-Thread schneller fertig ist als root.mainloop() anläuft).
+        self._tree.after(0, lambda: threading.Thread(target=_worker, daemon=True).start())
 
     def _on_loaded(self, versions):
         self._ver_cb["values"] = versions
