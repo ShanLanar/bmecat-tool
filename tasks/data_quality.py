@@ -8,7 +8,8 @@ import os
 from config import DB_PATH, DIRS
 
 
-def run_description_quality(progress_cb=None, file_progress_cb=None) -> dict:
+def run(progress_cb=None, file_progress_cb=None) -> dict:
+    """Beschreibungen + GPSR-Herstellerdaten + Bilder in einem Report."""
     p = progress_cb or (lambda m, **kw: None)
 
     from lib.description_quality_report import generate_report
