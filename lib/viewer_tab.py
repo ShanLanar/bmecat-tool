@@ -34,6 +34,17 @@ _COLS = [
 ]
 _SORT_KEYS = {k: k for k, *_ in _COLS}
 
+_NUMERIC_SORT_COLS = {"stock_qty"}  # numerisch statt alphanumerisch sortieren
+
+
+def _sort_key(article: dict, col: str):
+    if col in _NUMERIC_SORT_COLS:
+        try:
+            return float(str(article.get(col) or "").strip().replace(",", "."))
+        except ValueError:
+            return -1.0  # leere/nicht-numerische Werte ans untere Ende
+    return article.get(col) or ""
+
 
 def _match_text(pattern: str, value: str) -> bool:
     """Versucht `pattern` als Regex (case-insensitive) gegen `value` zu matchen.
@@ -648,9 +659,7 @@ class ViewerTab:
         col = self._sort_col
         rev = self._sort_rev
         try:
-            data = sorted(data,
-                          key=lambda a: (a.get(col) or ""),
-                          reverse=rev)
+            data = sorted(data, key=lambda a: _sort_key(a, col), reverse=rev)
         except Exception:
             pass
 
