@@ -136,3 +136,64 @@ def erstelle_bestandsdaten(in_bme_dir: str, output_path: str,
         progress_cb(f"Bestandsdaten erzeugt: {lines_written} Zeilen → {os.path.basename(output_path)}")
 
     return output_path
+
+
+def import_nordwest_stock(csv_path: str, db_path: str, progress_cb=None) -> int:
+    """
+    Liest bestaende.csv (aus der Nordwest kip.zip, Spalten
+    "NW-Katalogartikelnummer;EAN;Produktbezeichnung;Bestand") und schreibt
+    die Bestände in die Artikel-DB. Die Artikelnummer ist die native ID OHNE
+    das Präfix "NDW", wie supplier_pid in der DB.
+
+    Nordwest wird in der DB als drei getrennte Lieferanten geführt
+    (Arbeitsschutz/Werkstatt/Werkzeugtechnik – je eigener eClass-Katalog),
+    die Bestandsliste deckt aber offenbar alle Kataloge gemeinsam ab. Der
+    Bestand wird deshalb gegen alle drei versucht; UPDATE trifft ohnehin nur
+    dort, wo die Artikelnummer für den jeweiligen Lieferanten existiert
+    (siehe update_stock() in article_db.py).
+
+    Gibt die Gesamtzahl aktualisierter Artikel zurück.
+    """
+    p = progress_cb or (lambda m, **kw: None)
+    if not os.path.exists(csv_path):
+        return 0
+
+    try:
+        with open(csv_path, encoding="utf-8-sig") as f:
+            raw = f.read()
+    except UnicodeDecodeError:
+        with open(csv_path, encoding="cp1252", errors="replace") as f:
+            raw = f.read()
+
+    entries: dict[str, str] = {}
+    reader = csv.DictReader(raw.splitlines(), delimiter=";")
+    for row in reader:
+        aid   = (row.get("NW-Katalogartikelnummer") or "").strip()
+        stock = (row.get("Bestand") or "").strip()
+        if aid and stock:
+            entries[aid] = stock
+
+    if not entries:
+        p("Nordwest-Bestand: keine Einträge in bestaende.csv gefunden", tag="warn")
+        return 0
+
+    try:
+        from lib.article_db import open_db, get_or_create_supplier, update_stock
+        from lib.supplier_config import get_supplier
+        sup_names = list((get_supplier("nordwest").get("db_supplier_names") or {}).values())
+        if not sup_names:
+            sup_names = ["Nordwest Arbeitsschutz", "Nordwest Werkstatt", "Nordwest Werkzeugtechnik"]
+
+        con = open_db(db_path)
+        total = 0
+        for name in sup_names:
+            supplier_id = get_or_create_supplier(con, name)
+            n = update_stock(con, supplier_id, entries)
+            total += n
+            p(f"Nordwest-Bestand: {n} Artikel aktualisiert ({name})")
+        con.close()
+        return total
+    except Exception as e:
+        log.warning(f"Nordwest-Bestand-DB-Update übersprungen: {e}")
+        p(f"Nordwest-Bestand-DB-Update übersprungen: {e}", tag="warn")
+        return 0

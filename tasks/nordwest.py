@@ -84,6 +84,16 @@ def run(progress_cb=None, file_progress_cb=None):
                 shutil.move(dst, os.path.join(ndw_sh, os.path.basename(dst)))
                 p(f"Nordwest: KIP-CSV -> {ndw_sh}", tag="ok")
 
+        # Bestandsliste (Spalte 1 = native Artikelnummer ohne "NDW"-Präfix)
+        p("Nordwest: Entpacke Bestandsliste ...")
+        _run_7zip(seven_z, kip_zip, in_bme, "bestaende.csv", p)
+        bestand_csv = os.path.join(in_bme, "bestaende.csv")
+        if os.path.exists(bestand_csv):
+            import config as _cfg
+            from lib.bestandsdaten import import_nordwest_stock
+            import_nordwest_stock(bestand_csv, _cfg.DB_PATH, progress_cb=p)
+            os.remove(bestand_csv)
+
     for zf in glob.glob(os.path.join(in_bme, "*.zip")):
         os.remove(zf)
 
