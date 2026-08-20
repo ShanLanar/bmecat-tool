@@ -197,3 +197,53 @@ def import_nordwest_stock(csv_path: str, db_path: str, progress_cb=None) -> int:
         log.warning(f"Nordwest-Bestand-DB-Update übersprungen: {e}")
         p(f"Nordwest-Bestand-DB-Update übersprungen: {e}", tag="warn")
         return 0
+
+
+def import_softcarrier_stock(csv_path: str, db_path: str, progress_cb=None) -> int:
+    """
+    Liest die Softcarrier-Lagerbestandsdatei (FTP-Ordner "Lagerbestand",
+    lagerbestand.csv). Format ist Pipe-getrennt mit einer Kopfzeile:
+        artikelnr|lagerbestand <Datum> <Uhrzeit>|liefertermin
+    Artikelnummer UND Bestand sind darin mit führenden Nullen aufgefüllt
+    (z.B. "000000000000002735" / "0000000003") – supplier_pid in der DB
+    ist die native ID ohne führende Nullen, daher werden beide getrimmt.
+    """
+    p = progress_cb or (lambda m, **kw: None)
+    if not os.path.exists(csv_path):
+        return 0
+
+    try:
+        with open(csv_path, encoding="utf-8-sig") as f:
+            lines = f.read().splitlines()
+    except UnicodeDecodeError:
+        with open(csv_path, encoding="cp1252", errors="replace") as f:
+            lines = f.read().splitlines()
+
+    entries: dict[str, str] = {}
+    for line in lines[1:]:  # Kopfzeile überspringen
+        if not line.strip():
+            continue
+        parts = line.split("|")
+        if len(parts) < 2:
+            continue
+        aid   = parts[0].strip().lstrip("0") or "0"
+        stock = parts[1].strip().lstrip("0") or "0"
+        if aid:
+            entries[aid] = stock
+
+    if not entries:
+        p("Softcarrier-Bestand: keine Einträge in Lagerbestand-Datei gefunden", tag="warn")
+        return 0
+
+    try:
+        from lib.article_db import open_db, get_or_create_supplier, update_stock
+        con = open_db(db_path)
+        supplier_id = get_or_create_supplier(con, "Softcarrier")
+        n = update_stock(con, supplier_id, entries)
+        con.close()
+        p(f"Softcarrier-Bestand: {n} Artikel aktualisiert")
+        return n
+    except Exception as e:
+        log.warning(f"Softcarrier-Bestand-DB-Update übersprungen: {e}")
+        p(f"Softcarrier-Bestand-DB-Update übersprungen: {e}", tag="warn")
+        return 0

@@ -137,6 +137,10 @@ def run(progress_cb=None, file_progress_cb=None):
     lager = os.path.join(in_bme, "lagerbestand.csv")
     if os.path.exists(lager):
         os.replace(lager, os.path.join(in_bme, "soc_bestand.csv"))
+        import config as _cfg
+        from lib.bestandsdaten import import_softcarrier_stock
+        import_softcarrier_stock(os.path.join(in_bme, "soc_bestand.csv"),
+                                 _cfg.DB_PATH, progress_cb=p)
 
     herstinfo = os.path.join(in_bme, "HERSTINFO.CSV")
     if os.path.exists(herstinfo):
