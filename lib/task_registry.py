@@ -158,6 +158,14 @@ TASKS = [
         "group":   "Extras",
     },
     {
+        "id":      "data_quality_desc",
+        "name":    "Datenqualität – Beschreibungen",
+        "desc":    "Fehlende/zu kurze Kurz-/Langbeschreibungen über alle Lieferanten prüfen (CSV-Report)",
+        "fn":      "tasks.data_quality:run_description_quality",
+        "default": False,
+        "group":   "Extras",
+    },
+    {
         "id":      "bestandsdaten",
         "name":    "Bestandsdaten (nur CSV)",
         "desc":    "Availability-CSV aus br-bestand.csv erzeugen (kein FTP)",
