@@ -106,6 +106,25 @@ def erstelle_bestandsdaten(in_bme_dir: str, output_path: str,
         if aid and stock:
             entries[aid] = stock
 
+    # ── 3. Bestände auch in der Artikel-DB hinterlegen (für Abgleich) ─────────
+    # br-bestand.csv liefert die Artikelnummern OHNE das Präfix "BRG", das
+    # supplier_pid in der DB verwendet – daher direkter Match über
+    # supplier_pid statt product_id (siehe update_stock() in article_db.py).
+    try:
+        import config as _cfg
+        from lib.article_db import open_db, get_or_create_supplier, update_stock
+        if os.path.exists(_cfg.DB_PATH):
+            con = open_db(_cfg.DB_PATH)
+            supplier_id = get_or_create_supplier(con, "Büroring")
+            n = update_stock(con, supplier_id, entries)
+            con.close()
+            if progress_cb:
+                progress_cb(f"Bestände in DB aktualisiert: {n} Artikel (Büroring)")
+    except Exception as e:
+        log.warning(f"Bestand-DB-Update übersprungen: {e}")
+        if progress_cb:
+            progress_cb(f"Bestand-DB-Update übersprungen: {e}", tag="warn")
+
     with open(output_path, "w", encoding="utf-8", newline="") as out:
         out.write("SUPPLIER_AID;STOCK\n")
         for aid, stock in entries.items():

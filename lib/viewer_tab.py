@@ -28,6 +28,7 @@ _COLS = [
     ("supplier_name",     "Lieferant",     130, False),
     ("catalog_display",   "Katalog",       145, False),
     ("price_display",     "Preis",          80, False),
+    ("stock_qty",         "Bestand",        70, False),
     ("last_changed",      "Geändert",      115, False),
     ("last_export_date",  "Exportiert",    115, False),
 ]
@@ -677,6 +678,7 @@ class ViewerTab:
                 a.get("supplier_name", ""),
                 a.get("catalog_display", ""),
                 a.get("price_display", ""),
+                a.get("stock_qty", "") or "",
                 a.get("last_changed", ""),
                 exp,
             ))
@@ -889,6 +891,7 @@ class ViewerTab:
                 a.get("supplier_name", ""),
                 a.get("catalog_display", ""),
                 a.get("price_display", ""),
+                a.get("stock_qty", "") or "",
                 a.get("last_changed", ""),
                 _fmt_local(a.get("last_export_date") or ""),
                 feat_txt,

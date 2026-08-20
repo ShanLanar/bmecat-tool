@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 def _now() -> str:
@@ -255,6 +255,13 @@ def _migrate(con: sqlite3.Connection):
             );
             CREATE INDEX IF NOT EXISTS idx_price_article ON article_prices(article_id);
         """)
+    if current < 7:
+        # v7: heruntergeladene Bestandsmengen (z.B. Büroring br-bestand.csv)
+        cols = [r[1] for r in con.execute("PRAGMA table_info(articles)").fetchall()]
+        if "stock_qty" not in cols:
+            con.execute("ALTER TABLE articles ADD COLUMN stock_qty TEXT DEFAULT ''")
+        if "stock_updated" not in cols:
+            con.execute("ALTER TABLE articles ADD COLUMN stock_updated TEXT DEFAULT ''")
     con.execute("DELETE FROM schema_version")
     con.execute("INSERT INTO schema_version VALUES (?)", (SCHEMA_VERSION,))
 
@@ -566,6 +573,32 @@ def get_article_prices(con: sqlite3.Connection, article_id: int) -> list[dict]:
         (article_id,)
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def update_stock(con: sqlite3.Connection, supplier_id: int, stock_map: dict) -> int:
+    """
+    Schreibt heruntergeladene Bestandsmengen (supplier_pid -> Bestand) in die
+    articles-Tabelle, z.B. aus br-bestand.csv (Büroring). supplier_pid ist die
+    native Artikel-ID OHNE Lieferanten-Präfix (BRG/NDW/...) – stock_map muss
+    entsprechend unprefixte Keys enthalten.
+
+    Berührt bewusst weder content_hash noch last_changed: der Bestand ändert
+    sich täglich, würde sonst aber jeden Artikel als "geändert" markieren und
+    den VENDOSYS-Änderungs-Export sowie die Artikelübersicht mit
+    Bestandsrauschen fluten statt echten inhaltlichen Änderungen.
+
+    Gibt die Anzahl der aktualisierten Artikel zurück.
+    """
+    now = _now()
+    n = 0
+    for pid, stock in stock_map.items():
+        cur = con.execute(
+            "UPDATE articles SET stock_qty=?, stock_updated=? "
+            "WHERE supplier_id=? AND supplier_pid=?",
+            (stock, now, supplier_id, pid))
+        n += cur.rowcount
+    con.commit()
+    return n
 
 
 def deactivate_stale(con: sqlite3.Connection, supplier_id: int, cutoff: str) -> list[dict]:
