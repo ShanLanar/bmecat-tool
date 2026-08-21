@@ -29,6 +29,7 @@ _COLS = [
     ("catalog_display",   "Katalog",       145, False),
     ("price_display",     "Preis",          80, False),
     ("stock_qty",         "Bestand",        70, False),
+    ("online_display",    "Online",         60, False),
     ("last_changed",      "Geändert",      115, False),
     ("last_export_date",  "Exportiert",    115, False),
 ]
@@ -38,6 +39,8 @@ _NUMERIC_SORT_COLS = {"stock_qty"}  # numerisch statt alphanumerisch sortieren
 
 
 def _sort_key(article: dict, col: str):
+    if col == "online_display":
+        return 1 if article.get("online") else 0
     if col in _NUMERIC_SORT_COLS:
         try:
             return float(str(article.get(col) or "").strip().replace(",", "."))
@@ -219,6 +222,11 @@ class ViewerTab:
         self._ean_var = tk.StringVar()
         entry(r1, self._ean_var, width=14)
         self._ean_var.trace_add("write", lambda *_: self._apply_local())
+
+        lbl(r1, "Online:")
+        self._online_var = tk.StringVar(value="Alle")
+        online_cb = combo(r1, self._online_var, ["Alle", "Online", "Offline"], width=8)
+        online_cb.bind("<<ComboboxSelected>>", lambda *_: self._apply_local())
 
         tk.Label(r1, text="  (Sofortfilter, kein Neustart nötig)",
                  bg=c["BG2"], fg=c["FG_DIM"], font=_FONT_SM).pack(side="left")
@@ -628,6 +636,7 @@ class ViewerTab:
                                             or a.get("catalog_group_id") or "")
                     p = a.get("price_amount")
                     a["price_display"] = f"{p:.2f} €" if isinstance(p, float) else str(p or "")
+                    a["online_display"] = "✓" if a.get("online") else "✗"
                     a["last_changed"] = _fmt_local(a.get("last_changed") or "")
                 self._all = articles
                 self._build_feature_index()
@@ -653,6 +662,11 @@ class ViewerTab:
             data = [a for a in data if artnr in (a.get("product_id") or "").lower()]
         if ean:
             data = [a for a in data if ean in (a.get("ean") or "").lower()]
+        online_filter = self._online_var.get()
+        if online_filter == "Online":
+            data = [a for a in data if a.get("online")]
+        elif online_filter == "Offline":
+            data = [a for a in data if not a.get("online")]
         data = [a for a in data if self._article_matches_features(a)]
 
         # Sortierung
@@ -688,6 +702,7 @@ class ViewerTab:
                 a.get("catalog_display", ""),
                 a.get("price_display", ""),
                 a.get("stock_qty", "") or "",
+                a.get("online_display", ""),
                 a.get("last_changed", ""),
                 exp,
             ))
@@ -901,6 +916,7 @@ class ViewerTab:
                 a.get("catalog_display", ""),
                 a.get("price_display", ""),
                 a.get("stock_qty", "") or "",
+                a.get("online_display", ""),
                 a.get("last_changed", ""),
                 _fmt_local(a.get("last_export_date") or ""),
                 feat_txt,
