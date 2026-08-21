@@ -38,9 +38,13 @@ _SORT_KEYS = {k: k for k, *_ in _COLS}
 _NUMERIC_SORT_COLS = {"stock_qty"}  # numerisch statt alphanumerisch sortieren
 
 
+def _is_online(article: dict) -> bool:
+    return bool(article.get("online", 1) and article.get("active", 1))
+
+
 def _sort_key(article: dict, col: str):
     if col == "online_display":
-        return 1 if article.get("online") else 0
+        return 1 if _is_online(article) else 0
     if col in _NUMERIC_SORT_COLS:
         try:
             return float(str(article.get(col) or "").strip().replace(",", "."))
@@ -636,7 +640,11 @@ class ViewerTab:
                                             or a.get("catalog_group_id") or "")
                     p = a.get("price_amount")
                     a["price_display"] = f"{p:.2f} €" if isinstance(p, float) else str(p or "")
-                    a["online_display"] = "✓" if a.get("online") else "✗"
+                    # Wie beim VENDOSYS-Export (db_exporter.py): ein Artikel gilt nur als
+                    # online, wenn er sowohl online=1 als auch active=1 ist. active=0
+                    # bedeutet, der Artikel ist aus dem Lieferanten-Feed verschwunden
+                    # (Soft-Delete) – online bleibt dabei unangetastet auf dem alten Wert.
+                    a["online_display"] = "✓" if _is_online(a) else "✗"
                     a["last_changed"] = _fmt_local(a.get("last_changed") or "")
                 self._all = articles
                 self._build_feature_index()
@@ -664,9 +672,9 @@ class ViewerTab:
             data = [a for a in data if ean in (a.get("ean") or "").lower()]
         online_filter = self._online_var.get()
         if online_filter == "Online":
-            data = [a for a in data if a.get("online")]
+            data = [a for a in data if _is_online(a)]
         elif online_filter == "Offline":
-            data = [a for a in data if not a.get("online")]
+            data = [a for a in data if not _is_online(a)]
         data = [a for a in data if self._article_matches_features(a)]
 
         # Sortierung
