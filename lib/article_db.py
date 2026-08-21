@@ -601,6 +601,28 @@ def update_stock(con: sqlite3.Connection, supplier_id: int, stock_map: dict) -> 
     return n
 
 
+def update_online_status(con: sqlite3.Connection, id_to_online: dict) -> int:
+    """
+    Schreibt den tatsächlichen Online/Offline-Status (0/1) je Artikel-ID in
+    die articles-Tabelle. article_id -> online (0|1).
+
+    Der Import selbst kennt online/offline nicht (Lieferant-BMEcat enthält
+    i.d.R. kein <ONLINE>-Tag), und die Postprocessing-Regeln (Blacklist,
+    postprocess_offline.csv) werden bisher nur beim Export angewendet, ohne
+    das Ergebnis zurückzuschreiben – die DB-Spalte blieb dadurch dauerhaft
+    auf dem Importstandard (1) stehen, unabhängig vom echten Status.
+    Berührt bewusst weder content_hash noch last_changed (siehe update_stock()).
+    """
+    n = 0
+    for art_id, online in id_to_online.items():
+        cur = con.execute(
+            "UPDATE articles SET online=? WHERE id=?",
+            (1 if online else 0, art_id))
+        n += cur.rowcount
+    con.commit()
+    return n
+
+
 def deactivate_stale(con: sqlite3.Connection, supplier_id: int, cutoff: str) -> list[dict]:
     """
     Soft-Delete: Artikel die seit `cutoff` nicht mehr gesehen wurden (last_seen < cutoff)

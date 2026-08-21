@@ -562,6 +562,30 @@ def _update_exported_price(con, product_ids_prices: list[tuple]):
         log.warning(f"last_exported_price Fehler: {exc}")
 
 
+def sync_online_status(con, post: PostProcessor, progress_cb: Callable = None) -> int:
+    """
+    Berechnet für ALLE aktiven Artikel, ob sie laut Blacklist/Offline-Liste
+    tatsächlich online wären, und schreibt das Ergebnis in articles.online.
+
+    Blacklistete Artikel werden beim Export komplett übersprungen (erscheinen
+    nirgends), gelten hier also ebenfalls als "offline" – sie sind ja
+    tatsächlich nicht live. Rein informativ für die Artikelübersicht, ändert
+    nichts am Export selbst.
+    """
+    from lib.article_db import update_online_status
+
+    rows = con.execute(
+        "SELECT id, product_id, supplier_pid FROM articles WHERE active=1").fetchall()
+
+    updates = {}
+    for r in rows:
+        art = {"product_id": r["product_id"], "supplier_pid": r["supplier_pid"]}
+        offline = post.is_blacklisted(art) or post.is_forced_offline(art)
+        updates[r["id"]] = 0 if offline else 1
+
+    return update_online_status(con, updates)
+
+
 def export_changed(db_path: str, base_dir: str, export_dir: str,
                    date_from: str, date_to: str,
                    supplier_name: str = None,
@@ -679,6 +703,18 @@ def export_changed(db_path: str, base_dir: str, export_dir: str,
         pids_only = [p for p, _ in exported_pids]
         _track_export_date(con, pids_only)
         _update_exported_price(con, exported_pids)
+
+    # Online/Offline-Status ALLER aktiven Artikel synchronisieren – nicht nur
+    # der gerade exportierten. Blacklist/Offline-Liste werden sonst nirgends
+    # persistiert (nur transient in post.process()), wodurch die DB-Spalte
+    # "online" dauerhaft auf dem Importstandard (1) einfriert und z.B. die
+    # Artikelübersicht jeden Artikel fälschlich als online zeigt.
+    try:
+        n_synced = sync_online_status(con, post, progress_cb=p)
+        p(f"DB-Export: Online-Status synchronisiert ({n_synced:,} Artikel)"
+          .replace(",", "."), tag='dim')
+    except Exception as e:
+        log.warning(f"Online-Status-Sync übersprungen: {e}")
 
     stats['zip_path'] = zip_path
     p(f"DB-Export abgeschlossen: {stats['exported']} Dateien → {export_dir}",
