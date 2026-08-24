@@ -19,10 +19,16 @@ MAX_DISPLAY_BYTES = 64_000   # ab hier: Datei wird nur teilweise angezeigt
 # ── Konfigurationsdateien mit Beschreibungen ─────────────────────────────────
 
 CONFIG_FILES = [
-    # (Dateiname, Kurztitel, Ausführliche Beschreibung)
+    # (Dateiname, Kurztitel, Kategorie, Ausführliche Beschreibung)
+
+    # ── Allgemein ───────────────────────────────────────────────────
     (
-        "supplier_config.yaml",
-        "Lieferanten-Konfiguration",
+        """\
+supplier_config.yaml""",
+        """\
+Lieferanten-Konfiguration""",
+        """\
+Allgemein""",
         """\
 Zentrale Konfigurationsdatei für alle Lieferanten.
 
@@ -40,8 +46,47 @@ Format: YAML.  Nach Änderung muss das Tool neu gestartet werden.
 """
     ),
     (
-        "postprocess_blacklist.csv",
-        "Artikel-Blacklist",
+        """\
+description_regex.csv""",
+        """\
+Beschreibungs-Regex (vor Import)""",
+        """\
+Allgemein""",
+        'Regex-Ersetzungen für DESCRIPTION_SHORT/DESCRIPTION_LONG – laufen beim\nDB-Import, BEVOR der Artikel in die Datenbank geschrieben wird.\n\nSpalten:\n  • field        short | long | both\n  • pattern      Python-Regex\n  • replacement  Ersetzungstext (Rückreferenzen \\1, \\2 ... erlaubt)\n  • flags        optional, aktuell nur "i" (case-insensitive)\n\nRegeln werden in Dateireihenfolge nacheinander angewendet (Regel 2 sieht\nschon das Ergebnis von Regel 1). Kommentarzeilen beginnen mit #.\n\nBeispiel: alle Vorkommen von "Büroring" aus der Kurzbeschreibung entfernen:\n  short,Büroring,,i\n'
+    ),
+    (
+        """\
+supplier_priority.csv""",
+        """\
+EAN-Dedup-Priorität""",
+        """\
+Allgemein""",
+        """\
+Bestimmt welcher Lieferant 'gewinnt' wenn mehrere Lieferanten
+denselben Artikel (gleiche EAN) ausliefern.
+
+Spalten:
+  supplier   – Lieferant
+  priority   – Numerisch, kleiner = höhere Priorität
+
+Aktuell:
+  BRG (Büroring)    → 1  (höchste Priorität)
+  SOC (Softcarrier) → 2
+  NDW (Nordwest)    → 3/4/5
+
+Wenn zwei Lieferanten dieselbe EAN haben, wird der Artikel des Lieferanten
+mit der kleineren Prioritätszahl exportiert, der andere wird unterdrückt.
+"""
+    ),
+
+    # ── Bestand & Sichtbarkeit ──────────────────────────────────────
+    (
+        """\
+postprocess_blacklist.csv""",
+        """\
+Artikel-Blacklist""",
+        """\
+Bestand & Sichtbarkeit""",
         """\
 Liste von Artikeln, die beim Export IMMER übersprungen werden.
 
@@ -62,8 +107,12 @@ Typische Einträge:
 """
     ),
     (
-        "postprocess_offline.csv",
-        "Artikel offline setzen (bleiben im Export)",
+        """\
+postprocess_offline.csv""",
+        """\
+Artikel offline setzen (bleiben im Export)""",
+        """\
+Bestand & Sichtbarkeit""",
         """\
 Liste von Artikeln, die WEITER exportiert werden, aber mit ONLINE=0.
 
@@ -81,69 +130,41 @@ Kommentarzeilen beginnen mit #.
 """
     ),
     (
-        "description_regex.csv",
-        "Beschreibungs-Regex (vor Import)",
         """\
-Regex-Ersetzungen für DESCRIPTION_SHORT/DESCRIPTION_LONG – laufen beim
-DB-Import, BEVOR der Artikel in die Datenbank geschrieben wird.
+static_articles.csv""",
+        """\
+Fixe Bestände (Büroring)""",
+        """\
+Bestand & Sichtbarkeit""",
+        """\
+Trägt für einzelne Artikel einen fixen Bestand ein, unabhängig vom
+tatsächlich gemeldeten Lieferbestand (br-bestand.csv von Büroring).
 
-Spalten:
-  • field        short | long | both
-  • pattern      Python-Regex
-  • replacement  Ersetzungstext (Rückreferenzen \\1, \\2 ... erlaubt)
-  • flags        optional, aktuell nur "i" (case-insensitive)
+Spalten (ohne Kopfzeile, Semikolon-getrennt):
+  SUPPLIER_AID   – native Artikel-ID OHNE Präfix (wie in br-bestand.csv)
+  STOCK          – fixer Bestand, z. B. 2
 
-Regeln werden in Dateireihenfolge nacheinander angewendet (Regel 2 sieht
-schon das Ergebnis von Regel 1). Kommentarzeilen beginnen mit #.
+Wird in erstelle_bestandsdaten() (lib/bestandsdaten.py) NACH dem
+dynamischen Feed angewendet und gewinnt daher immer – auch wenn der
+Artikel zusätzlich noch im echten Feed steht.
 
-Beispiel: alle Vorkommen von "Büroring" aus der Kurzbeschreibung entfernen:
-  short,Büroring,,i
+Suchreihenfolge beim Laden:
+  1. BASE_DIR/static_articles.csv   (diese Datei hier – hat Vorrang)
+  2. lib/static_articles.csv        (Standardlieferung, falls 1. fehlt)
+
+Fließt sowohl in availability-data-catalog-32WQS.csv als auch (bei
+Mindest-Abgleich) in 32WQS_conditionsfile.csv ein.
 """
     ),
+
+    # ── Preise ──────────────────────────────────────────────────────
     (
-        "udx_inject.csv",
-        "UDX-Injektion (vor Import)",
         """\
-Trägt UDX.SOE.EPAG_ID / UDX.SOE.SELECTIONFEATURE für einzelne Artikel
-nach, falls der Lieferant sie nicht selbst mitliefert. Läuft beim
-DB-Import, VOR dem Schreiben in die Datenbank.
-
-Wichtig: wird NUR eingetragen, wenn der Artikel in der Quelle noch
-KEINE USER_DEFINED_EXTENSIONS hat – existieren dort schon welche, bleibt
-die Quelle unangetastet (kein Überschreiben).
-
-Spalten:
-  • supplier_pid       native Artikel-ID ohne Präfix, z.B. BRG103213
-  • epag_id            optional
-  • selectionfeature   optional (mind. eine der beiden Spalten angeben)
-
-Kommentarzeilen beginnen mit #.
-"""
-    ),
-    (
-        "postprocess_fname_blacklist.csv",
-        "FNAME-Blacklist (Feature-Filter)",
+postprocess_prices.csv""",
         """\
-Liste von FNAMEs (Feature-Namen), die beim Export IMMER oder bedingt
-aus den Artikeln entfernt werden – z. B. interne/redaktionelle Felder,
-die nicht im Shop angezeigt werden sollen.
-
-Spalten:
-  fname   – Feature-Name (Wildcards * und ? erlaubt, z. B. *intern*)
-  fvalue  – optional. Leer = Feature immer entfernen.
-            Gesetzt = nur entfernen wenn FVALUE genau diesem Wert
-            entspricht (z. B. "Be Green" nur wenn Wert = CAA017/Nein).
-
-ECLASS-Booleschwerte (CAA016/CAA017) werden sowohl als Rohcode als
-auch als bereits übersetzter Text (Ja/Nein) erkannt.
-
-Kommentarzeilen beginnen mit #.
-Gross-/Kleinschreibung wird bei fname und fvalue ignoriert.
-"""
-    ),
-    (
-        "postprocess_prices.csv",
-        "Preisformeln (SOC ~73 K Artikel)",
+Preisformeln (SOC ~73 K Artikel)""",
+        """\
+Preise""",
         """\
 Per-Artikel-Preisformeln.  Wird VOR dem Export auf den net_list-Preis
 aus dem BMEcat angewendet.
@@ -167,8 +188,12 @@ Büroring-Preise laufen über postprocess_price_types.csv (globale Regel).
 """
     ),
     (
-        "postprocess_price_types.csv",
-        "Preistyp-Konvertierung",
+        """\
+postprocess_price_types.csv""",
+        """\
+Preistyp-Konvertierung""",
+        """\
+Preise""",
         """\
 Konvertiert Preistypen global pro Lieferant.
 
@@ -186,9 +211,15 @@ Der Export schreibt immer price_type="net_customer" im VENDOSYS-XML.
 Diese Konvertierung setzt nur den internen DB-Typ für die Zwischenbuchführung.
 """
     ),
+
+    # ── Katalog & Kategorien ────────────────────────────────────────
     (
-        "softcarrier_it_groups.csv",
-        "Softcarrier IT-Kategorien (Artikelrechte)",
+        """\
+softcarrier_it_groups.csv""",
+        """\
+Softcarrier IT-Kategorien (Artikelrechte)""",
+        """\
+Katalog & Kategorien""",
         """\
 Liste von Softcarrier-Katalog-Gruppen-IDs (catalog_group_id), die dem
 Katalog "IT" statt "Freizeit & Hobby" (FR) zugeordnet werden – für den
@@ -205,8 +236,188 @@ akzeptiert (gleiche Systematik wie bei fehlenden Preisformeln).
 """
     ),
     (
-        "postprocess_media_global.csv",
-        "MIME-Regeln global",
+        """\
+postprocess_categories.csv""",
+        """\
+Katalog-Zuordnung (Override)""",
+        """\
+Katalog & Kategorien""",
+        """\
+Weist einzelnen Artikeln manuell eine andere Kataloggruppe zu.
+
+Spalten:
+  product_id          – product_id (mit Präfix)
+  catalog_group_id    – Neue Root-Katalog-ID
+  catalog_sub_group_id – Neue Sub-Katalog-ID
+
+Wird verwendet wenn ein Lieferant einen Artikel in der falschen
+Kategorie ausliefert und eine manuelle Korrektur nötig ist.
+Die hier eingetragene Kategorie überschreibt die aus dem BMEcat.
+"""
+    ),
+    (
+        """\
+postprocess_catalog_remap.csv""",
+        """\
+Katalog-Neuordnung (Export)""",
+        """\
+Katalog & Kategorien""",
+        """\
+Benennt Katalog-IDs beim Export um (ohne die DB zu ändern).
+
+Spalten:
+  supplier      – Lieferant (leer = alle)
+  old_group_id  – Bisherige group_id
+  new_group_id  – Neue group_id im Export-XML
+
+Wird angewendet NACH dem Katalogbaum-Lookup, kurz vor dem XML-Schreiben.
+Nützlich wenn VENDOSYS/Brickfox andere Kategorie-IDs erwartet als
+im BMEcat geliefert werden, ohne die importierten Daten zu verändern.
+"""
+    ),
+
+    # ── Features (FNAME/FVALUE) ─────────────────────────────────────
+    (
+        """\
+udx_inject.csv""",
+        """\
+UDX-Injektion (vor Import)""",
+        """\
+Features (FNAME/FVALUE)""",
+        """\
+Trägt UDX.SOE.EPAG_ID / UDX.SOE.SELECTIONFEATURE für einzelne Artikel
+nach, falls der Lieferant sie nicht selbst mitliefert. Läuft beim
+DB-Import, VOR dem Schreiben in die Datenbank.
+
+Wichtig: wird NUR eingetragen, wenn der Artikel in der Quelle noch
+KEINE USER_DEFINED_EXTENSIONS hat – existieren dort schon welche, bleibt
+die Quelle unangetastet (kein Überschreiben).
+
+Spalten:
+  • supplier_pid       native Artikel-ID ohne Präfix, z.B. BRG103213
+  • epag_id            optional
+  • selectionfeature   optional (mind. eine der beiden Spalten angeben)
+
+Kommentarzeilen beginnen mit #.
+"""
+    ),
+    (
+        """\
+postprocess_fname_blacklist.csv""",
+        """\
+FNAME-Blacklist (Feature-Filter)""",
+        """\
+Features (FNAME/FVALUE)""",
+        """\
+Liste von FNAMEs (Feature-Namen), die beim Export IMMER oder bedingt
+aus den Artikeln entfernt werden – z. B. interne/redaktionelle Felder,
+die nicht im Shop angezeigt werden sollen.
+
+Spalten:
+  fname   – Feature-Name (Wildcards * und ? erlaubt, z. B. *intern*)
+  fvalue  – optional. Leer = Feature immer entfernen.
+            Gesetzt = nur entfernen wenn FVALUE genau diesem Wert
+            entspricht (z. B. "Be Green" nur wenn Wert = CAA017/Nein).
+
+ECLASS-Booleschwerte (CAA016/CAA017) werden sowohl als Rohcode als
+auch als bereits übersetzter Text (Ja/Nein) erkannt.
+
+Kommentarzeilen beginnen mit #.
+Gross-/Kleinschreibung wird bei fname und fvalue ignoriert.
+"""
+    ),
+    (
+        """\
+fusage_3_features.csv""",
+        """\
+FUSAGE=3 Feature-Liste""",
+        """\
+Features (FNAME/FVALUE)""",
+        """\
+Liste von Feature-Namen (FNAME) die beim Export FUSAGE=3 bekommen.
+
+FUSAGE-Bedeutung im VENDOSYS-Schema:
+  1 = normales Merkmal (wird angezeigt, nicht variantenrelevant)
+  3 = variantenrelevant  (Auswahl-Dropdown im Shop, z. B. Farbe, Größe)
+
+Alle anderen Features, die NICHT in dieser Liste stehen, bekommen FUSAGE=1.
+
+~150 Feature-Namen sind eingetragen (Farbe, Strichstärke, Grammatur etc.).
+Format: Ein Feature-Name pro Zeile, Kommentarzeilen mit #.
+"""
+    ),
+    (
+        """\
+udx_fields.csv""",
+        """\
+UDX → Feature-Mapping (Nordwest)""",
+        """\
+Features (FNAME/FVALUE)""",
+        """\
+Steuert welche UDX-Felder aus Nordwest-Artikeln als reguläre
+ARTICLE_FEATURES im Export erscheinen und welche als
+USER_DEFINED_EXTENSIONS bleiben.
+
+Spalten:
+  fname       – Feature-Name (FNAME) wie er in der DB steht
+  udx_key     – UDX-Schlüssel für den Export (z. B. LIEFNR)
+
+Nordwest liefert viele proprietäre UDX-Felder (UDX.LIEFNR,
+UDX.BEZUGSQUELLE etc.).  Diese Datei ist der Schlüssel der festlegt
+welche davon im VENDOSYS-Export als <UDX.SCHLUESSEL> erscheinen.
+"""
+    ),
+    (
+        """\
+fname_renames.csv""",
+        """\
+FNAME-Umbenennung""",
+        """\
+Features (FNAME/FVALUE)""",
+        """\
+Benennt Feature-Namen (FNAME) beim Import um – BEVOR sie in die DB
+geschrieben werden.
+
+Spalten:
+  old_fname   – Originalname aus dem BMEcat
+  new_fname   – Neuer Name in der DB / im Export
+
+Normalisiert inkonsistente Lieferantennamen
+(z. B. 'Strichstaerke' → 'Strichstärke').
+Änderungen hier erfordern einen Neu-Import damit die DB aktualisiert wird.
+"""
+    ),
+    (
+        """\
+fvalue_renames.csv""",
+        """\
+FVALUE-Umbenennung""",
+        """\
+Features (FNAME/FVALUE)""",
+        """\
+Benennt Feature-Werte (FVALUE) beim Import um.
+
+Spalten:
+  fname       – Feature-Name (nur für diesen FNAME anwenden)
+  old_fvalue  – Originalwert aus dem BMEcat
+  new_fvalue  – Neuer Wert in der DB / im Export
+
+Beispiele:
+  Farbe, 'blau (hell)' → 'hellblau'
+  Ja/Nein-Normalisierung: 'ja' → 'Ja', '1' → 'Ja'
+
+Änderungen erfordern Neu-Import.
+"""
+    ),
+
+    # ── MIME & Referenzen ───────────────────────────────────────────
+    (
+        """\
+postprocess_media_global.csv""",
+        """\
+MIME-Regeln global""",
+        """\
+MIME & Referenzen""",
         """\
 Ändert den MIME-Zweck (purpose) von Dateien anhand von Mustern –
 gilt für alle Artikel.
@@ -228,8 +439,12 @@ die der Lieferant falsch oder inkonsistent ausliefert.
 """
     ),
     (
-        "postprocess_media.csv",
-        "MIME-Overrides per Artikel",
+        """\
+postprocess_media.csv""",
+        """\
+MIME-Overrides per Artikel""",
+        """\
+MIME & Referenzen""",
         """\
 Manuelle MIME-Korrekturen für einzelne Artikel.
 
@@ -246,8 +461,12 @@ einen falschen MIME-Zweck für einen bestimmten Artikel ausliefert.
 """
     ),
     (
-        "postprocess_reference_types.csv",
-        "Referenztyp-Umbenennung",
+        """\
+postprocess_reference_types.csv""",
+        """\
+Referenztyp-Umbenennung""",
+        """\
+MIME & Referenzen""",
         """\
 Benennt ARTICLE_REFERENCE-Typen um.
 
@@ -266,24 +485,12 @@ im System nicht verworfen werden.
 """
     ),
     (
-        "postprocess_categories.csv",
-        "Katalog-Zuordnung (Override)",
         """\
-Weist einzelnen Artikeln manuell eine andere Kataloggruppe zu.
-
-Spalten:
-  product_id          – product_id (mit Präfix)
-  catalog_group_id    – Neue Root-Katalog-ID
-  catalog_sub_group_id – Neue Sub-Katalog-ID
-
-Wird verwendet wenn ein Lieferant einen Artikel in der falschen
-Kategorie ausliefert und eine manuelle Korrektur nötig ist.
-Die hier eingetragene Kategorie überschreibt die aus dem BMEcat.
-"""
-    ),
-    (
-        "postprocess_crosssell.csv",
-        "Crosssell-Verbindungen",
+postprocess_crosssell.csv""",
+        """\
+Crosssell-Verbindungen""",
+        """\
+MIME & Referenzen""",
         """\
 Fügt Crosssell-Referenzen zwischen Artikeln ein (oder ergänzt fehlende).
 
@@ -296,9 +503,15 @@ Bisher leer – wird bei Bedarf befüllt wenn manuell Crosssell-Links
 gepflegt werden sollen die nicht im BMEcat enthalten sind.
 """
     ),
+
+    # ── Sonstiges ───────────────────────────────────────────────────
     (
-        "postprocess_suffixes.csv",
-        "AID-Suffix",
+        """\
+postprocess_suffixes.csv""",
+        """\
+AID-Suffix""",
+        """\
+Sonstiges""",
         """\
 Hängt einen Suffix an die SUPPLIER_AID im Export an.
 
@@ -309,109 +522,6 @@ Spalten:
 Aktuell leer.  Wird benötigt wenn ein Lieferant dieselbe
 supplier_pid für verschiedene Varianten verwendet und ein
 Suffix zur Unterscheidung nötig ist.
-"""
-    ),
-    (
-        "postprocess_catalog_remap.csv",
-        "Katalog-Neuordnung (Export)",
-        """\
-Benennt Katalog-IDs beim Export um (ohne die DB zu ändern).
-
-Spalten:
-  supplier      – Lieferant (leer = alle)
-  old_group_id  – Bisherige group_id
-  new_group_id  – Neue group_id im Export-XML
-
-Wird angewendet NACH dem Katalogbaum-Lookup, kurz vor dem XML-Schreiben.
-Nützlich wenn VENDOSYS/Brickfox andere Kategorie-IDs erwartet als
-im BMEcat geliefert werden, ohne die importierten Daten zu verändern.
-"""
-    ),
-    (
-        "fusage_3_features.csv",
-        "FUSAGE=3 Feature-Liste",
-        """\
-Liste von Feature-Namen (FNAME) die beim Export FUSAGE=3 bekommen.
-
-FUSAGE-Bedeutung im VENDOSYS-Schema:
-  1 = normales Merkmal (wird angezeigt, nicht variantenrelevant)
-  3 = variantenrelevant  (Auswahl-Dropdown im Shop, z. B. Farbe, Größe)
-
-Alle anderen Features, die NICHT in dieser Liste stehen, bekommen FUSAGE=1.
-
-~150 Feature-Namen sind eingetragen (Farbe, Strichstärke, Grammatur etc.).
-Format: Ein Feature-Name pro Zeile, Kommentarzeilen mit #.
-"""
-    ),
-    (
-        "supplier_priority.csv",
-        "EAN-Dedup-Priorität",
-        """\
-Bestimmt welcher Lieferant 'gewinnt' wenn mehrere Lieferanten
-denselben Artikel (gleiche EAN) ausliefern.
-
-Spalten:
-  supplier   – Lieferant
-  priority   – Numerisch, kleiner = höhere Priorität
-
-Aktuell:
-  BRG (Büroring)    → 1  (höchste Priorität)
-  SOC (Softcarrier) → 2
-  NDW (Nordwest)    → 3/4/5
-
-Wenn zwei Lieferanten dieselbe EAN haben, wird der Artikel des Lieferanten
-mit der kleineren Prioritätszahl exportiert, der andere wird unterdrückt.
-"""
-    ),
-    (
-        "udx_fields.csv",
-        "UDX → Feature-Mapping (Nordwest)",
-        """\
-Steuert welche UDX-Felder aus Nordwest-Artikeln als reguläre
-ARTICLE_FEATURES im Export erscheinen und welche als
-USER_DEFINED_EXTENSIONS bleiben.
-
-Spalten:
-  fname       – Feature-Name (FNAME) wie er in der DB steht
-  udx_key     – UDX-Schlüssel für den Export (z. B. LIEFNR)
-
-Nordwest liefert viele proprietäre UDX-Felder (UDX.LIEFNR,
-UDX.BEZUGSQUELLE etc.).  Diese Datei ist der Schlüssel der festlegt
-welche davon im VENDOSYS-Export als <UDX.SCHLUESSEL> erscheinen.
-"""
-    ),
-    (
-        "fname_renames.csv",
-        "FNAME-Umbenennung",
-        """\
-Benennt Feature-Namen (FNAME) beim Import um – BEVOR sie in die DB
-geschrieben werden.
-
-Spalten:
-  old_fname   – Originalname aus dem BMEcat
-  new_fname   – Neuer Name in der DB / im Export
-
-Normalisiert inkonsistente Lieferantennamen
-(z. B. 'Strichstaerke' → 'Strichstärke').
-Änderungen hier erfordern einen Neu-Import damit die DB aktualisiert wird.
-"""
-    ),
-    (
-        "fvalue_renames.csv",
-        "FVALUE-Umbenennung",
-        """\
-Benennt Feature-Werte (FVALUE) beim Import um.
-
-Spalten:
-  fname       – Feature-Name (nur für diesen FNAME anwenden)
-  old_fvalue  – Originalwert aus dem BMEcat
-  new_fvalue  – Neuer Wert in der DB / im Export
-
-Beispiele:
-  Farbe, 'blau (hell)' → 'hellblau'
-  Ja/Nein-Normalisierung: 'ja' → 'Ja', '1' → 'Ja'
-
-Änderungen erfordern Neu-Import.
 """
     ),
 ]
@@ -468,9 +578,23 @@ class ConfigTab:
         self._listbox.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
 
+        # _row_map: Listbox-Zeilenindex -> CONFIG_FILES-Eintrag, "pipeline" oder
+        # None (Kategorie-Header, nicht selektierbar) – nach Kategorie gruppiert
+        # statt einer langen unsortierten Liste, damit man Dateien wiederfindet.
+        self._row_map = ["pipeline"]
         self._listbox.insert("end", "  ▶  Pipeline-Übersicht")
-        for fname, title, _ in CONFIG_FILES:
-            self._listbox.insert("end", f"  {title}")
+
+        last_category = None
+        for fname, title, category, desc in CONFIG_FILES:
+            if category != last_category:
+                self._row_map.append(None)
+                self._listbox.insert("end", f"── {category} ──")
+                self._listbox.itemconfig("end", fg=c["FG_DIM"],
+                                         selectbackground=c["BG2"],
+                                         selectforeground=c["FG_DIM"])
+                last_category = category
+            self._row_map.append((fname, title, category, desc))
+            self._listbox.insert("end", f"    {title}")
 
         self._listbox.bind("<<ListboxSelect>>", self._on_select)
 
@@ -560,12 +684,17 @@ class ConfigTab:
         sel = self._listbox.curselection()
         if not sel:
             return
-        idx = sel[0]
-        if idx == 0:
+        idx   = sel[0]
+        entry = self._row_map[idx]
+        if entry is None:
+            # Kategorie-Header ist nicht selektierbar – Auswahl verwerfen
+            self._listbox.selection_clear(0, "end")
+            return
+        if entry == "pipeline":
             self._show_pipeline()
             return
         self._hide_pipeline()
-        fname, title, desc = CONFIG_FILES[idx - 1]
+        fname, title, category, desc = entry
 
         if self._dirty:
             if not messagebox.askyesno(
@@ -594,11 +723,11 @@ class ConfigTab:
 
     def open_file_in_editor(self, fname: str):
         """Öffnet eine Konfigurationsdatei aus dem Pipeline-Explorer im Editor."""
-        for i, (f, title, _) in enumerate(CONFIG_FILES):
-            if f == fname:
+        for i, entry in enumerate(self._row_map):
+            if entry not in (None, "pipeline") and entry[0] == fname:
                 self._listbox.selection_clear(0, "end")
-                self._listbox.selection_set(i + 1)
-                self._listbox.see(i + 1)
+                self._listbox.selection_set(i)
+                self._listbox.see(i)
                 self._on_select()
                 return
 
