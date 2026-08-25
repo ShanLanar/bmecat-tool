@@ -498,6 +498,11 @@ class App(tk.Tk):
         from lib.eclass_catalog_browser import EclassCatalogBrowser
         self._eclass_browser = EclassCatalogBrowser(_tab4, self, THEMES[self._theme])
 
+        _tab5 = tk.Frame(self._notebook, bg=_T("BG"))
+        self._notebook.add(_tab5, text="  eBay  ")
+        from lib.ebay_tab import EbayTab
+        self._ebay_tab = EbayTab(_tab5, self, THEMES[self._theme])
+
         # ── Fusszeile ─────────────────────────────────────────────────────────
         footer_wrap = tk.Frame(self, bg=_T("BG2"))
         footer_wrap.grid(row=2, column=0, sticky="ew")
@@ -531,6 +536,8 @@ class App(tk.Tk):
                 self._stop_btn.config(state="disabled")
             if idx == 1 and hasattr(self, "_viewer_tab"):
                 self._viewer_tab.on_tab_activated()
+            if idx == 4 and hasattr(self, "_ebay_tab"):
+                self._ebay_tab.on_tab_activated()
         self._notebook.bind("<<NotebookTabChanged>>", _on_tab_change)
 
         # Logging → GUI
