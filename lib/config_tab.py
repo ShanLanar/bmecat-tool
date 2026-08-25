@@ -275,6 +275,49 @@ Nützlich wenn VENDOSYS/Brickfox andere Kategorie-IDs erwartet als
 im BMEcat geliefert werden, ohne die importierten Daten zu verändern.
 """
     ),
+    (
+        "channels/channel_category_mapping.csv",
+        "Marktplatz-Kategorie-Mapping",
+        "Katalog & Kategorien",
+        """\
+Bildet interne Lieferanten-Kategoriecodes (catalog_group_id /
+catalog_sub_group_id) auf die Kategoriesysteme der Zielmarktplätze ab:
+eBay, Kaufland, Conrad (Mirakl), ManoMano (Mirakl), Unite/Mercateo.
+
+Spalten:
+  supplier_category_code  – Lieferanten-Kategoriecode (z.B. 104139)
+  supplier_category_name  – Klartext (informativ)
+  ebay_category_id        – eBay Leaf-Kategorie-ID
+  kaufland_category_id    – Kaufland-Kategorie-ID
+  mirakl_conrad_category  – Conrad-Kategoriecode (Mirakl)
+  mirakl_mano_category    – ManoMano-Kategoriecode (Mirakl)
+  unite_category          – Unite/Mercateo-Kategorie
+
+Wird gepflegt über den Task "Kanal-Kategorie-Mapping" (neue Codes
+werden automatisch als Leerzeile ergänzt, Lücken werden gemeldet) und
+über "eBay – Kategorie-Mapping aus Altdatei lernen" (befüllt nur leere
+ebay_category_id-Zellen, überschreibt nie vorhandene Werte).
+"""
+    ),
+    (
+        "channels/eclass_channel_mapping.csv",
+        "eClass → Marktplatz-Kategorie-Mapping",
+        "Katalog & Kategorien",
+        """\
+Alternative zu channel_category_mapping.csv: bildet eClass-Endknoten
+(statt Lieferanten-Kategoriecodes) auf Marktplatz-Kategorien ab – eine
+eClass-ID gilt dann lieferantenübergreifend für alle Artikel mit dieser
+Klassifikation. Deutlich weniger Pflegeaufwand, setzt aber eine
+abgeschlossene "ECLASS-Analyse" voraus.
+
+Spalten:
+  eclass_id, eclass_version, eclass_name, example_article,
+  article_count, ebay_category_id, kaufland_category_id,
+  mirakl_conrad_category, mirakl_mano_category, unite_category
+
+Wird über den Task "ECLASS → Kanal-Mapping" gepflegt.
+"""
+    ),
 
     # ── Features (FNAME/FVALUE) ─────────────────────────────────────
     (
