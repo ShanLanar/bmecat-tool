@@ -409,6 +409,29 @@ Beispiele:
 Änderungen erfordern Neu-Import.
 """
     ),
+    (
+        "ebay_feature_map.csv",
+        "eBay Item-Specifics-Mapping",
+        "Features (FNAME/FVALUE)",
+        """\
+Mappt FNAME (Feature-Name in der DB) auf eBay-Item-Specific-Spalten
+(„C:Spaltenname“) beim eBay-File-Exchange-Export.
+
+Spalten:
+  fname        – Feature-Name wie er in der DB steht
+  ebay_column  – Ziel-Spaltenname OHNE „C:“-Präfix, z. B. Farbe
+
+Nur für AUSNAHMEN nötig: stimmt FNAME bereits exakt mit dem
+eBay-Spaltennamen überein (z. B. FNAME "Farbe" → Spalte "C:Farbe"),
+wird automatisch 1:1 gematcht, ganz ohne Eintrag hier.
+
+C:Marke, C:Herstellernummer und C:EAN werden IMMER direkt aus den
+Artikel-Feldern (manufacturer_name/manufacturer_aid/ean) befüllt,
+unabhängig von dieser Datei.
+
+Kommentarzeilen beginnen mit #.
+"""
+    ),
 
     # ── MIME & Referenzen ───────────────────────────────────────────
     (

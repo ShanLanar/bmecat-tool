@@ -82,6 +82,78 @@ def load_category_mappings(base_dir: str) -> dict:
     return {}
 
 
+def fill_channel_category(base_dir: str, channel: str, updates: dict) -> int:
+    """
+    Befüllt NUR leere Zellen der angegebenen Kanal-Spalte in
+    channel_category_mapping.csv. Vorhandene Werte werden nie überschrieben
+    (manuelle Korrekturen bleiben erhalten). Codes, die noch gar nicht in der
+    Datei stehen, werden zuerst über add_missing_to_mapping() ergänzt.
+
+    Args:
+        channel:  Kanalschlüssel aus CHANNELS (z.B. "ebay")
+        updates:  {supplier_category_code: neuer_wert}
+
+    Returns:
+        Anzahl tatsächlich befüllter Zellen.
+    """
+    path = mapping_path(base_dir)
+    if not os.path.exists(path):
+        add_missing_to_mapping(
+            base_dir, [{"code": c, "name": ""} for c in updates])
+
+    col = next((c for c, ch in _COLUMN_MAP.items() if ch == channel), None)
+    if not col:
+        return 0
+
+    rows, fieldnames = [], None
+    for enc in _ENCODINGS:
+        try:
+            with open(path, "r", encoding=enc, errors="strict", newline="") as f:
+                sample = f.read(4096)
+                try:
+                    dialect = csv.Sniffer().sniff(sample, delimiters=",;")
+                except csv.Error:
+                    dialect = csv.excel
+                f.seek(0)
+                reader = csv.DictReader(f, dialect=dialect)
+                fieldnames = reader.fieldnames
+                rows = list(reader)
+            break
+        except (UnicodeDecodeError, KeyError):
+            continue
+    if not rows or not fieldnames:
+        return 0
+
+    known_codes = {(r.get("supplier_category_code") or "").upper() for r in rows}
+    missing = [{"code": c, "name": ""} for c in updates
+               if c.upper() not in known_codes and not c.startswith("#")]
+    if missing:
+        add_missing_to_mapping(base_dir, missing)
+        # Neu angehängte Zeilen mit einlesen
+        with open(path, "r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f, delimiter=";")
+            fieldnames = reader.fieldnames
+            rows = list(reader)
+
+    filled = 0
+    for row in rows:
+        code = (row.get("supplier_category_code") or "").strip()
+        if not code or code.startswith("#"):
+            continue
+        new_val = updates.get(code.upper()) or updates.get(code)
+        if new_val and not (row.get(col) or "").strip():
+            row[col] = new_val
+            filled += 1
+
+    if filled:
+        with open(path, "w", encoding="utf-8-sig", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter=";")
+            writer.writeheader()
+            writer.writerows(rows)
+
+    return filled
+
+
 def get_channel_category(mappings: dict, supplier_cat_code: str, channel: str) -> str:
     """Gibt die Kanal-Kategorie-ID zurück. Leerer String wenn nicht gemappt."""
     return mappings.get(supplier_cat_code.upper(), {}).get(channel, "")

@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 def _now() -> str:
@@ -175,6 +175,14 @@ CREATE INDEX IF NOT EXISTS idx_catnode_supplier ON catalog_nodes(supplier_id);
 CREATE INDEX IF NOT EXISTS idx_catnode_parent   ON catalog_nodes(supplier_id, parent_group_id);
 CREATE INDEX IF NOT EXISTS idx_artcat_article   ON article_catalog_map(article_id);
 CREATE INDEX IF NOT EXISTS idx_artcat_node      ON article_catalog_map(catalog_node_id);
+
+CREATE TABLE IF NOT EXISTS ebay_listings (
+    sku           TEXT PRIMARY KEY,
+    item_id       TEXT NOT NULL,
+    category_name TEXT DEFAULT '',
+    status        TEXT DEFAULT 'active',
+    last_seen     TEXT NOT NULL
+);
 """
 
 
@@ -262,6 +270,17 @@ def _migrate(con: sqlite3.Connection):
             con.execute("ALTER TABLE articles ADD COLUMN stock_qty TEXT DEFAULT ''")
         if "stock_updated" not in cols:
             con.execute("ALTER TABLE articles ADD COLUMN stock_updated TEXT DEFAULT ''")
+    if current < 8:
+        # v8: eBay-Listing-Registry (SKU -> ItemID/Kategorie/Status)
+        con.executescript("""
+            CREATE TABLE IF NOT EXISTS ebay_listings (
+                sku           TEXT PRIMARY KEY,
+                item_id       TEXT NOT NULL,
+                category_name TEXT DEFAULT '',
+                status        TEXT DEFAULT 'active',
+                last_seen     TEXT NOT NULL
+            );
+        """)
     con.execute("DELETE FROM schema_version")
     con.execute("INSERT INTO schema_version VALUES (?)", (SCHEMA_VERSION,))
 
@@ -623,6 +642,65 @@ def update_online_status(con: sqlite3.Connection, id_to_online: dict) -> int:
     return n
 
 
+# ── eBay-Listing-Registry ─────────────────────────────────────────────────────
+#
+# Merkt sich SKU -> eBay-ItemID, damit spätere SKU-Listen aus dem Vertrieb
+# automatisch in "Neuanlage" (SKU unbekannt) und "Revise/Reaktivierung"
+# (SKU + ItemID bereits bekannt) sortiert werden können. Wird befüllt, sobald
+# der Nutzer einen von eBay heruntergeladenen Revise-Report einliest (dort
+# stehen SKU + ItemID authoritativ drin) – eine neu angelegte Auktion liefert
+# ihre ItemID nicht automatisch zurück, die kommt erst über den nächsten
+# eBay-eigenen Report.
+
+def upsert_ebay_listings(con: sqlite3.Connection, rows: list) -> int:
+    """rows: [{sku, item_id, category_name, status}]. Gibt Anzahl zurück."""
+    now = _now()
+    n = 0
+    for r in rows:
+        sku = (r.get('sku') or '').strip()
+        item_id = (r.get('item_id') or '').strip()
+        if not sku or not item_id:
+            continue
+        con.execute("""
+            INSERT INTO ebay_listings(sku, item_id, category_name, status, last_seen)
+            VALUES (?,?,?,?,?)
+            ON CONFLICT(sku) DO UPDATE SET
+                item_id=excluded.item_id, category_name=excluded.category_name,
+                status=excluded.status, last_seen=excluded.last_seen
+        """, (sku, item_id, r.get('category_name', ''), r.get('status', 'active'), now))
+        n += 1
+    con.commit()
+    return n
+
+
+def set_ebay_listing_status(con: sqlite3.Connection, skus: list, status: str) -> int:
+    now = _now()
+    n = 0
+    for sku in skus:
+        cur = con.execute(
+            "UPDATE ebay_listings SET status=?, last_seen=? WHERE sku=?",
+            (status, now, sku))
+        n += cur.rowcount
+    con.commit()
+    return n
+
+
+def get_ebay_listings(con: sqlite3.Connection, skus: list) -> dict:
+    """Gibt {sku: {item_id, category_name, status}} für bekannte SKUs zurück."""
+    if not skus:
+        return {}
+    result = {}
+    for i in range(0, len(skus), _SQL_CHUNK_SIZE):
+        chunk = skus[i:i + _SQL_CHUNK_SIZE]
+        placeholders = ','.join('?' * len(chunk))
+        rows = con.execute(
+            f"SELECT sku, item_id, category_name, status FROM ebay_listings "
+            f"WHERE sku IN ({placeholders})", chunk).fetchall()
+        for row in rows:
+            result[row['sku']] = dict(row)
+    return result
+
+
 def deactivate_stale(con: sqlite3.Connection, supplier_id: int, cutoff: str) -> list[dict]:
     """
     Soft-Delete: Artikel die seit `cutoff` nicht mehr gesehen wurden (last_seen < cutoff)
@@ -731,6 +809,48 @@ def query_by_ids(con: sqlite3.Connection, article_ids: list[int]) -> list[dict]:
                 "SELECT ref_type,art_id_to FROM article_references WHERE article_id=?", (art_id,))]
             art["udx"]        = [dict(r) for r in con.execute(
                 "SELECT key,value FROM article_udx WHERE article_id=?", (art_id,))]
+            result.append(art)
+    return result
+
+
+def query_by_supplier_pids(con: sqlite3.Connection, supplier_pids: list,
+                           active_only: bool = True) -> list:
+    """
+    Lädt Artikel anhand ihrer nativen (unpräfixten) supplier_pid – über ALLE
+    Lieferanten hinweg, da z.B. eine hochgeladene eBay-SKU-Liste den
+    Lieferanten nicht kennt. Bei Kollisionen (gleiche supplier_pid bei
+    mehreren Lieferanten) werden alle Treffer zurückgegeben.
+    """
+    if not supplier_pids:
+        return []
+
+    result = []
+    for i in range(0, len(supplier_pids), _SQL_CHUNK_SIZE):
+        chunk = supplier_pids[i:i + _SQL_CHUNK_SIZE]
+        placeholders = ','.join('?' * len(chunk))
+        active_clause = "AND a.active=1" if active_only else ""
+        sql = f"""
+            SELECT a.*, s.supplier_name, s.supplier_code, s.supplier_aid, s.supplier_alt_aid,
+                   cn.name  AS catalog_node_name,
+                   cn.group_id AS catalog_node_group_id,
+                   acm.catalog_node_id AS _catalog_node_id
+            FROM articles a
+            JOIN suppliers s ON s.id = a.supplier_id
+            LEFT JOIN article_catalog_map acm ON acm.article_id = a.id
+            LEFT JOIN catalog_nodes cn ON cn.id = acm.catalog_node_id
+            WHERE a.supplier_pid IN ({placeholders}) {active_clause}
+            ORDER BY s.supplier_name, a.product_id
+        """
+        rows = con.execute(sql, chunk).fetchall()
+        for row in rows:
+            art = dict(row)
+            art_id = art["id"]
+            art["features"] = [dict(r) for r in con.execute(
+                "SELECT fname,fvalue,funit,fusage,forder,fsearchable,fselectable,value_index "
+                "FROM article_features WHERE article_id=? ORDER BY forder, fname, value_index", (art_id,))]
+            art["mimes"] = [dict(r) for r in con.execute(
+                "SELECT mime_type,mime_source,mime_purpose,mime_desc,mime_alt,mime_order "
+                "FROM article_mimes WHERE article_id=? ORDER BY mime_order", (art_id,))]
             result.append(art)
     return result
 

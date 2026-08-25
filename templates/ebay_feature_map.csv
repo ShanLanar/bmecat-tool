@@ -1,0 +1,5 @@
+fname;ebay_column
+# Nur Ausnahmen eintragen: stimmt FNAME bereits exakt mit dem eBay-
+# Spaltennamen ("C:Spaltenname") überein, matcht es automatisch 1:1.
+# Beispiel: FNAME "Grammatur (g/m²)" auf eBay-Spalte "C:Grammatur" mappen:
+# Grammatur (g/m²);Grammatur

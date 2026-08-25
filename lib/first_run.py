@@ -34,6 +34,7 @@ TEMPLATE_FILES = [
     "keyword_dictionary.csv",
     "supplier_config.yaml",
     "softcarrier_it_groups.csv",
+    "ebay_feature_map.csv",
 ]
 
 

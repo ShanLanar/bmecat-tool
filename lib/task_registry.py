@@ -246,6 +246,30 @@ TASKS = [
         "default": False,
         "group":   "Marktplätze",
     },
+    {
+        "id":      "ebay_sku_liste",
+        "name":    "eBay – SKU-Liste verarbeiten",
+        "desc":    "ebay_sku_liste.csv (Vertrieb) einlesen → automatisch in Neuanlage/Revise/Beenden aufteilen",
+        "fn":      "tasks.ebay:run_sku_liste",
+        "default": False,
+        "group":   "Marktplätze",
+    },
+    {
+        "id":      "ebay_revise_sync",
+        "name":    "eBay – Bestand & Preis aktualisieren",
+        "desc":    "ebay_revise_download.csv (eBay-eigener Report) einlesen → Bestand/Preis aller aktiven Angebote auffrischen",
+        "fn":      "tasks.ebay:run_revise_sync",
+        "default": False,
+        "group":   "Marktplätze",
+    },
+    {
+        "id":      "ebay_learn_category",
+        "name":    "eBay – Kategorie-Mapping aus Altdatei lernen",
+        "desc":    "ebay_kategorie_lernen.csv (alte, ausgefüllte Draft-Datei) einlesen → channel_category_mapping.csv (ebay-Spalte) befüllen",
+        "fn":      "tasks.ebay:run_learn_category_map",
+        "default": False,
+        "group":   "Marktplätze",
+    },
 ]
 
 TASK_GROUP_ORDER = {
