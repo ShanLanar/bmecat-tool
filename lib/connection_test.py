@@ -72,6 +72,32 @@ def _test_sftp(name: str, cfg: dict) -> TestResult:
         return TestResult(name, False, f"Fehler: {e}")
 
 
+def _test_mysql(name: str, cfg: dict) -> TestResult:
+    import time
+    try:
+        import pymysql
+    except ImportError:
+        return TestResult(name, False, "PyMySQL nicht installiert (pip install PyMySQL)")
+
+    host = cfg["host"]
+    port = cfg.get("port", 3306)
+    t0   = time.monotonic()
+    try:
+        con = pymysql.connect(
+            host=host, port=port,
+            user=cfg["user"], password=cfg["password"],
+            database=cfg.get("database") or None,
+            connect_timeout=10, charset="utf8mb4",
+        )
+        con.close()
+        ms = round((time.monotonic() - t0) * 1000)
+        return TestResult(name, True, "OK – Anmeldung erfolgreich", ms)
+    except pymysql.err.OperationalError as e:
+        return TestResult(name, False, f"Verbindung/Anmeldung fehlgeschlagen: {e}")
+    except Exception as e:
+        return TestResult(name, False, f"Fehler: {e}")
+
+
 def test_all(progress_cb: Optional[Callable] = None) -> list[TestResult]:
     """Testet alle Verbindungen aus config.CONNECTIONS sequenziell."""
     from config import CONNECTIONS
@@ -83,6 +109,8 @@ def test_all(progress_cb: Optional[Callable] = None) -> list[TestResult]:
         protocol = cfg.get("protocol", "ftp").lower()
         if protocol == "sftp":
             r = _test_sftp(name, cfg)
+        elif protocol == "mysql":
+            r = _test_mysql(name, cfg)
         else:
             r = _test_ftp(name, cfg)
 
