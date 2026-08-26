@@ -192,6 +192,7 @@ class ConfigEditor(tk.Toplevel):
         ("host",     "Host",      False),
         ("user",     "Benutzer",  False),
         ("password", "Passwort",  True),
+        ("database", "Datenbank", False),
         ("port",     "Port",      False),
         ("protocol", "Protokoll", False),
     ]
