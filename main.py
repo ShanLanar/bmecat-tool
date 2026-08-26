@@ -1078,7 +1078,11 @@ if __name__ == "__main__":
 
     app = App()
     # --auto: direkt Standard-Tasks starten (für Scheduler)
-    from tasks.scheduler import is_auto_mode
-    if is_auto_mode():
+    # --auto-daily: nur die Aufgaben der Rubrik "Täglich" starten (für Scheduler)
+    from tasks.scheduler import is_auto_mode, is_auto_daily_mode
+    if is_auto_daily_mode():
+        app.after(400, app._select_daily)
+        app.after(500, app._start_run)   # kurz warten bis GUI bereit
+    elif is_auto_mode():
         app.after(500, app._start_run)   # kurz warten bis GUI bereit
     app.mainloop()

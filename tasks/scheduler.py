@@ -260,6 +260,13 @@ def is_auto_mode() -> bool:
     return "--auto" in sys.argv
 
 
+def is_auto_daily_mode() -> bool:
+    """True wenn das Programm via Scheduler mit --auto-daily gestartet wurde
+    (führt nur die Aufgaben der Rubrik "Täglich" aus, unabhängig von den
+    sonst angehakten Standard-Aufgaben)."""
+    return "--auto-daily" in sys.argv
+
+
 def is_dry_run() -> bool:
     """True wenn --dry-run übergeben wurde (simuliert alle Tasks ohne Upload)."""
     return "--dry-run" in sys.argv or "-n" in sys.argv
