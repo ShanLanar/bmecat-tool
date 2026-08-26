@@ -38,6 +38,39 @@ TASKS = [
         "default": False,
         "group":   "Vorbereitung",
     },
+    # ── Täglich ───────────────────────────────────────────────────────────────
+    {
+        "id":      "bueroring_bestand",
+        "name":    "Büroring – Bestand+Preis",
+        "desc":    "Excel patchen + Products/CsvExchange erzeugen + Brickfox-Upload – eigenständig, ohne BMEcat-Download/-Merge/-Upload",
+        "fn":      "tasks.bueroring_bestand:run",
+        "default": False,
+        "group":   "Täglich",
+    },
+    {
+        "id":      "article_rights",
+        "name":    "Artikelrechte-Export (Allago + OfficeXL)",
+        "desc":    "SKU-Listen je Katalog (AS/WS/WZ/BRG/GREEN/FR/IT) für Allago + OfficeXL erzeugen (Ablösung altes SQL/Velocity)",
+        "fn":      "tasks.article_rights:run",
+        "default": False,
+        "group":   "Täglich",
+    },
+    {
+        "id":      "bestandsdaten",
+        "name":    "Bestandsdaten (nur CSV)",
+        "desc":    "Availability-CSV aus br-bestand.csv erzeugen (kein FTP)",
+        "fn":      "tasks.others:run_bestandsdaten_only",
+        "default": False,
+        "group":   "Täglich",
+    },
+    {
+        "id":      "unite_price_update",
+        "name":    "Mercateo-Unite – Preise aus ERP aktualisieren",
+        "desc":    "Preise per SQL aus dem ERP (CONNECTIONS['erp_mysql']) laden und in den BME-1.2-Katalog aus in_BME (z.B. 'kaenguruh und bunte ware *.xml') einpatchen",
+        "fn":      "tasks.unite:run_update_prices",
+        "default": False,
+        "group":   "Täglich",
+    },
     # ── Büroring ──────────────────────────────────────────────────────────────
     {
         "id":      "bueroring",
@@ -45,14 +78,6 @@ TASKS = [
         "desc":    "Download + Merge + Keywords + Brickfox-Upload (ohne Bestand+Preis)",
         "fn":      "tasks.bueroring:run",
         "default": True,
-        "group":   "Büroring",
-    },
-    {
-        "id":      "bueroring_bestand",
-        "name":    "Büroring – Bestand+Preis",
-        "desc":    "Excel patchen + Products/CsvExchange erzeugen + Brickfox-Upload – eigenständig, ohne BMEcat-Download/-Merge/-Upload",
-        "fn":      "tasks.bueroring_bestand:run",
-        "default": False,
         "group":   "Büroring",
     },
     {
@@ -142,14 +167,6 @@ TASKS = [
         "group":   "Extras",
     },
     {
-        "id":      "article_rights",
-        "name":    "Artikelrechte-Export (Allago + OfficeXL)",
-        "desc":    "SKU-Listen je Katalog (AS/WS/WZ/BRG/GREEN/FR/IT) für Allago + OfficeXL erzeugen (Ablösung altes SQL/Velocity)",
-        "fn":      "tasks.article_rights:run",
-        "default": False,
-        "group":   "Extras",
-    },
-    {
         "id":      "fname_analyse",
         "name":    "FNAME-Analyse",
         "desc":    "Alle FNAMEs aus XMLs extrahieren, Kollisionen prüfen, fname_alle.csv erzeugen",
@@ -162,14 +179,6 @@ TASKS = [
         "name":    "Datenqualität – Marktplatz-Reifegrad",
         "desc":    "Beschreibungen, GPSR-Herstellerdaten und Bilder über alle Lieferanten prüfen (CSV-Report)",
         "fn":      "tasks.data_quality:run",
-        "default": False,
-        "group":   "Extras",
-    },
-    {
-        "id":      "bestandsdaten",
-        "name":    "Bestandsdaten (nur CSV)",
-        "desc":    "Availability-CSV aus br-bestand.csv erzeugen (kein FTP)",
-        "fn":      "tasks.others:run_bestandsdaten_only",
         "default": False,
         "group":   "Extras",
     },
@@ -270,27 +279,20 @@ TASKS = [
         "default": False,
         "group":   "Marktplätze",
     },
-    {
-        "id":      "unite_price_update",
-        "name":    "Mercateo-Unite – Preise aus ERP aktualisieren",
-        "desc":    "Preise per SQL aus dem ERP (CONNECTIONS['erp_mysql']) laden und in den BME-1.2-Katalog aus in_BME (z.B. 'kaenguruh und bunte ware *.xml') einpatchen",
-        "fn":      "tasks.unite:run_update_prices",
-        "default": False,
-        "group":   "Marktplätze",
-    },
 ]
 
 TASK_GROUP_ORDER = {
     "Vorbereitung": 0,
-    "Büroring":     1,
-    "Softcarrier":  2,
-    "Nordwest":     3,
-    "Systeam":      4,
-    "Soennecken":   5,
-    "Bilder":       6,
-    "Upload":       7,
-    "Extras":       8,
-    "Marktplätze":  9,
+    "Täglich":      1,
+    "Büroring":     2,
+    "Softcarrier":  3,
+    "Nordwest":     4,
+    "Systeam":      5,
+    "Soennecken":   6,
+    "Bilder":       7,
+    "Upload":       8,
+    "Extras":       9,
+    "Marktplätze":  10,
 }
 
 
