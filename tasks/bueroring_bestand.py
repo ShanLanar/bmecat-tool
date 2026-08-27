@@ -64,16 +64,22 @@ def _filter_exchange(df):
     return df[keep] if keep else df
 
 
-def _vlookup(key, src_df, col_idx=1):
-    """Simuliert IFERROR(VLOOKUP(key, src!A:B, 2, 0), 0)."""
+def _vlookup_map(src_df, col_idx=1):
+    """
+    Baut einmalig eine Key→Value-Lookup-Series aus src_df (Spalte 0 → Spalte
+    col_idx), analog zu IFERROR(VLOOKUP(key, src!A:B, 2, 0), 0) – aber als
+    Hash-Lookup statt einer Zeilen-für-Zeilen-Suche je Master-Artikel.
+    Bei doppelten Keys gewinnt die erste Zeile (wie VLOOKUP).
+    """
     import pandas as pd
-    if pd.isna(key) or key is None:
-        return "0"
-    hits = src_df[src_df.iloc[:, 0].astype(str).str.strip() == str(key).strip()]
-    if hits.empty:
-        return "0"
-    val = hits.iloc[0, col_idx]
-    return "0" if pd.isna(val) else str(val)
+    key_col = src_df.columns[0]
+    val_col = src_df.columns[col_idx]
+    keys = src_df[key_col].astype(str).str.strip()
+    lookup = (pd.DataFrame({key_col: keys, val_col: src_df[val_col]})
+                .dropna(subset=[key_col])
+                .drop_duplicates(key_col, keep="first")
+                .set_index(key_col)[val_col])
+    return lookup
 
 
 def _patch_and_export(excel_path: str, csv_in_path: str,
@@ -151,8 +157,8 @@ def _patch_and_export(excel_path: str, csv_in_path: str,
             p(f"  Reiter '{sheet}' fehlt – {col} wird 0 gesetzt", tag="warn")
             master[col] = "0"
             continue
-        master[col] = master["p_item_number"].apply(
-            lambda k: _vlookup(k, src, cidx))
+        lookup = _vlookup_map(src, cidx)
+        master[col] = master["p_item_number"].map(lookup)
         # NaN / leer → "0"
         master[col] = (master[col].fillna("0")
                                    .replace("", "0")
