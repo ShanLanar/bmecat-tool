@@ -599,6 +599,8 @@ class App(tk.Tk):
         self._refresh_all_btns()
 
     def _select_daily(self):
+        for v in self._checks.values():
+            v.set(False)
         for task in TASKS:
             if task.get("group") == "Täglich":
                 self._checks[task["id"]].set(True)
@@ -781,12 +783,21 @@ class App(tk.Tk):
             return
 
         # Disk-Space-Check
+        from tasks.scheduler import is_auto_mode, is_auto_daily_mode
+        unattended = is_auto_mode() or is_auto_daily_mode()
         try:
             import shutil
             usage = shutil.disk_usage(config.BASE_DIR)
             free_gb = usage.free / (1024 ** 3)
             if free_gb < 2:
-                if not messagebox.askyesno(
+                if unattended:
+                    # Kein Dialog im Scheduler-Lauf – würde für immer hängen,
+                    # da niemand da ist um zu bestätigen. Stattdessen loggen
+                    # und trotzdem versuchen.
+                    self._append_log(
+                        f"⚠ Nur noch {free_gb:.1f} GB frei auf {config.BASE_DIR} – "
+                        f"Lauf wird trotzdem gestartet (unbeaufsichtigt).", tag="warn")
+                elif not messagebox.askyesno(
                     "Wenig Speicherplatz",
                     f"Nur noch {free_gb:.1f} GB frei auf {config.BASE_DIR}.\n"
                     f"Das Tool braucht ca. 2 GB pro Lauf.\n\n"
