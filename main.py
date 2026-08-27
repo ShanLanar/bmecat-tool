@@ -991,6 +991,13 @@ class App(tk.Tk):
         else:
             self._set_status("Alle Aufgaben abgeschlossen", _T("GREEN"))
 
+        # Scheduler-Lauf: Fenster nicht offen stehen lassen – sonst zeigt der
+        # Task Scheduler den Task dauerhaft als "Wird ausgeführt" an, obwohl
+        # der Lauf längst fertig ist.
+        from tasks.scheduler import is_auto_mode, is_auto_daily_mode
+        if is_auto_mode() or is_auto_daily_mode():
+            self.after(3000, self.destroy)
+
     # ── Hilfsmethoden ─────────────────────────────────────────────────────────
     def _set_status(self, text, color=None):
         color = color or _T("FG")
