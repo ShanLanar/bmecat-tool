@@ -233,7 +233,7 @@ def run(progress_cb=None, file_progress_cb=None):
     p("┌─ Büroring Bestand+Preis ───────────────────────────────────")
     p(f"│  Eingabe:  {EXCEL_NAME}  (BASE_DIR)")
     p(f"│            {AVAILABILITY_FILE}")
-    p("│  ↓ lädt:    /400446/stock/BestandBuroring.csv")
+    p("│  ↓ lädt:    /400446/stock/BestandBueroring.csv")
     p("│  ↓ erzeugt: Products_bueroring_{{ts}}.csv")
     p("│             csv_autoimport_bueroring_{{ts}}.csv")
     p("│  Uploads:")
@@ -241,12 +241,12 @@ def run(progress_cb=None, file_progress_cb=None):
     p("│    ↑ csv_autoimport_*.csv  → abe.brickfox.net/incoming (c_abe_ftp_5 Exchange)")
     p("└────────────────────────────────────────────────────────────")
 
-    p("Lade BestandBuroring.csv ...")
+    p("Lade BestandBueroring.csv ...")
     cfg_brg = CONNECTIONS["bueroring"]
     cl_brg = make_client(cfg_brg)
     cl_brg.connect()
     try:
-        cl_brg.download("/400446/stock/BestandBuroring.csv",
+        cl_brg.download("/400446/stock/BestandBueroring.csv",
                         in_bme, progress_cb=p, file_progress_cb=fp)
     finally:
         cl_brg.disconnect()

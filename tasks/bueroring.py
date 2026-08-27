@@ -151,7 +151,7 @@ def run(progress_cb=None, file_progress_cb=None):
     p(f"║    ↓ br-ek_DE_BMEcat_DEU_ABE.zip → {udx_name:<22} ║")
     p(f"║    ↓ bf-ek_DE_BMEcat_DEU.zip     → {basis_name:<22} ║")
     p("║    ↓ br-bestand.zip → availability-data-catalog-32WQS  ║")
-    p("║    ↓ /400446/stock/BestandBuroring.csv                 ║")
+    p("║    ↓ /400446/stock/BestandBueroring.csv                ║")
     p("╠══════════════════════════════════════════════════════════╣")
     p("║  VERARBEITUNG                                           ║")
     p(f"║    ⚙ Merge: {udx_name} + {basis_name}")
@@ -214,7 +214,7 @@ def run(progress_cb=None, file_progress_cb=None):
                         in_bme, progress_cb=p, file_progress_cb=fp)
         client.download("downloads/bueroforum/br-bestand.zip",
                         in_bme, progress_cb=p, file_progress_cb=fp)
-        client.download("/400446/stock/BestandBuroring.csv",
+        client.download("/400446/stock/BestandBueroring.csv",
                         in_bme, progress_cb=p, file_progress_cb=fp)
     finally:
         client.disconnect()
