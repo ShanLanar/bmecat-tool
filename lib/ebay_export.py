@@ -465,6 +465,122 @@ def sync_active_listings(download_csv_path: str, db_path: str, out_dir: str,
     }
 
 
+# ── Task E: aktive Angebote (Template-Download) + BestandBueroring.csv ───────
+#            → Revise (Quantity aktualisiert) + End (Bestand 0) ──────────────
+
+def _read_bestand_csv(path: str) -> dict:
+    """
+    Liest BestandBueroring.csv (Spalte 1 = SKU, Spalte 2 = Bestand;
+    Semikolon-getrennt). Erkennt automatisch eine evtl. vorhandene Kopfzeile
+    (erste Zeile, deren zweite Spalte sich nicht als Zahl lesen lässt).
+
+    Returns:
+        dict: {sku: bestand_int}
+    """
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            raw = f.read()
+    except UnicodeDecodeError:
+        with open(path, encoding="cp1252", errors="replace") as f:
+            raw = f.read()
+
+    result = {}
+    for i, line in enumerate(l for l in raw.splitlines() if l.strip()):
+        parts = line.split(";")
+        if len(parts) < 2:
+            continue
+        sku, qty_raw = parts[0].strip(), parts[1].strip()
+        try:
+            qty = int(float(qty_raw.replace(",", ".")))
+        except ValueError:
+            if i == 0:
+                continue  # Kopfzeile
+            continue
+        result[sku] = qty
+    return result
+
+
+def build_revise_end_from_bestand(template_path: str, bestand_csv_path: str,
+                                  out_dir: str, progress_cb=None) -> dict:
+    """
+    Liest die von eBay heruntergeladene 'eBay-edit-price-quantity-template.csv'
+    (alle aktiven Angebote) und aktualisiert die Spalte 'Available quantity'
+    mit dem Bestand aus BestandBueroring.csv, gematcht über 'Custom label
+    (SKU)'. Artikel mit Bestand 0 landen statt im Revise- im End-Batch
+    (Action=End, EndingReason=NotAvailable) statt mit Quantity=0 revised zu
+    werden. Angebote ohne SKU oder ohne Treffer in BestandBueroring.csv
+    bleiben unverändert im Revise-Batch (Preis/Menge nicht angetastet).
+    """
+    p = progress_cb or (lambda m, **kw: None)
+    os.makedirs(out_dir, exist_ok=True)
+
+    try:
+        with open(template_path, encoding="utf-8-sig") as f:
+            raw = f.read()
+    except UnicodeDecodeError:
+        with open(template_path, encoding="cp1252", errors="replace") as f:
+            raw = f.read()
+
+    lines = raw.splitlines()
+    if lines and lines[0].startswith("#INFO"):
+        lines = lines[1:]
+    template_rows = list(csv.DictReader(lines, delimiter=";"))
+    p(f"eBay-Template: {len(template_rows)} aktive Angebote gelesen.")
+
+    stock_map = _read_bestand_csv(bestand_csv_path)
+    p(f"BestandBueroring.csv: {len(stock_map)} SKUs mit Bestand geladen.")
+
+    revise_rows, end_rows = [], []
+    no_sku = not_in_bestand = updated = 0
+
+    for row in template_rows:
+        sku     = (row.get("Custom label (SKU)") or "").strip()
+        item_id = (row.get("Item number") or "").strip()
+
+        if not sku:
+            no_sku += 1
+            revise_rows.append([row.get(h, "") for h in _REVISE_HEADER])
+            continue
+        if sku not in stock_map:
+            not_in_bestand += 1
+            revise_rows.append([row.get(h, "") for h in _REVISE_HEADER])
+            continue
+
+        stock = stock_map[sku]
+        if stock <= 0:
+            end_rows.append(build_end_row(item_id))
+        else:
+            row["Available quantity"] = str(stock)
+            revise_rows.append([row.get(h, "") for h in _REVISE_HEADER])
+            updated += 1
+
+    ts = datetime.now().strftime("%Y%m%d")
+    out = {}
+    if revise_rows:
+        path = os.path.join(out_dir, f"eBay-Revise_{ts}.csv")
+        _write_csv(path, [_REVISE_INFO_LINE], _REVISE_HEADER, revise_rows)
+        out["revise"] = path
+        p(f"eBay-Revise: {len(revise_rows)} Angebote ({updated} mit neuem Bestand) "
+          f"→ {os.path.basename(path)}", tag="ok")
+    if end_rows:
+        path = os.path.join(out_dir, f"eBay-end_{ts}.csv")
+        _write_csv(path, [], _END_HEADER, end_rows)
+        out["end"] = path
+        p(f"eBay-end (Bestand 0): {len(end_rows)} Angebote → {os.path.basename(path)}",
+          tag="ok")
+    if no_sku:
+        p(f"⚠ {no_sku} Angebot(e) ohne Custom label (SKU) – unverändert übernommen.",
+          tag="warn")
+    if not_in_bestand:
+        p(f"⚠ {not_in_bestand} SKU(s) nicht in BestandBueroring.csv gefunden – "
+          f"unverändert übernommen.", tag="warn")
+
+    return {
+        "total": len(template_rows), "updated": updated, "ended": len(end_rows),
+        "no_sku": no_sku, "not_in_bestand": not_in_bestand, "files": out,
+    }
+
+
 # ── Bootstrap: Kategorie-Mapping aus alten, bereits ausgefüllten Batches ──────
 
 def learn_category_map(history_csv_path: str, db_path: str, base_dir: str,

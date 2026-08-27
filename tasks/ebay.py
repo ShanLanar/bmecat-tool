@@ -6,9 +6,12 @@
 #   ebay_revise_download.csv  – Task B: eBay-eigener Report → Bestand/Preis sync
 #   ebay_kategorie_lernen.csv – Task C: alte, ausgefüllte Draft-Datei →
 #                                ebay_category_map.csv lernen
+#   eBay-edit-price-quantity-template.csv (BASE_DIR) – Task D: aktive Angebote
+#                                + BestandBueroring.csv (in_BME) → Revise/End
 #
 # Ausgabedateien landen in export_dir/ebay/ mit sprechendem Namen + Timestamp
-# (z.B. eBay_Neuanlage_20260427_143012.csv).
+# (z.B. eBay_Neuanlage_20260427_143012.csv) – Task D landet stattdessen direkt
+# in BASE_DIR/eBay/ (eBay-Revise_<Datum>.csv / eBay-end_<Datum>.csv).
 
 import os
 from config import DB_PATH, DIRS, BASE_DIR, EXPORT_DIR
@@ -66,3 +69,32 @@ def run_learn_category_map(progress_cb=None, file_progress_cb=None) -> dict:
         return {}
 
     return learn_category_map(in_path, DB_PATH, BASE_DIR, progress_cb=p)
+
+
+def run_bestand_revise(progress_cb=None, file_progress_cb=None) -> dict:
+    """
+    Task D: aktive eBay-Angebote (eBay-edit-price-quantity-template.csv,
+    BASE_DIR) + BestandBueroring.csv (in_BME, per Büroring-Download) →
+    eBay-Revise_<Datum>.csv (Bestand aktualisiert) + eBay-end_<Datum>.csv
+    (Bestand 0) in BASE_DIR/eBay.
+    """
+    p = progress_cb or (lambda m, **kw: None)
+    from lib.ebay_export import build_revise_end_from_bestand
+
+    template_path = os.path.join(BASE_DIR, "eBay-edit-price-quantity-template.csv")
+    bestand_path  = os.path.join(DIRS["in_bme"], "BestandBueroring.csv")
+
+    if not os.path.exists(template_path):
+        p(f"eBay-Bestand-Revise: Datei nicht gefunden: {template_path}", tag="warn")
+        p("Bitte die aktuellen aktiven Angebote als "
+          "'eBay-edit-price-quantity-template.csv' nach BASE_DIR legen.", tag="warn")
+        return {}
+    if not os.path.exists(bestand_path):
+        p(f"eBay-Bestand-Revise: Datei nicht gefunden: {bestand_path}", tag="warn")
+        p("Bitte zuerst den Büroring-Download ausführen (lädt BestandBueroring.csv "
+          "nach in_BME).", tag="warn")
+        return {}
+
+    out_dir = os.path.join(BASE_DIR, "eBay")
+    return build_revise_end_from_bestand(template_path, bestand_path, out_dir,
+                                         progress_cb=p)
