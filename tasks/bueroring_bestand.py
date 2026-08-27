@@ -233,12 +233,23 @@ def run(progress_cb=None, file_progress_cb=None):
     p("┌─ Büroring Bestand+Preis ───────────────────────────────────")
     p(f"│  Eingabe:  {EXCEL_NAME}  (BASE_DIR)")
     p(f"│            {AVAILABILITY_FILE}")
+    p("│  ↓ lädt:    /400446/stock/BestandBuroring.csv")
     p("│  ↓ erzeugt: Products_bueroring_{{ts}}.csv")
     p("│             csv_autoimport_bueroring_{{ts}}.csv")
     p("│  Uploads:")
     p("│    ↑ Products_*.csv        → abe.brickfox.net/incoming (c_abe_ftp_3 ERP)")
     p("│    ↑ csv_autoimport_*.csv  → abe.brickfox.net/incoming (c_abe_ftp_5 Exchange)")
     p("└────────────────────────────────────────────────────────────")
+
+    p("Lade BestandBuroring.csv ...")
+    cfg_brg = CONNECTIONS["bueroring"]
+    cl_brg = make_client(cfg_brg)
+    cl_brg.connect()
+    try:
+        cl_brg.download("/400446/stock/BestandBuroring.csv",
+                        in_bme, progress_cb=p, file_progress_cb=fp)
+    finally:
+        cl_brg.disconnect()
 
     excel_ok = os.path.exists(os.path.join(base, EXCEL_NAME))
     avail_ok = (os.path.exists(os.path.join(base, AVAILABILITY_FILE))
