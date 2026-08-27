@@ -10,16 +10,17 @@ import glob
 import shutil
 
 _PRICE_LIST_SQL = """\
-SELECT a.a_bestnr1 AS supplier_aid
+SELECT DISTINCT a.a_bestnr1 AS supplier_aid
     , mw.MW_SATZ/100 AS tax
-    , pl_vk1 AS price_amount
+    , min(pl_vk1) AS price_amount
     , 'EUR' AS currency
     , '1' AS lower_bound
     , 'net_list' AS price_type
 FROM arti_pl AS pl
     JOIN artikel AS a ON a.A_NR = pl.PL_ARTNR
     JOIN s_mwst AS mw ON mw.MW_NR = a.A_MWSTSCHL
-WHERE pl.PL_NR = %s
+WHERE pl.PL_NR IN ({placeholders})
+GROUP BY a.a_bestnr1
 """
 
 _ARTICLE_RE = re.compile(r"<ARTICLE\b.*?</ARTICLE>", re.DOTALL)
@@ -40,13 +41,20 @@ def find_latest_catalog_xml(in_dir: str, pattern: str) -> str | None:
     return max(files, key=os.path.getmtime)
 
 
-def fetch_price_list(conn_cfg: dict, price_list_nr: int, progress_cb=None) -> dict:
+def fetch_price_list(conn_cfg: dict, price_list_nrs, progress_cb=None) -> dict:
     """
-    Holt die Preisliste aus dem ERP (MySQL) und liefert
+    Holt die Preisliste(n) aus dem ERP (MySQL) und liefert
     {supplier_aid: {"price_amount": float, "tax": float, "currency": "EUR"}}.
+    Bei mehreren Preislisten-Nummern gewinnt je Artikel der niedrigste Preis
+    (MIN(pl_vk1), serverseitig per GROUP BY).
     """
     p = progress_cb or (lambda m, **kw: None)
     import pymysql
+
+    if isinstance(price_list_nrs, (int, str)):
+        price_list_nrs = [price_list_nrs]
+    placeholders = ", ".join(["%s"] * len(price_list_nrs))
+    sql = _PRICE_LIST_SQL.format(placeholders=placeholders)
 
     con = pymysql.connect(
         host=conn_cfg["host"],
@@ -59,7 +67,7 @@ def fetch_price_list(conn_cfg: dict, price_list_nr: int, progress_cb=None) -> di
     )
     try:
         with con.cursor() as cur:
-            cur.execute(_PRICE_LIST_SQL, (str(price_list_nr).zfill(6)[-6:],))
+            cur.execute(sql, tuple(price_list_nrs))
             rows = cur.fetchall()
     finally:
         con.close()
@@ -75,7 +83,8 @@ def fetch_price_list(conn_cfg: dict, price_list_nr: int, progress_cb=None) -> di
             "currency": row.get("currency", "EUR"),
         }
 
-    p(f"Unite-Preisupdate: {len(prices)} Preise aus ERP-Preisliste {price_list_nr} geladen.")
+    nrs_str = ", ".join(str(n) for n in price_list_nrs)
+    p(f"Unite-Preisupdate: {len(prices)} Preise aus ERP-Preisliste(n) {nrs_str} geladen.")
     return prices
 
 

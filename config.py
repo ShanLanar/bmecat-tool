@@ -115,7 +115,7 @@ CONNECTIONS = {
         "database": "",
         "protocol": "mysql",
         "port":     3306,
-        "_comment": "ERP-DB für Preisabgleich Mercateo-Unite (Preisliste MERCATEO_PRICE_LIST_NR)",
+        "_comment": "ERP-DB für Preisabgleich Mercateo-Unite (Preislisten MERCATEO_PRICE_LIST_NRS)",
     },
     "brickfox_bmecat": {
         "host":     "abe.brickfox.net",
@@ -151,8 +151,8 @@ CONNECTIONS = {
 MERCATEO_CATALOG_ID = "32WQS"
 AVAILABILITY_FILE   = "availability-data-catalog-32WQS.csv"
 
-# ── Mercateo-Unite: Preisliste im ERP für Preis-Update im BME-1.2-Katalog ─────
-MERCATEO_PRICE_LIST_NR = 601307
+# ── Mercateo-Unite: Preislisten im ERP für Preis-Update im BME-1.2-Katalog ────
+MERCATEO_PRICE_LIST_NRS = [601307, 471153]
 # Dateiname des BME-1.2-Katalogs in in_BME (Datum wechselt) – Suchmuster für Task
 MERCATEO_CATALOG_XML_PATTERN = "kaenguruh und bunte ware *.xml"
 
