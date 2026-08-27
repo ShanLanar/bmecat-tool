@@ -69,7 +69,7 @@ TASKS = [
         "desc":    "eBay-edit-price-quantity-template.csv (BASE_DIR) + BestandBueroring.csv (in_BME) einlesen → eBay-Revise_<Datum>.csv (Bestand aktualisiert) + eBay-end_<Datum>.csv (Bestand 0) in BASE_DIR/eBay",
         "fn":      "tasks.ebay:run_bestand_revise",
         "default": False,
-        "group":   "Marktplätze",
+        "group":   "Täglich",
     },
     {
         "id":      "unite_price_update",
