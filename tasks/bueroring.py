@@ -307,8 +307,12 @@ def run(progress_cb=None, file_progress_cb=None):
 
 def run_bilder_dokumente(progress_cb=None, file_progress_cb=None):
     """
-    Büroring Extra-Task: Bilder + Dokumente herunterladen und entpacken.
-    Wird nicht täglich benötigt – nur bei Bedarf.
+    Büroring Extra-Task: Bilder + Dokumente herunterladen, entpacken und mit
+    BRG-Präfix versehen. Wird nicht täglich benötigt – nur bei Bedarf.
+
+    Lädt nur herunter/entpackt/benennt um – der eigentliche Bilder-Upload zu
+    Allago + OfficeXL läuft als eigener Task ("Bilder-Upload"), analog zu
+    Softcarrier (Download/Umbenennen blockiert damit nicht den Upload).
     """
     cfg     = CONNECTIONS["bueroring"]
     in_bme  = DIRS["in_bme"]
@@ -335,5 +339,26 @@ def run_bilder_dokumente(progress_cb=None, file_progress_cb=None):
             shutil.move(jpg, os.path.join(in_dir, "BRG" + os.path.basename(jpg)))
         if os.path.exists(zf):
             os.remove(zf)
+
+    p("Bueroring: Entpacke Dokumente ...")
+    doc_zip = os.path.join(in_bme, "br-documents.zip")
+    if os.path.exists(doc_zip):
+        before = set(os.listdir(in_bme))
+        _run_7zip(seven_z, doc_zip, in_bme, None, p)
+        new_docs = sorted(set(os.listdir(in_bme)) - before)
+        moved = 0
+        for name in new_docs:
+            src = os.path.join(in_bme, name)
+            if not os.path.isfile(src):
+                continue
+            shutil.move(src, os.path.join(in_dir, "BRG" + name))
+            moved += 1
+        if os.path.exists(doc_zip):
+            os.remove(doc_zip)
+        p(f"Bueroring: {moved} Dokument(e) entpackt und mit BRG-Präfix versehen.",
+          tag="ok")
+    else:
+        p("Bueroring: br-documents.zip nicht gefunden – Dokumente übersprungen.",
+          tag="warn")
 
     p("Bueroring Bilder+Dokumente abgeschlossen.", tag="ok")

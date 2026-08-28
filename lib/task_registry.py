@@ -165,6 +165,14 @@ TASKS = [
         "default": True,
         "group":   "Bilder",
     },
+    {
+        "id":      "bilder_upload",
+        "name":    "Bilder-Upload (Allago + OfficeXL)",
+        "desc":    "Alle JPG/PNG aus in/ + in_vertrieb/ (u.a. Büroring-Bilder mit BRG-Präfix) zu Allago + OfficeXL hochladen",
+        "fn":      "tasks.others:run_bilder",
+        "default": True,
+        "group":   "Bilder",
+    },
     # ── Extras ────────────────────────────────────────────────────────────────
     {
         "id":      "pim_export",
