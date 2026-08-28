@@ -91,7 +91,7 @@ TASKS = [
     {
         "id":      "bueroring_bilder",
         "name":    "Büroring – Bilder + Dokumente",
-        "desc":    "Bilder und Dokumente herunterladen und entpacken (nicht täglich nötig)",
+        "desc":    "Bilder herunterladen/entpacken (Upload separat) + Dokumente herunterladen/entpacken/hochladen (/sites/product_files) – nicht täglich nötig",
         "fn":      "tasks.bueroring:run_bilder_dokumente",
         "default": False,
         "group":   "Büroring",

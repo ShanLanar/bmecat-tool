@@ -310,9 +310,12 @@ def run_bilder_dokumente(progress_cb=None, file_progress_cb=None):
     Büroring Extra-Task: Bilder + Dokumente herunterladen, entpacken und mit
     BRG-Präfix versehen. Wird nicht täglich benötigt – nur bei Bedarf.
 
-    Lädt nur herunter/entpackt/benennt um – der eigentliche Bilder-Upload zu
-    Allago + OfficeXL läuft als eigener Task ("Bilder-Upload"), analog zu
+    Bilder: nur Download/Entpacken/Umbenennen – der eigentliche Bilder-Upload
+    zu Allago + OfficeXL läuft als eigener Task ("Bilder-Upload"), analog zu
     Softcarrier (Download/Umbenennen blockiert damit nicht den Upload).
+    Dokumente: werden direkt hier zusätzlich zu Allago + OfficeXL
+    (remote_path_documents = /sites/product_files/) hochgeladen, da es
+    keinen separaten Delta-Upload-Task für Dokumente gibt.
     """
     cfg     = CONNECTIONS["bueroring"]
     in_bme  = DIRS["in_bme"]
@@ -342,23 +345,39 @@ def run_bilder_dokumente(progress_cb=None, file_progress_cb=None):
 
     p("Bueroring: Entpacke Dokumente ...")
     doc_zip = os.path.join(in_bme, "br-documents.zip")
+    doc_paths = []
     if os.path.exists(doc_zip):
         before = set(os.listdir(in_bme))
         _run_7zip(seven_z, doc_zip, in_bme, None, p)
         new_docs = sorted(set(os.listdir(in_bme)) - before)
-        moved = 0
         for name in new_docs:
             src = os.path.join(in_bme, name)
             if not os.path.isfile(src):
                 continue
-            shutil.move(src, os.path.join(in_dir, "BRG" + name))
-            moved += 1
+            dst = os.path.join(in_dir, "BRG" + name)
+            shutil.move(src, dst)
+            doc_paths.append(dst)
         if os.path.exists(doc_zip):
             os.remove(doc_zip)
-        p(f"Bueroring: {moved} Dokument(e) entpackt und mit BRG-Präfix versehen.",
+        p(f"Bueroring: {len(doc_paths)} Dokument(e) entpackt und mit BRG-Präfix versehen.",
           tag="ok")
     else:
         p("Bueroring: br-documents.zip nicht gefunden – Dokumente übersprungen.",
           tag="warn")
+
+    if doc_paths:
+        for conn_key, label in [("allago_images", "Allago"), ("officexl_images", "OfficeXL")]:
+            dcfg = CONNECTIONS[conn_key]
+            p(f"Bueroring: lade {len(doc_paths)} Dokument(e) → {label} "
+              f"({dcfg['remote_path_documents']}) ...")
+            dcl = make_client(dcfg)
+            dcl.connect()
+            try:
+                for doc_path in doc_paths:
+                    dcl.upload(doc_path, dcfg["remote_path_documents"],
+                              progress_cb=p, file_progress_cb=fp)
+            finally:
+                dcl.disconnect()
+            p(f"  {label}: {len(doc_paths)} Dokument(e) hochgeladen.", tag="ok")
 
     p("Bueroring Bilder+Dokumente abgeschlossen.", tag="ok")
