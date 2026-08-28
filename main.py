@@ -321,6 +321,8 @@ class App(tk.Tk):
         _std_btn.pack(side="left", padx=2)
         _daily_btn = self._mk_btn(_bf_top, "Täglich",  self._select_daily,   small=True)
         _daily_btn.pack(side="left", padx=2)
+        _bilder_btn = self._mk_btn(_bf_top, "Bilder",  self._select_bilder,  small=True)
+        _bilder_btn.pack(side="left", padx=2)
         self._widget_refs["sel_buttons"] = _bf_top
 
         canvas = tk.Canvas(left_outer, bg=_T("BG2"), highlightthickness=0)
@@ -603,6 +605,14 @@ class App(tk.Tk):
             v.set(False)
         for task in TASKS:
             if task.get("group") == "Täglich":
+                self._checks[task["id"]].set(True)
+        self._refresh_all_btns()
+
+    def _select_bilder(self):
+        for v in self._checks.values():
+            v.set(False)
+        for task in TASKS:
+            if task.get("group") == "Bilder":
                 self._checks[task["id"]].set(True)
         self._refresh_all_btns()
 

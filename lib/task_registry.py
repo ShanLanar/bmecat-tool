@@ -89,14 +89,6 @@ TASKS = [
         "group":   "Büroring",
     },
     {
-        "id":      "bueroring_bilder",
-        "name":    "Büroring – Bilder + Dokumente",
-        "desc":    "Bilder herunterladen/entpacken (Upload separat) + Dokumente herunterladen/entpacken/hochladen (/sites/product_files) – nicht täglich nötig",
-        "fn":      "tasks.bueroring:run_bilder_dokumente",
-        "default": False,
-        "group":   "Büroring",
-    },
-    {
         "id":      "bmecat_merge",
         "name":    "Büroring – Merge (manuell)",
         "desc":    "Merge + Keywords ohne Download (Fallback)",
@@ -157,6 +149,14 @@ TASKS = [
         "group":   "Soennecken",
     },
     # ── Bilder ────────────────────────────────────────────────────────────────
+    {
+        "id":      "bueroring_bilder",
+        "name":    "Büroring – Bilder + Dokumente",
+        "desc":    "Bilder herunterladen/entpacken (Upload separat) + Dokumente herunterladen/entpacken/hochladen (/sites/product_files) – nicht täglich nötig",
+        "fn":      "tasks.bueroring:run_bilder_dokumente",
+        "default": False,
+        "group":   "Bilder",
+    },
     {
         "id":      "softcarrier_bilder",
         "name":    "Softcarrier – Bilder (Delta)",
