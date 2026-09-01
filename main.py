@@ -118,6 +118,11 @@ class App(tk.Tk):
         self._theme   = _current_theme
         self._widget_refs: dict = {}   # für Tutorial-Highlighting
         self._tutorial = None
+        # Eine Logdatei pro Prozess (Zeitstempel+PID) statt einer von allen
+        # Läufen gemeinsam beschriebenen Tagesdatei – sonst lassen sich
+        # parallele/aufeinanderfolgende Läufe im Log nicht mehr auseinanderhalten.
+        self._session_log_name = (
+            f"Log_{datetime.datetime.now():%Y%m%d_%H%M%S}_{os.getpid()}.txt")
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._build_ui()
@@ -1073,7 +1078,7 @@ class App(tk.Tk):
         try:
             log_dir = config.DIRS["logs"]
             Path(log_dir).mkdir(parents=True, exist_ok=True)
-            fname = os.path.join(log_dir, f"Log_{datetime.date.today():%Y%m%d}.txt")
+            fname = os.path.join(log_dir, self._session_log_name)
             with open(fname, "a", encoding="utf-8") as f:
                 f.write(line)
         except Exception:
