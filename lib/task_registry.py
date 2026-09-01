@@ -231,6 +231,14 @@ TASKS = [
         "group":   "Extras",
     },
     {
+        "id":      "status_dashboard",
+        "name":    "Lauf-Status-Ampel",
+        "desc":    "Ampel-Übersicht je Task/Kanal (OK/Fehler, letzte 20 Läufe) neu erzeugen – läuft nach jedem Lauf ohnehin automatisch",
+        "fn":      "lib.status_dashboard:run_status_dashboard_task",
+        "default": False,
+        "group":   "Extras",
+    },
+    {
         "id":      "ki_anreicherung",
         "name":    "KI-Anreicherung",
         "desc":    "Artikeldaten mit Claude-KI verbessern (erfordert AI_ENRICHMENT aktiviert)",
@@ -296,6 +304,56 @@ TASKS = [
         "group":   "Marktplätze",
     },
 ]
+
+# ── Weiche Task-Abhängigkeiten ("gehört zusammen mit") ─────────────────────────
+#
+# Manche Tasks laden/erzeugen nur lokale Dateien, ein anderer, unabhängig
+# an-/abwählbarer Task lädt sie erst hoch (bewusste Trennung, damit ein
+# Upload nicht auf einen langsamen Download warten muss – siehe
+# Softcarrier/Büroring Bilder). Wer den einen ohne den anderen auswählt,
+# bekommt lokale Dateien ohne sichtbare Wirkung. Kein hartes Dependency-
+# System (blockiert nichts), nur ein Hinweis in GUI-Tooltip + Start-Warnung.
+#
+# (trigger_id, empfohlene_begleitung_id, Hinweistext)
+TASK_HINTS = [
+    (
+        "bueroring_bilder", "bilder_upload",
+        "lädt/entpackt nur – der eigentliche Bilder-Upload zu Allago + "
+        "OfficeXL läuft über",
+    ),
+    (
+        "softcarrier", "softcarrier_bilder",
+        "lädt Softcarrier-Bilder nur in den Staging-Ordner – der eigentliche "
+        "Upload zu Allago + OfficeXL läuft über",
+    ),
+]
+
+
+def _hint_lookup() -> dict:
+    """trigger_id → Liste von (needs_id, Hinweistext)."""
+    lookup: dict[str, list] = {}
+    for trigger_id, needs_id, msg in TASK_HINTS:
+        lookup.setdefault(trigger_id, []).append((needs_id, msg))
+    return lookup
+
+
+def check_task_hints(selected_ids) -> list[str]:
+    """
+    Prüft ausgewählte Task-IDs gegen TASK_HINTS. Gibt fertig formatierte
+    Warnzeilen zurück für jede Kombination, bei der trigger_id ausgewählt
+    ist, needs_id aber nicht.
+    """
+    selected = set(selected_ids)
+    task_names = {t["id"]: t["name"] for t in TASKS}
+    warnings = []
+    for trigger_id, needs_id, msg in TASK_HINTS:
+        if trigger_id in selected and needs_id not in selected:
+            trig_name  = task_names.get(trigger_id, trigger_id)
+            needs_name = task_names.get(needs_id, needs_id)
+            warnings.append(
+                f"'{trig_name}' {msg} den separaten Task '{needs_name}' "
+                f"(ist aber nicht ausgewählt).")
+    return warnings
 
 TASK_GROUP_ORDER = {
     "Vorbereitung": 0,

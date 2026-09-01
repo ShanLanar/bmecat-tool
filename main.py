@@ -23,7 +23,8 @@ apply_overrides()
 
 import config
 from lib.utils import VERSION
-from lib.task_registry import TASKS, call_task, validate_config, TASK_GROUP_ORDER, apply_patches
+from lib.task_registry import (TASKS, call_task, validate_config, TASK_GROUP_ORDER,
+                                apply_patches, TASK_HINTS)
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -118,6 +119,7 @@ class App(tk.Tk):
         self._theme   = _current_theme
         self._widget_refs: dict = {}   # für Tutorial-Highlighting
         self._tutorial = None
+        self._status_dashboard_path = None
         # Eine Logdatei pro Prozess (Zeitstempel+PID) statt einer von allen
         # Läufen gemeinsam beschriebenen Tagesdatei – sonst lassen sich
         # parallele/aufeinanderfolgende Läufe im Log nicht mehr auseinanderhalten.
@@ -404,6 +406,11 @@ class App(tk.Tk):
             _apply_layout(ncols)
         canvas.bind("<Configure>", _on_canvas_configure)
 
+        _hints_by_trigger: dict = {}
+        for trigger_id, needs_id, msg in TASK_HINTS:
+            _hints_by_trigger.setdefault(trigger_id, []).append((needs_id, msg))
+        _task_names = {t["id"]: t["name"] for t in TASKS}
+
         current_group = None
         for task in TASKS:
             grp = task.get("group", "")
@@ -423,6 +430,9 @@ class App(tk.Tk):
             self._checks[task["id"]] = var
 
             tip_text = task["desc"]
+            for needs_id, msg in _hints_by_trigger.get(task["id"], []):
+                tip_text += (f"\n\n→ {msg} den separaten Task "
+                            f"'{_task_names.get(needs_id, needs_id)}'.")
             btn = tk.Button(
                 left,
                 text=task["name"],
@@ -536,6 +546,10 @@ class App(tk.Tk):
         log_sav = self._mk_btn(footer, "Log speichern", self._save_log, small=True)
         log_sav.pack(side="right", padx=4)
         ToolTip(log_sav, BUTTON_TIPS["Log speichern"])
+        status_btn = self._mk_btn(footer, "📊 Status", self._open_status_dashboard, small=True)
+        status_btn.pack(side="right", padx=4)
+        ToolTip(status_btn, "Ampel-Übersicht öffnen: welcher Task/Kanal lief zuletzt "
+                            "erfolgreich, welcher mit Fehler (letzte 20 Läufe).")
 
         # Tab-Wechsel: Start/Stop nur auf Tab 0 aktiv; Viewer bei Tab 1 aktualisieren
         def _on_tab_change(event=None):
@@ -745,6 +759,26 @@ class App(tk.Tk):
             with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
 
+    def _open_status_dashboard(self):
+        """Öffnet die Lauf-Status-Ampel im Browser, erzeugt sie bei Bedarf neu."""
+        path = self._status_dashboard_path
+        if not path or not os.path.exists(path):
+            try:
+                from lib.status_dashboard import generate_status_dashboard
+                path = generate_status_dashboard(config.DIRS["logs"], progress_cb=self._append_log)
+                self._status_dashboard_path = path
+            except Exception as e:
+                self._append_log(f"⚠ Status-Dashboard konnte nicht erzeugt werden: {e}",
+                                 tag="warn")
+                return
+        if not path:
+            self._append_log(
+                "Status-Dashboard: noch keine Lauf-Reports vorhanden – "
+                "erst einen Lauf starten.", tag="warn")
+            return
+        import webbrowser
+        webbrowser.open(f"file://{os.path.abspath(path)}")
+
     # ── Tutorial ──────────────────────────────────────────────────────────────
     def _start_tutorial(self):
         from lib.tutorial import Tutorial
@@ -832,6 +866,12 @@ class App(tk.Tk):
         if problems:
             for msg in problems:
                 self._append_log(f"⚠ Config: {msg}", tag="warn")
+
+        # Weiche Task-Abhängigkeiten ("gehört zusammen mit") – blockiert
+        # nichts, weist nur auf unvollständige Kombinationen hin.
+        from lib.task_registry import check_task_hints
+        for msg in check_task_hints([t["id"] for t in selected]):
+            self._append_log(f"⚠ Hinweis: {msg}", tag="warn")
 
         selected.sort(key=lambda t: (TASK_GROUP_ORDER.get(t.get("group", ""), 9), t["id"]))
 
@@ -976,6 +1016,13 @@ class App(tk.Tk):
         try:
             from lib.dashboard import generate_trend_report
             generate_trend_report(config.DIRS["logs"])
+        except Exception:
+            pass
+
+        # Status-Dashboard (Ampel je Task/Kanal) automatisch aktualisieren
+        try:
+            from lib.status_dashboard import generate_status_dashboard
+            self._status_dashboard_path = generate_status_dashboard(config.DIRS["logs"])
         except Exception:
             pass
 
