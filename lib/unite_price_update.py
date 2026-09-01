@@ -1,8 +1,9 @@
 # lib/unite_price_update.py – Mercateo-Unite: Preise im BME-1.2-Katalog aktualisieren
 #
 # Liest Preise per SQL aus dem ERP (MySQL) und patcht damit die ARTICLE_PRICE-
-# Knoten (price_type="net_list") im vorhandenen BME-1.2-Katalog-XML aus in_BME,
-# ohne den Rest der Datei (Struktur, andere Preistypen, Formatierung) anzufassen.
+# Knoten (price_type="net_list") im vorhandenen BME-1.2-Katalog-XML aus
+# BASE_DIR (bewusst nicht in_BME, siehe tasks/unite.py), ohne den Rest der
+# Datei (Struktur, andere Preistypen, Formatierung) anzufassen.
 
 import os
 import re
@@ -34,7 +35,7 @@ _TAX_RE = re.compile(r"(<TAX>)(.*?)(</TAX>)", re.DOTALL)
 
 
 def find_latest_catalog_xml(in_dir: str, pattern: str) -> str | None:
-    """Findet die neueste Katalog-XML in in_BME (Dateiname trägt ein Datum)."""
+    """Findet die neueste Katalog-XML in in_dir (Dateiname trägt ein Datum)."""
     files = glob.glob(os.path.join(in_dir, pattern))
     if not files:
         return None

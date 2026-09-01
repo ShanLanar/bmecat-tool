@@ -1,17 +1,24 @@
 # tasks/unite.py – Mercateo-Unite Tasks
 #
 # Preis-Update: aktualisiert die ARTICLE_PRICE[net_list]-Knoten im BME-1.2-
-# Katalog aus in_BME (Dateiname z.B. "kaenguruh und bunte ware 2026-08-26.xml")
+# Katalog aus BASE_DIR (Dateiname z.B. "kaenguruh und bunte ware 2026-08-26.xml")
 # mit Preisen aus dem ERP (MySQL, Preislisten MERCATEO_PRICE_LIST_NRS) und lädt
 # den aktualisierten Katalog anschließend zu Mercateo-Unite hoch (gleiches Ziel
 # wie availability-data-catalog-32WQS.csv / 32WQS_conditionsfile.csv).
+#
+# WICHTIG: liegt bewusst in BASE_DIR statt in_BME – "Aufräumen" löscht
+# unconditional jede *.xml/*.csv/*.zip in in_BME, diese Datei ist aber eine
+# dauerhaft gepflegte Vorlage (wird bei jedem Lauf weiter angereichert),
+# kein Download-Zwischenstand. Gleiche Logik wie Bestand_und_Preise.xlsx
+# und eBay-edit-price-quantity-template.csv, die aus demselben Grund
+# ebenfalls in BASE_DIR liegen.
 #
 # ERP-Zugangsdaten: config.CONNECTIONS["erp_mysql"] (Passwort über den
 # Konfigurations-Editor in config_user.json setzen, siehe config.py).
 
 import os
 from config import (
-    DIRS, CONNECTIONS, MERCATEO_PRICE_LIST_NRS, MERCATEO_CATALOG_XML_PATTERN,
+    BASE_DIR, CONNECTIONS, MERCATEO_PRICE_LIST_NRS, MERCATEO_CATALOG_XML_PATTERN,
 )
 
 
@@ -23,12 +30,13 @@ def run_update_prices(progress_cb=None, file_progress_cb=None) -> dict:
         find_latest_catalog_xml, fetch_price_list, update_prices_in_xml,
     )
 
-    xml_path = find_latest_catalog_xml(DIRS["in_bme"], MERCATEO_CATALOG_XML_PATTERN)
+    xml_path = find_latest_catalog_xml(BASE_DIR, MERCATEO_CATALOG_XML_PATTERN)
     if not xml_path:
         p(f"Unite-Preisupdate: keine Datei nach Muster "
-          f"'{MERCATEO_CATALOG_XML_PATTERN}' in in_BME gefunden.", tag="warn")
+          f"'{MERCATEO_CATALOG_XML_PATTERN}' in BASE_DIR gefunden.", tag="warn")
         p("Bitte den BME-1.2-Katalog (z.B. 'kaenguruh und bunte ware "
-          "2026-08-26.xml') nach in_BME legen.", tag="warn")
+          "2026-08-26.xml') direkt nach BASE_DIR legen (NICHT in_BME – wird "
+          "sonst von 'Aufräumen' gelöscht).", tag="warn")
         return {}
 
     cfg = CONNECTIONS["erp_mysql"]

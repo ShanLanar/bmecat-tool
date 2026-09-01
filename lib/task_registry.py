@@ -74,7 +74,7 @@ TASKS = [
     {
         "id":      "unite_price_update",
         "name":    "Mercateo-Unite – Preise aus ERP aktualisieren",
-        "desc":    "Preise per SQL aus dem ERP (CONNECTIONS['erp_mysql']) laden und in den BME-1.2-Katalog aus in_BME (z.B. 'kaenguruh und bunte ware *.xml') einpatchen",
+        "desc":    "Preise per SQL aus dem ERP (CONNECTIONS['erp_mysql']) laden und in den BME-1.2-Katalog aus BASE_DIR (z.B. 'kaenguruh und bunte ware *.xml') einpatchen",
         "fn":      "tasks.unite:run_update_prices",
         "default": False,
         "group":   "Täglich",
