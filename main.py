@@ -858,15 +858,20 @@ class App(tk.Tk):
         from lib.run_lock import RunLock, RunLockError
         try:
             lock = RunLock(config.BASE_DIR)
-            if not lock.acquire():
-                self._append_log(
-                    "⚠ Lauf bereits aktiv – dieser Start wird übersprungen.",
-                    tag="warn")
-                lock.release()
-                self._parent.after(0, self._on_run_done)
-                return
+            lock_acquired = lock.acquire()
         except Exception:
+            # Lock-Mechanismus selbst fehlgeschlagen (z.B. Datei-I/O) –
+            # Lauf trotzdem zulassen statt den Task grundlos zu blockieren.
             lock = None
+            lock_acquired = True
+
+        if lock is not None and not lock_acquired:
+            self._append_log(
+                "⚠ Lauf bereits aktiv – dieser Start wird übersprungen.",
+                tag="warn")
+            lock.release()
+            self._parent.after(0, self._on_run_done)
+            return
 
 
         start  = datetime.datetime.now()
@@ -983,6 +988,21 @@ class App(tk.Tk):
                 tag="warn")
 
         self.after(0, self._finish, errors, dedup_total)
+
+    def _on_run_done(self):
+        """UI-Zustand zurücksetzen, wenn ein Lauf wegen aktivem RunLock übersprungen wurde."""
+        self._running = False
+        self._progress.stop()
+        self._progress.config(mode="determinate", value=0)
+        self._file_lbl.config(text="")
+        self._speed_lbl.config(text="")
+        self._run_btn.config(state="normal")
+        self._stop_btn.config(state="disabled")
+        self._set_status("Übersprungen – anderer Lauf bereits aktiv", _T("YELLOW"))
+
+        from tasks.scheduler import is_auto_mode, is_auto_daily_mode
+        if is_auto_mode() or is_auto_daily_mode():
+            self.after(3000, self.destroy)
 
     def _finish(self, errors, dedup_total=None):
         self._running = False
