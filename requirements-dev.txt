@@ -1,0 +1,3 @@
+# requirements-dev.txt – nur für lokale Entwicklung, nicht auf dem
+# Produktivrechner nötig (dort reicht requirements.txt).
+vulture>=2.14
