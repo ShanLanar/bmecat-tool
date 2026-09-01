@@ -143,6 +143,54 @@ def run_bestandsdaten_only(progress_cb=None):
 
 
 # ── Bilder-Upload ─────────────────────────────────────────────────────────────
+#
+# Delta-Upload: nur Dateien hochladen, die seit dem letzten erfolgreichen
+# Lauf dieses Tasks neu hinzugekommen/geändert wurden (Zeitstempel in
+# logs/bilder_upload_last_run.json) – analog zum Softcarrier-Bilder-Delta
+# (tasks/softcarrier.py:_upload_bilder). Erster Lauf ohne Marker lädt wie
+# bisher alles hoch.
+
+_LAST_RUN_FILE = os.path.join(DIRS.get("logs", "."), "bilder_upload_last_run.json")
+
+
+def _load_last_run() -> float:
+    try:
+        import json
+        with open(_LAST_RUN_FILE, "r", encoding="utf-8") as f:
+            return json.load(f).get("last_run_ts", 0.0)
+    except (FileNotFoundError, json.JSONDecodeError, ValueError):
+        return 0.0
+
+
+def _save_last_run(ts: float):
+    try:
+        import json
+        os.makedirs(os.path.dirname(_LAST_RUN_FILE), exist_ok=True)
+        with open(_LAST_RUN_FILE, "w", encoding="utf-8") as f:
+            json.dump({"last_run_ts": ts}, f)
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            "Bilder-Upload-Zeitstempel konnte nicht gespeichert werden: %s", e)
+
+
+def _recent_files(pattern: str, since_ts: float) -> list:
+    """Glob-Treffer, gefiltert auf Dateien neuer/geändert seit since_ts."""
+    return [f for f in glob.glob(pattern) if os.path.getmtime(f) >= since_ts]
+
+
+def _upload_recent(client, pattern: str, remote_dir: str, since_ts: float,
+                   label: str, p, fp, delete_after: bool = False):
+    files = _recent_files(pattern, since_ts)
+    skipped = len(glob.glob(pattern)) - len(files)
+    if skipped:
+        p(f"  {label}: {skipped} unveränderte Datei(en) seit letztem Lauf "
+          f"übersprungen.", tag="dim")
+    if not files:
+        return
+    for path in files:
+        client.upload(path, remote_dir, delete_after=delete_after,
+                      progress_cb=p, file_progress_cb=fp)
+
 
 def run_bilder(progress_cb=None, file_progress_cb=None):
     in_dir   = DIRS["in"]
@@ -164,19 +212,27 @@ def run_bilder(progress_cb=None, file_progress_cb=None):
     if deleted:
         p(f"Bilder: {deleted} alte JPGs geloescht (>60 Tage).")
 
+    since_ts = _load_last_run()
+    if since_ts:
+        p(f"Bilder-Upload: nur Dateien seit "
+          f"{datetime.datetime.fromtimestamp(since_ts):%d.%m.%Y %H:%M} (letzter Lauf).")
+    else:
+        p("Bilder-Upload: kein vorheriger Lauf bekannt – lade alles hoch.")
+    run_started_ts = datetime.datetime.now().timestamp()
+
     allago = CONNECTIONS["allago_images"]
     p("Bilder: Upload -> Allago ...")
     cl = make_client(allago)
     cl.connect()
     try:
-        cl.upload(os.path.join(in_dir,   "*.jpg"), allago["remote_path_thumbs"],
-                  progress_cb=p, file_progress_cb=fp)
-        cl.upload(os.path.join(vertrieb, "*.jpg"), allago["remote_path_thumbs"],
-                  progress_cb=p, file_progress_cb=fp)
-        cl.upload(os.path.join(vertrieb, "category", "*.jpg"), allago["remote_path_category"],
-                  progress_cb=p, file_progress_cb=fp)
-        cl.upload(os.path.join(vertrieb, "category", "*.png"), allago["remote_path_category"],
-                  progress_cb=p, file_progress_cb=fp)
+        _upload_recent(cl, os.path.join(in_dir, "*.jpg"), allago["remote_path_thumbs"],
+                       since_ts, "in/*.jpg", p, fp)
+        _upload_recent(cl, os.path.join(vertrieb, "*.jpg"), allago["remote_path_thumbs"],
+                       since_ts, "in_vertrieb/*.jpg", p, fp)
+        _upload_recent(cl, os.path.join(vertrieb, "category", "*.jpg"), allago["remote_path_category"],
+                       since_ts, "in_vertrieb/category/*.jpg", p, fp)
+        _upload_recent(cl, os.path.join(vertrieb, "category", "*.png"), allago["remote_path_category"],
+                       since_ts, "in_vertrieb/category/*.png", p, fp)
     finally:
         cl.disconnect()
 
@@ -185,17 +241,19 @@ def run_bilder(progress_cb=None, file_progress_cb=None):
     cl2 = make_client(oxl)
     cl2.connect()
     try:
-        cl2.upload(os.path.join(in_dir,   "*.jpg"), oxl["remote_path_thumbs"],
-                   delete_after=True, progress_cb=p, file_progress_cb=fp)
-        cl2.upload(os.path.join(vertrieb, "*.jpg"), oxl["remote_path_thumbs"],
-                   delete_after=True, progress_cb=p, file_progress_cb=fp)
-        cl2.upload(os.path.join(vertrieb, "category", "*.jpg"), oxl["remote_path_category"],
-                   delete_after=True, progress_cb=p, file_progress_cb=fp)
-        cl2.upload(os.path.join(vertrieb, "category", "*.png"), oxl["remote_path_category"],
-                   delete_after=True, progress_cb=p, file_progress_cb=fp)
+        _upload_recent(cl2, os.path.join(in_dir, "*.jpg"), oxl["remote_path_thumbs"],
+                       since_ts, "in/*.jpg", p, fp, delete_after=True)
+        _upload_recent(cl2, os.path.join(vertrieb, "*.jpg"), oxl["remote_path_thumbs"],
+                       since_ts, "in_vertrieb/*.jpg", p, fp, delete_after=True)
+        _upload_recent(cl2, os.path.join(vertrieb, "category", "*.jpg"), oxl["remote_path_category"],
+                       since_ts, "in_vertrieb/category/*.jpg", p, fp, delete_after=True)
+        _upload_recent(cl2, os.path.join(vertrieb, "category", "*.png"), oxl["remote_path_category"],
+                       since_ts, "in_vertrieb/category/*.png", p, fp, delete_after=True)
     finally:
         cl2.disconnect()
 
+    # Zeitstempel erst NACH erfolgreichem Upload auf beiden Servern speichern
+    _save_last_run(run_started_ts)
     p("Bilder-Upload abgeschlossen.", tag="ok")
 
 
