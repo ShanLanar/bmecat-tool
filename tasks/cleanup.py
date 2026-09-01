@@ -48,7 +48,9 @@ def cleanup_logs(max_days: int = 30, progress_cb=None):
     Löscht alte Dateien:
     - Log-Dateien älter als max_days
     - Lauf-Reports (lauf_*.json) älter als max_days
-    - csv_autoimport_*.csv und Products_*.csv im BASE_DIR älter als max_days
+    - csv_autoimport_*.csv und Products_*.csv in BASE_DIR/brickfox
+      (und – Altlast vor Einführung des Unterordners – direkt in BASE_DIR)
+      älter als max_days
     - Diff-Reports älter als 90 Tage
     - XML-Backups älter als 7 Tage (nur letztes Backup pro Datei behalten)
     """
@@ -67,14 +69,16 @@ def cleanup_logs(max_days: int = 30, progress_cb=None):
                     os.remove(f)
                     deleted += 1
 
-    # Alte Export-CSVs im Basisverzeichnis
+    # Alte Export-CSVs im brickfox-Unterordner (+ BASE_DIR direkt für
+    # Dateien aus der Zeit vor dem Unterordner)
     base = _cfg.BASE_DIR
-    for pattern in ("csv_autoimport_*.csv", "Products_*.csv",
-                    "csv_erp_*.csv", "csv_exchange_*.csv"):
-        for f in glob.glob(os.path.join(base, pattern)):
-            if os.path.getmtime(f) < cutoff:
-                os.remove(f)
-                deleted += 1
+    for export_dir in (DIRS.get("brickfox", os.path.join(base, "brickfox")), base):
+        for pattern in ("csv_autoimport_*.csv", "Products_*.csv",
+                        "csv_erp_*.csv", "csv_exchange_*.csv"):
+            for f in glob.glob(os.path.join(export_dir, pattern)):
+                if os.path.getmtime(f) < cutoff:
+                    os.remove(f)
+                    deleted += 1
 
     # Diff-Reports und alte Snapshots (90 Tage)
     diff_dir = os.path.join(log_dir, "diff_backups")

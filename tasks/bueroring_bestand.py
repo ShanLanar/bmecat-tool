@@ -193,6 +193,7 @@ def _patch_and_export(excel_path: str, csv_in_path: str,
     wb.save(excel_path)
     wb.close()
 
+    os.makedirs(out_dir, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
 
     # CsvERP (c_abe_ftp_3) – Präfix "Products"
@@ -231,8 +232,8 @@ def run(progress_cb=None, file_progress_cb=None):
     p(f"│  Eingabe:  {EXCEL_NAME}  (BASE_DIR)")
     p(f"│            {AVAILABILITY_FILE}")
     p("│  ↓ lädt:    /400446/stock/BestandBueroring.csv")
-    p("│  ↓ erzeugt: Products_bueroring_{{ts}}.csv")
-    p("│             csv_autoimport_bueroring_{{ts}}.csv")
+    p("│  ↓ erzeugt: brickfox/Products_bueroring_{{ts}}.csv")
+    p("│             brickfox/csv_autoimport_bueroring_{{ts}}.csv")
     p("│  Uploads:")
     p("│    ↑ Products_*.csv        → abe.brickfox.net/incoming (c_abe_ftp_3 ERP)")
     p("│    ↑ csv_autoimport_*.csv  → abe.brickfox.net/incoming (c_abe_ftp_5 Exchange)")
@@ -273,7 +274,7 @@ def run(progress_cb=None, file_progress_cb=None):
         if not os.path.exists(csv_in_path):
             raise FileNotFoundError(f"{AVAILABILITY_FILE} konnte nicht erzeugt werden.")
 
-    erp_csv, exc_csv = _patch_and_export(excel_path, csv_in_path, base, p)
+    erp_csv, exc_csv = _patch_and_export(excel_path, csv_in_path, DIRS["brickfox"], p)
 
     # CsvERP (c_abe_ftp_3) – nur Preise + Bestand, schnelle Verarbeitung
     p("Upload → Brickfox CsvERP (c_abe_ftp_3) ...")
