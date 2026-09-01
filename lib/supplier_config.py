@@ -69,27 +69,6 @@ def get_enabled_suppliers() -> dict:
             if v.get("enabled", True)}
 
 
-def get_min_articles(supplier: str, xml_file: str = None) -> int:
-    """
-    Gibt die Mindest-Artikelzahl für einen Lieferanten zurück.
-    Fällt auf ARTICLE_THRESHOLDS in config.py zurück.
-    """
-    # Zuerst supplier_config.yaml
-    sup = get_supplier(supplier)
-    if sup and "min_articles" in sup:
-        return sup["min_articles"]
-
-    # Fallback: config.py ARTICLE_THRESHOLDS (nach Dateiname)
-    if xml_file:
-        try:
-            import config
-            return getattr(config, "ARTICLE_THRESHOLDS", {}).get(xml_file, 0)
-        except Exception:
-            pass
-
-    return 0
-
-
 def get_category_prefix(supplier: str) -> str:
     """Gibt den Kategorie-Präfix für einen Lieferanten zurück (z.B. 'BRG')."""
     sup = get_supplier(supplier)

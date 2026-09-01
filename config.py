@@ -37,8 +37,6 @@ TOOLS = {
     "winscp": r"C:\Program Files (x86)\WinSCP\WinSCP.com",
 }
 
-SQL_SNIPPET_DIR = r"C:\Users\etconnector\Downloads\HeidiSQL_11.3_64_Portable\Snippets"
-
 # ── FTP / SFTP Zugangsdaten ────────────────────────────────────────────────────
 # Passwörter hier LEER lassen — sie werden über den Konfigurations-Editor
 # in config_user.json gespeichert (gitignored).
@@ -150,7 +148,6 @@ CONNECTIONS = {
 
 # ── Statische Artikel für Bestandsdaten (aus PS1 portiert) ────────────────────
 # Vollständige Liste in lib/bestandsdaten.py
-MERCATEO_CATALOG_ID = "32WQS"
 AVAILABILITY_FILE   = "availability-data-catalog-32WQS.csv"
 
 # ── Mercateo-Unite: Preislisten im ERP für Preis-Update im BME-1.2-Katalog ────

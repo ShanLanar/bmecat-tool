@@ -28,14 +28,12 @@ import os
 import re
 import time
 from pathlib import Path
-from urllib.parse import urlencode, urljoin
 
 log = logging.getLogger(__name__)
 
 CATALOG_FILENAME = "eclass_catalog.csv"
 BASE_URL         = "https://eclass.eu"
 TARGET_URL       = f"{BASE_URL}/eclass-standard/content-suche"
-SHOW_URL         = f"{BASE_URL}/eclass-standard/content-suche/show"
 
 # Alle Versionen aus dem Dropdown (Stand 06/2026)
 ECLASS_VERSIONS = [

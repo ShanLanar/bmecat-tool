@@ -192,7 +192,7 @@ class App(tk.Tk):
         self.rowconfigure(1, weight=1)
 
         # ── Kopfzeile ─────────────────────────────────────────────────────────
-        from lib.design import FONT_HEAD_L, FONT_UI_SM, add_hover, darken, lighten
+        from lib.design import FONT_UI_SM, add_hover, darken, lighten
 
         self._header = tk.Frame(self, bg=_T("BG2"), pady=0, padx=0)
         self._header.grid(row=0, column=0, sticky="ew")

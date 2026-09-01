@@ -9,7 +9,6 @@
 
 import os
 import sys
-import base64
 import logging
 
 log = logging.getLogger(__name__)

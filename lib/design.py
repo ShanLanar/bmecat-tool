@@ -10,12 +10,8 @@ from tkinter import ttk
 
 FONT_UI     = ("Segoe UI",          10)
 FONT_UI_SM  = ("Segoe UI",           8)
-FONT_UI_MED = ("Segoe UI",          11)
 FONT_HEAD   = ("Segoe UI Semibold", 12)
-FONT_HEAD_L = ("Segoe UI Semibold", 14)
-FONT_CAP    = ("Segoe UI",           7)   # Gruppenüberschriften
 FONT_MONO   = ("Consolas",           9)
-FONT_MONO_SM= ("Consolas",           8)
 
 # ── Farb-Helfer ───────────────────────────────────────────────────────────────
 
@@ -149,21 +145,6 @@ def make_button(parent, text: str, command, c: dict,
     return btn
 
 
-def make_separator(parent, c: dict, orient: str = "h",
-                   color_key: str = "BORDER") -> tk.Frame:
-    """Erstellt eine dünne Trennlinie."""
-    color = c.get(color_key, c["BORDER"])
-    if orient == "h":
-        return tk.Frame(parent, bg=color, height=1)
-    return tk.Frame(parent, bg=color, width=1)
-
-
-def make_card(parent, c: dict, padx: int = 12,
-              pady: int = 10) -> tk.Frame:
-    """Erstellt einen Card-Container (BG2 auf BG)."""
-    return tk.Frame(parent, bg=c["BG2"], padx=padx, pady=pady)
-
-
 def apply_notebook_style(notebook: ttk.Notebook, c: dict,
                          style_name: str = "BME.TNotebook"):
     """Wendet professionelles Notebook-Styling an."""
@@ -185,23 +166,3 @@ def apply_notebook_style(notebook: ttk.Notebook, c: dict,
     notebook.configure(style=style_name)
 
 
-def apply_treeview_style(c: dict, style_name: str = "BME.Treeview"):
-    """Wendet professionelles Treeview-Styling an."""
-    s = ttk.Style()
-    s.configure(style_name,
-                background=c["BG3"],
-                foreground=c["FG_INPUT"],
-                fieldbackground=c["BG3"],
-                rowheight=22,
-                font=FONT_UI,
-                borderwidth=0)
-    s.configure(f"{style_name}.Heading",
-                background=c["BG2"],
-                foreground=c["FG"],
-                font=("Segoe UI Semibold", 9),
-                relief="flat")
-    s.map(style_name,
-          background=[("selected", c["ACCENT"])],
-          foreground=[("selected", "#ffffff")])
-    s.map(f"{style_name}.Heading",
-          background=[("active", lighten(c["BG2"], 8))])

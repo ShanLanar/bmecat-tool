@@ -264,7 +264,6 @@ def apply_fname_transforms(xml_path: str, base_dir: str,
     _ART_CLOSE = re.compile(r'</ARTICLE>', re.IGNORECASE)
 
     in_article  = False
-    art_buf     = []
 
     def _process_and_flush(art_buf_lines):
         nonlocal n_features, n_fname_clean, n_fname_ren, n_fvalue_ren
@@ -340,7 +339,6 @@ def apply_fname_transforms(xml_path: str, base_dir: str,
             header_buf.append(line)
 
     # Footer lesen (alles nach dem letzten Artikel)
-    footer_buf = []
     with open(xml_path, "r", encoding="utf-8", errors="replace") as f:
         content = f.read()
     last_art_end = content.rfind("</ARTICLE>")

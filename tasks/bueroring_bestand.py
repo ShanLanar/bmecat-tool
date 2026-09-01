@@ -19,9 +19,6 @@ log = logging.getLogger(__name__)
 
 EXCEL_NAME = "Bestand_und_Preise.xlsx"
 
-SHEET_MASTER  = "Master"
-SHEET_BESTAND = "Bestand"
-
 
 def _norm(x):
     import pandas as pd

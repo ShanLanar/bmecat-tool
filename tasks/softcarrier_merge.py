@@ -24,7 +24,6 @@ log = logging.getLogger(__name__)
 
 DATA_SEP      = "|"
 DATA_ARTNR    = 1
-DATA_MARKE    = 42
 DATA_TAB_START= 117
 DATA_TAB_END  = 137
 
@@ -38,17 +37,6 @@ _SRC_PAT      = re.compile(r'(?i)(<source>)([^<]+)(</source>)')
 
 
 from lib.utils import detect_encoding  # zentralisiert in lib/utils.py
-
-
-def read_text_auto(path: str) -> tuple[str, str]:
-    """
-    Liest eine Textdatei mit automatischer Encoding-Erkennung.
-    Gibt (text, encoding) zurück.
-    """
-    enc  = detect_encoding(path)
-    text = Path(path).read_text(encoding=enc, errors="replace")
-    log.debug(f"read_text_auto: {os.path.basename(path)} als {enc}")
-    return text, enc
 
 
 def _load_herstinfo(csv_path: str) -> dict:

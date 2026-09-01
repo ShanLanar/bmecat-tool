@@ -8,7 +8,6 @@
 
 import csv
 import logging
-from functools import lru_cache
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -180,8 +179,3 @@ def load_catalog(base_dir: str = None) -> EclassCatalog:
     cat = EclassCatalog(rows)
     _catalog_cache[csv_path] = cat
     return cat
-
-
-def invalidate_cache():
-    """Cache leeren (nach erneutem Scrapen)."""
-    _catalog_cache.clear()

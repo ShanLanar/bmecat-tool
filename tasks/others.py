@@ -102,21 +102,6 @@ log = logging.getLogger(__name__)
 
 # ── Mercateo ──────────────────────────────────────────────────────────────────
 
-def upload_availability(csv_path: str, progress_cb=None, file_progress_cb=None):
-    cfg = CONNECTIONS["mercateo"]
-    p   = progress_cb      or (lambda m, **kw: None)
-    fp  = file_progress_cb or None
-    client = make_client(cfg)
-    client.connect()
-    try:
-        client.upload(csv_path, cfg["remote_path"],
-                      delete_after=True,
-                      progress_cb=p, file_progress_cb=fp)
-    finally:
-        client.disconnect()
-    p("Mercateo Upload abgeschlossen.", tag="ok")
-
-
 def upload_mercateo_files(paths: list, progress_cb=None, file_progress_cb=None):
     """
     Lädt Bestands-/Conditionsfile-CSVs (availability-data-catalog-32WQS.csv,

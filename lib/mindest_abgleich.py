@@ -15,7 +15,6 @@ import logging
 
 log = logging.getLogger(__name__)
 
-MINIMUM_STOCK = 10  # Globale Mindestmenge für alle Mindest-Artikel
 _MINDEST_PATTERN = "Mindest-Abgleich_*.xlsx"
 _CONDITIONS_FILE = "32WQS_conditionsfile.csv"
 
