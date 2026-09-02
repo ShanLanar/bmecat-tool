@@ -1,11 +1,48 @@
 # tasks/bueroring.py
-import os, glob, shutil, logging, subprocess
+import os, glob, json, shutil, logging, subprocess
+from pathlib import Path
 from lib.ftp_client import make_client
 from lib.bestandsdaten import erstelle_bestandsdaten
 from lib.utils import run_7zip as _run_7zip
 from config import CONNECTIONS, DIRS, TOOLS, AVAILABILITY_FILE
 
 log = logging.getLogger(__name__)
+
+# Delta-Snapshot für den Dokumenten-Upload (Dateiname → Größe des letzten
+# erfolgreichen Uploads) – br-documents.zip enthält jedes Mal den kompletten
+# Bestand, ein Zeitstempel-Vergleich funktioniert nach dem Entpacken nicht
+# (Dateien sind dann immer "gerade eben" erstellt).
+_DOC_SNAPSHOT_FILE = os.path.join(DIRS.get("logs", "."), "bueroring_dokumente_snapshot.json")
+
+
+def _load_doc_snapshot() -> dict:
+    try:
+        with open(_DOC_SNAPSHOT_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_doc_snapshot(snapshot: dict):
+    Path(os.path.dirname(_DOC_SNAPSHOT_FILE)).mkdir(parents=True, exist_ok=True)
+    try:
+        with open(_DOC_SNAPSHOT_FILE, "w", encoding="utf-8") as f:
+            json.dump(snapshot, f, ensure_ascii=False)
+    except Exception as e:
+        log.warning("Dokumenten-Snapshot konnte nicht gespeichert werden: %s", e)
+
+
+def _doc_delta(doc_paths: list, previous: dict) -> tuple[list, dict]:
+    """Vergleicht doc_paths (Dateiname → Größe) mit dem letzten Snapshot."""
+    current = {}
+    changed = []
+    for path in doc_paths:
+        bn   = os.path.basename(path)
+        size = os.path.getsize(path)
+        current[bn] = size
+        if bn not in previous or previous[bn] != size:
+            changed.append(path)
+    return changed, current
 
 
 def _unzip_and_rename(zip_path: str, out_dir: str, dst_name: str,
@@ -366,18 +403,36 @@ def run_bilder_dokumente(progress_cb=None, file_progress_cb=None):
           tag="warn")
 
     if doc_paths:
-        for conn_key, label in [("allago_images", "Allago"), ("officexl_images", "OfficeXL")]:
-            dcfg = CONNECTIONS[conn_key]
-            p(f"Bueroring: lade {len(doc_paths)} Dokument(e) → {label} "
-              f"({dcfg['remote_path_documents']}) ...")
-            dcl = make_client(dcfg)
-            dcl.connect()
-            try:
-                for doc_path in doc_paths:
-                    dcl.upload(doc_path, dcfg["remote_path_documents"],
-                              progress_cb=p, file_progress_cb=fp)
-            finally:
-                dcl.disconnect()
-            p(f"  {label}: {len(doc_paths)} Dokument(e) hochgeladen.", tag="ok")
+        # Delta-Filter: br-documents.zip enthält jedes Mal den kompletten
+        # Bestand, nicht nur Neues – und die frisch entpackten Dateien haben
+        # IMMER den aktuellen Zeitstempel (Entpacken = jetzt), ein Zeitstempel-
+        # Vergleich wie beim Bilder-Upload liefe also nie an. Stattdessen
+        # Dateigröße gegen den letzten erfolgreichen Snapshot vergleichen –
+        # gleiches Prinzip wie der bestehende Softcarrier-Bilder-Snapshot.
+        changed_paths, new_snapshot = _doc_delta(doc_paths, _load_doc_snapshot())
+        skipped = len(doc_paths) - len(changed_paths)
+        if skipped:
+            p(f"Bueroring: {skipped} Dokument(e) unverändert seit letztem "
+              f"Upload – übersprungen.", tag="dim")
+
+        if changed_paths:
+            for conn_key, label in [("allago_images", "Allago"), ("officexl_images", "OfficeXL")]:
+                dcfg = CONNECTIONS[conn_key]
+                p(f"Bueroring: lade {len(changed_paths)} Dokument(e) → {label} "
+                  f"({dcfg['remote_path_documents']}) ...")
+                dcl = make_client(dcfg)
+                dcl.connect()
+                try:
+                    for doc_path in changed_paths:
+                        dcl.upload(doc_path, dcfg["remote_path_documents"],
+                                  progress_cb=p, file_progress_cb=fp)
+                finally:
+                    dcl.disconnect()
+                p(f"  {label}: {len(changed_paths)} Dokument(e) hochgeladen.", tag="ok")
+
+            # Snapshot erst NACH erfolgreichem Upload auf beiden Servern speichern
+            _save_doc_snapshot(new_snapshot)
+        else:
+            p("Bueroring: keine geänderten Dokumente – Upload übersprungen.", tag="dim")
 
     p("Bueroring Bilder+Dokumente abgeschlossen.", tag="ok")

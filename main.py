@@ -24,7 +24,7 @@ apply_overrides()
 import config
 from lib.utils import VERSION
 from lib.task_registry import (TASKS, call_task, validate_config, TASK_GROUP_ORDER,
-                                apply_patches, TASK_HINTS)
+                                apply_patches, TASK_HINTS, TASK_ORDER_INDEX)
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -873,7 +873,8 @@ class App(tk.Tk):
         for msg in check_task_hints([t["id"] for t in selected]):
             self._append_log(f"⚠ Hinweis: {msg}", tag="warn")
 
-        selected.sort(key=lambda t: (TASK_GROUP_ORDER.get(t.get("group", ""), 9), t["id"]))
+        selected.sort(key=lambda t: (TASK_GROUP_ORDER.get(t.get("group", ""), 9),
+                                     TASK_ORDER_INDEX.get(t["id"], 0)))
 
         self._running = True
         self._set_status("Läuft...", _T("YELLOW"))

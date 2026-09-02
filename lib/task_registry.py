@@ -321,6 +321,13 @@ TASKS = [
     },
 ]
 
+# Position jeder Task-ID in TASKS – die Reihenfolge im Code ist absichtlich
+# gewählt (z.B. "Büroring – Bilder + Dokumente" vor "Bilder-Upload", damit
+# frisch heruntergeladene Bilder im selben Lauf noch mit hochgeladen werden).
+# Wird als Sortier-Tiebreaker INNERHALB einer Gruppe genutzt – alphabetisch
+# nach Task-ID würde diese absichtliche Reihenfolge ignorieren.
+TASK_ORDER_INDEX = {t["id"]: i for i, t in enumerate(TASKS)}
+
 # ── Weiche Task-Abhängigkeiten ("gehört zusammen mit") ─────────────────────────
 #
 # Manche Tasks laden/erzeugen nur lokale Dateien, ein anderer, unabhängig
