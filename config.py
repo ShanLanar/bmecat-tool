@@ -31,6 +31,8 @@ DIRS = {
     "article_rights": os.path.join(BASE_DIR, "export_artikelrechte"),
     "brickfox":   os.path.join(BASE_DIR, "brickfox"),
     "ndw_share":  r"\\obs.abe-brands.de\OBS\data\DOWNLOADS\780104811",
+    "pim_export_mgmt_share": r"\\mgmt.abe-brands.de\daten\06_Alle\Austausch\S.Berlin",
+    "pim_export_obs_share":  r"\\obs.abe-brands.de\obs\data\DOWNLOADS\780102150",
 }
 
 TOOLS = {
