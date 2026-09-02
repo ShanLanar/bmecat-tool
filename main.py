@@ -970,6 +970,13 @@ class App(tk.Tk):
                         "Setup-Check abwählen um zu überspringen.", tag="err")
                     break
 
+        # Lock jetzt freigeben, nicht erst am Ende von _worker(): sonst bleibt
+        # er für den Rest der (offen bleibenden) GUI-Sitzung belegt, weil
+        # release() bisher nur im "bereits aktiv"-Skip-Zweig aufgerufen wurde
+        # – ein zweiter Lauf in derselben Sitzung war danach nie mehr möglich.
+        if lock is not None:
+            lock.release()
+
         report.add_dedup(**dedup_total)
         report_path = report.write()
         if report_path:
