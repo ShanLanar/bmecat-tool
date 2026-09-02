@@ -72,6 +72,14 @@ TASKS = [
         "group":   "Täglich",
     },
     {
+        "id":      "pim_export",
+        "name":    "PIM-Artikelexport (Softcarrier)",
+        "desc":    "PIM-Artikelexport_aktiv.txt / _inaktiv.txt aus der Artikel-DB erzeugen (Ablösung altes PIM)",
+        "fn":      "tasks.pim_export:run",
+        "default": False,
+        "group":   "Täglich",
+    },
+    {
         "id":      "unite_price_update",
         "name":    "Mercateo-Unite – Preise aus ERP aktualisieren",
         "desc":    "Preise per SQL aus dem ERP (CONNECTIONS['erp_mysql']) laden und in den BME-1.2-Katalog aus BASE_DIR (z.B. 'kaenguruh und bunte ware *.xml') einpatchen",
@@ -174,14 +182,6 @@ TASKS = [
         "group":   "Bilder",
     },
     # ── Extras ────────────────────────────────────────────────────────────────
-    {
-        "id":      "pim_export",
-        "name":    "PIM-Artikelexport (Softcarrier)",
-        "desc":    "PIM-Artikelexport_aktiv.txt / _inaktiv.txt aus der Artikel-DB erzeugen (Ablösung altes PIM)",
-        "fn":      "tasks.pim_export:run",
-        "default": False,
-        "group":   "Extras",
-    },
     {
         "id":      "fname_analyse",
         "name":    "FNAME-Analyse",
