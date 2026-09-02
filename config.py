@@ -109,6 +109,17 @@ CONNECTIONS = {
         "port":     22,
         "remote_path": "/catalog/32WQS/",
     },
+    "backup": {
+        "host":     "",
+        "user":     "",
+        "password": "",
+        "protocol": "sftp",
+        "port":     22,
+        "remote_path": "/",
+        "_comment": "Ziel für Backup/Restore (config_user.json, .fernet.key, "
+                    "article_db.sqlite, live editierte Config-CSVs – alles was "
+                    "nicht in Git liegt). Für Server-Umzug per FTP.",
+    },
     "erp_mysql": {
         "host":     "",
         "user":     "",

@@ -239,6 +239,22 @@ TASKS = [
         "group":   "Extras",
     },
     {
+        "id":      "backup_create",
+        "name":    "Backup erstellen (FTP)",
+        "desc":    "Alles was nicht in Git liegt (config_user.json, .fernet.key, article_db.sqlite, live editierte Config-CSVs) als ZIP sichern und zu CONNECTIONS['backup'] hochladen – für Server-Umzug",
+        "fn":      "tasks.backup:run_backup_create",
+        "default": False,
+        "group":   "Extras",
+    },
+    {
+        "id":      "backup_restore",
+        "name":    "Backup wiederherstellen (FTP)",
+        "desc":    "Neuestes Backup von CONNECTIONS['backup'] laden und nach restore_review/ entpacken (überschreibt nichts automatisch – manuell prüfen und rüberkopieren)",
+        "fn":      "tasks.backup:run_backup_restore",
+        "default": False,
+        "group":   "Extras",
+    },
+    {
         "id":      "ki_anreicherung",
         "name":    "KI-Anreicherung",
         "desc":    "Artikeldaten mit Claude-KI verbessern (erfordert AI_ENRICHMENT aktiviert)",
