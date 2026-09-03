@@ -13,8 +13,11 @@ import json
 import glob
 import logging
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 log = logging.getLogger(__name__)
+
+_TZ_BERLIN = ZoneInfo("Europe/Berlin")
 
 _LINE_COLORS = [
     "#e94560", "#4caf50", "#ff9800", "#2196f3", "#9c27b0",
@@ -28,10 +31,18 @@ def _de(n: int) -> str:
 
 
 def _fmt_export_date(iso: str | None) -> str:
+    """
+    article_db.last_export_date wird in UTC gespeichert (lib/article_db.py:
+    _now() -> datetime.now(timezone.utc)) – hier nach Mitteleuropäischer
+    Zeit (mit automatischer Sommerzeit-Umstellung) für die Anzeige umrechnen.
+    """
     if not iso:
         return "–"
     try:
-        return datetime.fromisoformat(iso).strftime("%d.%m.%Y %H:%M")
+        dt = datetime.fromisoformat(iso)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(_TZ_BERLIN)
+        return dt.strftime("%d.%m.%Y %H:%M")
     except Exception:
         return iso
 
