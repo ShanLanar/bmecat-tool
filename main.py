@@ -790,7 +790,8 @@ class App(tk.Tk):
         if not path or not os.path.exists(path):
             try:
                 from lib.supplier_dashboard import generate_supplier_dashboard
-                path = generate_supplier_dashboard(config.DIRS["logs"], progress_cb=self._append_log)
+                path = generate_supplier_dashboard(config.DIRS["logs"], db_path=config.DB_PATH,
+                                                   progress_cb=self._append_log)
                 self._supplier_dashboard_path = path
             except Exception as e:
                 self._append_log(f"⚠ Lieferanten-Dashboard konnte nicht erzeugt werden: {e}",
@@ -1076,7 +1077,8 @@ class App(tk.Tk):
         # Lieferanten-Dashboard (Artikelzahl je Lieferant) automatisch aktualisieren
         try:
             from lib.supplier_dashboard import generate_supplier_dashboard
-            self._supplier_dashboard_path = generate_supplier_dashboard(config.DIRS["logs"])
+            self._supplier_dashboard_path = generate_supplier_dashboard(
+                config.DIRS["logs"], db_path=config.DB_PATH)
         except Exception:
             pass
 

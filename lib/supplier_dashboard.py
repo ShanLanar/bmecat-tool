@@ -42,18 +42,43 @@ def _load_runs(log_dir: str, max_runs: int = 30) -> list:
     return runs
 
 
-def generate_supplier_dashboard(log_dir: str, progress_cb=None) -> str:
+def generate_supplier_dashboard(log_dir: str, db_path: str = None,
+                                progress_cb=None) -> str:
     """
     Erzeugt logs/supplier_dashboard.html: aktuelle Artikelzahl je Lieferant
     (online/offline) + Verlauf über die letzten Läufe. Gibt den Pfad zurück
-    (leer wenn keine Läufe mit Lieferanten-Statistik vorliegen).
+    (leer wenn weder Lauf-Historie noch eine lesbare DB vorliegen).
+
+    Der Verlauf braucht Lauf-Reports mit "supplier_stats" (erst seit
+    Einführung dieses Felds vorhanden). Solange die noch fehlen – z.B.
+    direkt nach dem Update, ohne dass schon ein neuer Lauf gelaufen ist –
+    wird der aktuelle Stand stattdessen live aus db_path gelesen (Tabelle
+    dann sofort korrekt, nur der Verlauf startet erst ab jetzt).
     """
     p = progress_cb or (lambda m, **kw: None)
     runs = _load_runs(log_dir)
 
+    if not runs and db_path:
+        try:
+            from lib.article_db import open_db, stats as article_stats
+            con = open_db(db_path)
+            try:
+                live_stats = article_stats(con)
+            finally:
+                con.close()
+            if live_stats.get("by_supplier_detail"):
+                now_iso = datetime.now().isoformat()
+                runs = [{"start": now_iso, "ende": now_iso,
+                        "supplier_stats": live_stats}]
+                p("Lieferanten-Dashboard: noch keine Lauf-Historie – "
+                  "zeige aktuellen Datenbankstand (Verlauf startet ab jetzt).",
+                  tag="dim")
+        except Exception as e:
+            log.debug(f"Live-DB-Fallback fehlgeschlagen: {e}")
+
     if not runs:
-        p("Lieferanten-Dashboard: keine Läufe mit Lieferanten-Statistik "
-          "gefunden – bitte zuerst einen Lauf mit DB-Export durchführen.",
+        p("Lieferanten-Dashboard: weder Lauf-Historie noch lesbare "
+          "Artikel-DB gefunden – bitte zuerst einen DB-Import durchführen.",
           tag="warn")
         return ""
 
@@ -192,5 +217,6 @@ new Chart(document.getElementById('trend'), {{
 
 def run_supplier_dashboard_task(progress_cb=None, file_progress_cb=None):
     """Task-Wrapper: Lieferanten-Dashboard manuell (neu) erzeugen."""
-    from config import DIRS
-    return generate_supplier_dashboard(DIRS.get("logs", "."), progress_cb=progress_cb)
+    from config import DIRS, DB_PATH
+    return generate_supplier_dashboard(DIRS.get("logs", "."), db_path=DB_PATH,
+                                       progress_cb=progress_cb)
