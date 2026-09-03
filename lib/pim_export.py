@@ -195,18 +195,22 @@ def _build_row(art: dict, price_rule_exact: dict, price_rule_wildcard: list,
             ek_lb     = ek_tiers[i]['lower_bound']
             row[f"ek_staffel_{n}"] = _decimal_comma(ek_amount)
             row[f"ek_menge_{n}"]   = str(ek_lb)
-            if rule and ek_amount is not None:
-                vk_amount = rule['fn'](ek_amount)
-                row[f"vk_staffel_{n}"] = _decimal_comma(vk_amount)
-                row[f"vk_menge_{n}"]   = str(ek_lb)
-            else:
-                row[f"vk_staffel_{n}"] = ""
-                row[f"vk_menge_{n}"]   = ""
         else:
             row[f"ek_staffel_{n}"] = ""
             row[f"ek_menge_{n}"]   = ""
-            row[f"vk_staffel_{n}"] = ""
-            row[f"vk_menge_{n}"]   = ""
+
+        if n == 1:
+            if i < len(ek_tiers) and rule and ek_amount is not None:
+                vk_amount = rule['fn'](ek_amount)
+                row["vk_staffel_1"] = _decimal_comma(vk_amount)
+                row["vk_menge_1"]   = str(ek_lb)
+            else:
+                row["vk_staffel_1"] = ""
+                row["vk_menge_1"]   = ""
+        else:
+            # Staffeln 2-6 (vk) werden nicht befüllt – auf 0 statt leer.
+            row[f"vk_staffel_{n}"] = "0"
+            row[f"vk_menge_{n}"]   = "0"
 
     return row
 
