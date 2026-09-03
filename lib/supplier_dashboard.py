@@ -27,6 +27,15 @@ def _de(n: int) -> str:
     return f"{n:,}".replace(",", ".")
 
 
+def _fmt_export_date(iso: str | None) -> str:
+    if not iso:
+        return "–"
+    try:
+        return datetime.fromisoformat(iso).strftime("%d.%m.%Y %H:%M")
+    except Exception:
+        return iso
+
+
 def _load_runs(log_dir: str, max_runs: int = 30) -> list:
     pattern = os.path.join(log_dir, "lauf_*.json")
     files = sorted(glob.glob(pattern))[-max_runs:]
@@ -119,6 +128,7 @@ def generate_supplier_dashboard(log_dir: str, db_path: str = None,
       <td class="num">{_de(detail[sup]['total'])}</td>
       <td class="num online">{_de(detail[sup]['online'])}</td>
       <td class="num offline">{_de(detail[sup]['offline'])}</td>
+      <td class="date">{_fmt_export_date(detail[sup].get('last_export'))}</td>
     </tr>""" for sup in suppliers)
 
     stamp = latest.get("ende") or latest.get("start")
@@ -156,6 +166,7 @@ def generate_supplier_dashboard(log_dir: str, db_path: str = None,
   td.num {{ text-align:right; font-variant-numeric:tabular-nums; }}
   td.online {{ color:#4caf50; }}
   td.offline {{ color:#f44336; }}
+  td.date {{ color:#888; white-space:nowrap; }}
 </style>
 </head>
 <body>
@@ -174,7 +185,8 @@ def generate_supplier_dashboard(log_dir: str, db_path: str = None,
   <h2>Aktuell (letzter Lauf)</h2>
   <table>
     <thead><tr><th>Lieferant</th><th class="num">Gesamt</th>
-      <th class="num">Online</th><th class="num">Offline</th></tr></thead>
+      <th class="num">Online</th><th class="num">Offline</th>
+      <th>Letzter Export</th></tr></thead>
     <tbody>{rows}
     </tbody>
   </table>

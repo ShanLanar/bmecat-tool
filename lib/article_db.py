@@ -863,22 +863,35 @@ def stats(con: sqlite3.Connection) -> dict:
         "GROUP BY s.supplier_name ORDER BY s.supplier_name"
     ).fetchall()
 
+    # last_export_date wird erst beim ersten Export per ALTER TABLE angelegt
+    # (lib/db_exporter.py:_track_export_date) – existiert also nicht in jeder DB.
+    has_export_date = any(
+        row["name"] == "last_export_date"
+        for row in con.execute("PRAGMA table_info(articles)").fetchall()
+    )
+    last_export_sql = ("MAX(a.last_export_date) AS last_export"
+                       if has_export_date else "NULL AS last_export")
+
     # Detailaufschlüsselung für Dashboards: nur aktive (nicht weggefallene)
-    # Artikel je Lieferant, aufgeteilt nach online/offline.
+    # Artikel je Lieferant, aufgeteilt nach online/offline, plus letztes
+    # Exportdatum (höchstes last_export_date über alle Artikel des
+    # Lieferanten).
     detail_rows = con.execute(
         "SELECT s.supplier_name AS supplier_name, "
         "       COUNT(*) AS total, "
         "       SUM(CASE WHEN a.online=1 THEN 1 ELSE 0 END) AS online, "
-        "       SUM(CASE WHEN a.online=0 THEN 1 ELSE 0 END) AS offline "
+        "       SUM(CASE WHEN a.online=0 THEN 1 ELSE 0 END) AS offline, "
+        f"       {last_export_sql} "
         "FROM articles a JOIN suppliers s ON s.id=a.supplier_id "
         "WHERE a.active=1 "
         "GROUP BY s.supplier_name ORDER BY s.supplier_name"
     ).fetchall()
     by_supplier_detail = {
         r["supplier_name"]: {
-            "total":   r["total"],
-            "online":  r["online"] or 0,
-            "offline": r["offline"] or 0,
+            "total":       r["total"],
+            "online":      r["online"] or 0,
+            "offline":     r["offline"] or 0,
+            "last_export": r["last_export"],
         } for r in detail_rows
     }
 
