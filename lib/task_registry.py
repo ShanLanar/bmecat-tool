@@ -239,6 +239,14 @@ TASKS = [
         "group":   "Extras",
     },
     {
+        "id":      "supplier_dashboard",
+        "name":    "Lieferanten-Statistik",
+        "desc":    "Artikelzahl je Lieferant (online/offline) + Verlauf über die letzten Läufe neu erzeugen – läuft nach jedem Lauf ohnehin automatisch",
+        "fn":      "lib.supplier_dashboard:run_supplier_dashboard_task",
+        "default": False,
+        "group":   "Extras",
+    },
+    {
         "id":      "backup_create",
         "name":    "Backup erstellen (FTP)",
         "desc":    "Alles was nicht in Git liegt (config_user.json, .fernet.key, article_db.sqlite, live editierte Config-CSVs) als ZIP sichern und zu CONNECTIONS['backup'] hochladen – für Server-Umzug",

@@ -120,6 +120,7 @@ class App(tk.Tk):
         self._widget_refs: dict = {}   # für Tutorial-Highlighting
         self._tutorial = None
         self._status_dashboard_path = None
+        self._supplier_dashboard_path = None
         # Eine Logdatei pro Prozess (Zeitstempel+PID) statt einer von allen
         # Läufen gemeinsam beschriebenen Tagesdatei – sonst lassen sich
         # parallele/aufeinanderfolgende Läufe im Log nicht mehr auseinanderhalten.
@@ -550,6 +551,10 @@ class App(tk.Tk):
         status_btn.pack(side="right", padx=4)
         ToolTip(status_btn, "Ampel-Übersicht öffnen: welcher Task/Kanal lief zuletzt "
                             "erfolgreich, welcher mit Fehler (letzte 20 Läufe).")
+        supplier_btn = self._mk_btn(footer, "📦 Lieferanten", self._open_supplier_dashboard, small=True)
+        supplier_btn.pack(side="right", padx=4)
+        ToolTip(supplier_btn, "Lieferanten-Statistik öffnen: Artikelzahl je Lieferant "
+                              "(online/offline) + Verlauf über die letzten Läufe.")
 
         # Tab-Wechsel: Start/Stop nur auf Tab 0 aktiv; Viewer bei Tab 1 aktualisieren
         def _on_tab_change(event=None):
@@ -779,6 +784,27 @@ class App(tk.Tk):
         import webbrowser
         webbrowser.open(f"file://{os.path.abspath(path)}")
 
+    def _open_supplier_dashboard(self):
+        """Öffnet die Lieferanten-Statistik im Browser, erzeugt sie bei Bedarf neu."""
+        path = self._supplier_dashboard_path
+        if not path or not os.path.exists(path):
+            try:
+                from lib.supplier_dashboard import generate_supplier_dashboard
+                path = generate_supplier_dashboard(config.DIRS["logs"], progress_cb=self._append_log)
+                self._supplier_dashboard_path = path
+            except Exception as e:
+                self._append_log(f"⚠ Lieferanten-Dashboard konnte nicht erzeugt werden: {e}",
+                                 tag="warn")
+                return
+        if not path:
+            self._append_log(
+                "Lieferanten-Dashboard: noch keine Lauf-Reports mit "
+                "Lieferanten-Statistik vorhanden – erst einen Lauf mit "
+                "DB-Export durchführen.", tag="warn")
+            return
+        import webbrowser
+        webbrowser.open(f"file://{os.path.abspath(path)}")
+
     # ── Tutorial ──────────────────────────────────────────────────────────────
     def _start_tutorial(self):
         from lib.tutorial import Tutorial
@@ -979,6 +1005,19 @@ class App(tk.Tk):
             lock.release()
 
         report.add_dedup(**dedup_total)
+
+        # Lieferanten-Statistik (Gesamt/Online/Offline je Lieferant) für die
+        # Lauf-Historie festhalten – Basis für das Lieferanten-Dashboard.
+        try:
+            from lib.article_db import open_db, stats as article_stats
+            con_stats = open_db(config.DB_PATH)
+            try:
+                report.set_supplier_stats(article_stats(con_stats))
+            finally:
+                con_stats.close()
+        except Exception as e:
+            log.debug(f"Lieferanten-Statistik übersprungen: {e}")
+
         report_path = report.write()
         if report_path:
             self._append_log(f"Lauf-Report: {os.path.basename(report_path)}",
@@ -1031,6 +1070,13 @@ class App(tk.Tk):
         try:
             from lib.status_dashboard import generate_status_dashboard
             self._status_dashboard_path = generate_status_dashboard(config.DIRS["logs"])
+        except Exception:
+            pass
+
+        # Lieferanten-Dashboard (Artikelzahl je Lieferant) automatisch aktualisieren
+        try:
+            from lib.supplier_dashboard import generate_supplier_dashboard
+            self._supplier_dashboard_path = generate_supplier_dashboard(config.DIRS["logs"])
         except Exception:
             pass
 

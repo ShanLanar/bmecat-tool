@@ -26,6 +26,7 @@ class LaufReport:
         self.errors           = []
         self.dropped_articles : list[dict] = []   # Artikel nicht mehr im Katalog
         self.price_warnings   : list[str]  = []   # Ablaufende Preisregeln
+        self.supplier_stats   : dict = {}         # Schnappschuss article_db.stats()
         self._current   = None
         self._task_start = None
 
@@ -59,6 +60,10 @@ class LaufReport:
     def add_price_warnings(self, warnings: list[str]):
         """Ablaufende oder abgelaufene Preisregeln."""
         self.price_warnings.extend(warnings)
+
+    def set_supplier_stats(self, stats: dict):
+        """Schnappschuss von lib.article_db.stats() am Ende des Laufs."""
+        self.supplier_stats = stats or {}
 
     def as_dict(self) -> dict:
         """Gibt Report-Dict zurück (für Notifier)."""
@@ -122,6 +127,7 @@ class LaufReport:
             "tasks":              self.tasks,
             "dropped_articles":   len(self.dropped_articles),
             "price_warnings":     self.price_warnings,
+            "supplier_stats":     self.supplier_stats,
         }
 
         try:

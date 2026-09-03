@@ -862,7 +862,28 @@ def stats(con: sqlite3.Connection) -> dict:
         "FROM articles a JOIN suppliers s ON s.id=a.supplier_id "
         "GROUP BY s.supplier_name ORDER BY s.supplier_name"
     ).fetchall()
+
+    # Detailaufschlüsselung für Dashboards: nur aktive (nicht weggefallene)
+    # Artikel je Lieferant, aufgeteilt nach online/offline.
+    detail_rows = con.execute(
+        "SELECT s.supplier_name AS supplier_name, "
+        "       COUNT(*) AS total, "
+        "       SUM(CASE WHEN a.online=1 THEN 1 ELSE 0 END) AS online, "
+        "       SUM(CASE WHEN a.online=0 THEN 1 ELSE 0 END) AS offline "
+        "FROM articles a JOIN suppliers s ON s.id=a.supplier_id "
+        "WHERE a.active=1 "
+        "GROUP BY s.supplier_name ORDER BY s.supplier_name"
+    ).fetchall()
+    by_supplier_detail = {
+        r["supplier_name"]: {
+            "total":   r["total"],
+            "online":  r["online"] or 0,
+            "offline": r["offline"] or 0,
+        } for r in detail_rows
+    }
+
     return {
         "total": total,
-        "by_supplier": {r["supplier_name"]: r["n"] for r in by_sup}
+        "by_supplier": {r["supplier_name"]: r["n"] for r in by_sup},
+        "by_supplier_detail": by_supplier_detail,
     }
