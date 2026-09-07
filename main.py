@@ -555,6 +555,12 @@ class App(tk.Tk):
         supplier_btn.pack(side="right", padx=4)
         ToolTip(supplier_btn, "Lieferanten-Statistik öffnen: Artikelzahl je Lieferant "
                               "(online/offline) + Verlauf über die letzten Läufe.")
+        single_export_btn = self._mk_btn(footer, "🎯 Artikel-Export", self._open_single_article_export,
+                                         small=True)
+        single_export_btn.pack(side="right", padx=4)
+        ToolTip(single_export_btn, "Einen einzelnen Artikel aus der PIM-Datenbank suchen und "
+                                   "mit allen Abhängigkeiten (Preise, Features, Bilder, Kategorie) "
+                                   "in eine bestehende BMEcat-XML einfügen/aktualisieren.")
 
         # Tab-Wechsel: Start/Stop nur auf Tab 0 aktiv; Viewer bei Tab 1 aktualisieren
         def _on_tab_change(event=None):
@@ -805,6 +811,15 @@ class App(tk.Tk):
             return
         import webbrowser
         webbrowser.open(f"file://{os.path.abspath(path)}")
+
+    def _open_single_article_export(self):
+        """Öffnet den Dialog für den Einzelartikel-Export aus der PIM-DB."""
+        try:
+            from lib.single_article_dialog import open_single_article_export_dialog
+            open_single_article_export_dialog(self)
+        except Exception as e:
+            self._append_log(f"⚠ Einzelartikel-Export konnte nicht geöffnet werden: {e}",
+                             tag="warn")
 
     # ── Tutorial ──────────────────────────────────────────────────────────────
     def _start_tutorial(self):

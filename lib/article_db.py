@@ -813,6 +813,29 @@ def query_by_ids(con: sqlite3.Connection, article_ids: list[int]) -> list[dict]:
     return result
 
 
+def search_articles(con: sqlite3.Connection, term: str, limit: int = 50) -> list[dict]:
+    """
+    Freitextsuche für den Einzelartikel-Export-Dialog: sucht in product_id,
+    supplier_pid, ean und description_short (jeweils Teilstring, case-insensitiv).
+    Gibt schlanke Treffer zurück (keine Features/Mimes/etc. – dafür query_by_ids()).
+    """
+    term = (term or "").strip()
+    if not term:
+        return []
+    like = f"%{term}%"
+    rows = con.execute(
+        "SELECT a.id, a.product_id, a.supplier_pid, a.ean, a.description_short, "
+        "       a.online, a.active, s.supplier_name "
+        "FROM articles a JOIN suppliers s ON s.id = a.supplier_id "
+        "WHERE a.active=1 AND ("
+        "      a.product_id LIKE ? OR a.supplier_pid LIKE ? "
+        "   OR a.ean LIKE ? OR a.description_short LIKE ?) "
+        "ORDER BY a.product_id LIMIT ?",
+        (like, like, like, like, limit)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def query_by_supplier_pids(con: sqlite3.Connection, supplier_pids: list,
                            active_only: bool = True) -> list:
     """
