@@ -680,6 +680,71 @@ def query_by_ids(con: sqlite3.Connection, article_ids: list[int]) -> list[dict]:
     return result
 
 
+def search_articles(con: sqlite3.Connection, term: str, limit: int = 50) -> list[dict]:
+    """
+    Freitextsuche für den Einzelartikel-Export-Dialog: sucht in product_id,
+    supplier_pid, ean und description_short (jeweils Teilstring, case-insensitiv).
+    Gibt schlanke Treffer zurück (keine Features/Mimes/etc. – dafür query_by_ids()).
+    """
+    term = (term or "").strip()
+    if not term:
+        return []
+    like = f"%{term}%"
+    rows = con.execute(
+        "SELECT a.id, a.product_id, a.supplier_pid, a.ean, a.description_short, "
+        "       a.online, a.active, s.supplier_name "
+        "FROM articles a JOIN suppliers s ON s.id = a.supplier_id "
+        "WHERE a.active=1 AND ("
+        "      a.product_id LIKE ? OR a.supplier_pid LIKE ? "
+        "   OR a.ean LIKE ? OR a.description_short LIKE ?) "
+        "ORDER BY a.product_id LIMIT ?",
+        (like, like, like, like, limit)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def query_by_supplier_pids(con: sqlite3.Connection, supplier_pids: list,
+                           active_only: bool = True) -> list:
+    """
+    Lädt Artikel anhand ihrer nativen (unpräfixten) supplier_pid – über ALLE
+    Lieferanten hinweg, da z.B. eine hochgeladene eBay-SKU-Liste den
+    Lieferanten nicht kennt. Bei Kollisionen (gleiche supplier_pid bei
+    mehreren Lieferanten) werden alle Treffer zurückgegeben.
+    """
+    if not supplier_pids:
+        return []
+
+    result = []
+    for i in range(0, len(supplier_pids), _SQL_CHUNK_SIZE):
+        chunk = supplier_pids[i:i + _SQL_CHUNK_SIZE]
+        placeholders = ','.join('?' * len(chunk))
+        active_clause = "AND a.active=1" if active_only else ""
+        sql = f"""
+            SELECT a.*, s.supplier_name, s.supplier_code, s.supplier_aid, s.supplier_alt_aid,
+                   cn.name  AS catalog_node_name,
+                   cn.group_id AS catalog_node_group_id,
+                   acm.catalog_node_id AS _catalog_node_id
+            FROM articles a
+            JOIN suppliers s ON s.id = a.supplier_id
+            LEFT JOIN article_catalog_map acm ON acm.article_id = a.id
+            LEFT JOIN catalog_nodes cn ON cn.id = acm.catalog_node_id
+            WHERE a.supplier_pid IN ({placeholders}) {active_clause}
+            ORDER BY s.supplier_name, a.product_id
+        """
+        rows = con.execute(sql, chunk).fetchall()
+        for row in rows:
+            art = dict(row)
+            art_id = art["id"]
+            art["features"] = [dict(r) for r in con.execute(
+                "SELECT fname,fvalue,funit,fusage,forder,fsearchable,fselectable,value_index "
+                "FROM article_features WHERE article_id=? ORDER BY forder, fname, value_index", (art_id,))]
+            art["mimes"] = [dict(r) for r in con.execute(
+                "SELECT mime_type,mime_source,mime_purpose,mime_desc,mime_alt,mime_order "
+                "FROM article_mimes WHERE article_id=? ORDER BY mime_order", (art_id,))]
+            result.append(art)
+    return result
+
+
 def stats(con: sqlite3.Connection) -> dict:
     total    = con.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
     by_sup   = con.execute(
