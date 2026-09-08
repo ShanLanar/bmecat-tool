@@ -918,8 +918,23 @@ def stats(con: sqlite3.Connection) -> dict:
         } for r in detail_rows
     }
 
+    # Mengeneinheiten-Übersicht: wie oft welche ORDER_UNIT/CONTENT_UNIT bei
+    # aktiven Artikeln vorkommt (z.B. PCE, SET, LTR ...).
+    order_unit_rows = con.execute(
+        "SELECT order_unit, COUNT(*) AS n FROM articles "
+        "WHERE active=1 GROUP BY order_unit ORDER BY n DESC"
+    ).fetchall()
+    content_unit_rows = con.execute(
+        "SELECT content_unit, COUNT(*) AS n FROM articles "
+        "WHERE active=1 GROUP BY content_unit ORDER BY n DESC"
+    ).fetchall()
+    by_order_unit   = {(r["order_unit"] or "").strip() or "(leer)": r["n"] for r in order_unit_rows}
+    by_content_unit = {(r["content_unit"] or "").strip() or "(leer)": r["n"] for r in content_unit_rows}
+
     return {
         "total": total,
         "by_supplier": {r["supplier_name"]: r["n"] for r in by_sup},
         "by_supplier_detail": by_supplier_detail,
+        "by_order_unit": by_order_unit,
+        "by_content_unit": by_content_unit,
     }

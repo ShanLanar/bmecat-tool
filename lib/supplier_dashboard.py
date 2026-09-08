@@ -133,6 +133,23 @@ def generate_supplier_dashboard(log_dir: str, db_path: str = None,
     total_online  = sum(d["online"] for d in detail.values())
     total_offline = sum(d["offline"] for d in detail.values())
 
+    # Mengeneinheiten – erst seit Einführung in supplier_stats vorhanden,
+    # ältere lauf_*.json (bzw. der Live-DB-Fallback davor) haben das Feld
+    # noch nicht.
+    by_order_unit   = latest["supplier_stats"].get("by_order_unit", {})
+    by_content_unit = latest["supplier_stats"].get("by_content_unit", {})
+
+    def _unit_rows(unit_counts: dict) -> str:
+        items = sorted(unit_counts.items(), key=lambda kv: kv[1], reverse=True)
+        return "".join(f"""
+    <tr>
+      <td class="name">{unit}</td>
+      <td class="num">{_de(n)}</td>
+    </tr>""" for unit, n in items)
+
+    order_unit_rows   = _unit_rows(by_order_unit)
+    content_unit_rows = _unit_rows(by_content_unit)
+
     rows = "".join(f"""
     <tr>
       <td class="name">{sup}</td>
@@ -147,6 +164,29 @@ def generate_supplier_dashboard(log_dir: str, db_path: str = None,
         stamp_fmt = datetime.fromisoformat(stamp).strftime("%d.%m.%Y %H:%M")
     except Exception:
         stamp_fmt = stamp or "?"
+
+    units_card = ""
+    if by_order_unit or by_content_unit:
+        units_card = f"""
+<div class="card">
+  <h2>Mengeneinheiten (aktiv, letzter Lauf)</h2>
+  <div class="units-grid">
+    <div>
+      <table>
+        <thead><tr><th>ORDER_UNIT</th><th class="num">Artikel</th></tr></thead>
+        <tbody>{order_unit_rows}
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <table>
+        <thead><tr><th>CONTENT_UNIT</th><th class="num">Artikel</th></tr></thead>
+        <tbody>{content_unit_rows}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>"""
 
     html = f"""<!DOCTYPE html>
 <html lang="de">
@@ -178,6 +218,8 @@ def generate_supplier_dashboard(log_dir: str, db_path: str = None,
   td.online {{ color:#4caf50; }}
   td.offline {{ color:#f44336; }}
   td.date {{ color:#888; white-space:nowrap; }}
+  .units-grid {{ display:grid; grid-template-columns: 1fr 1fr; gap:24px; }}
+  @media (max-width: 600px) {{ .units-grid {{ grid-template-columns: 1fr; }} }}
 </style>
 </head>
 <body>
@@ -202,7 +244,7 @@ def generate_supplier_dashboard(log_dir: str, db_path: str = None,
     </tbody>
   </table>
 </div>
-
+{units_card}
 <div class="card">
   <h2>Verlauf: Artikelzahl je Lieferant</h2>
   <canvas id="trend"></canvas>
