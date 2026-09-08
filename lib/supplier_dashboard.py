@@ -263,12 +263,12 @@ def generate_supplier_dashboard(log_dir: str, db_path: str = None,
     </tbody>
   </table>
 </div>
-{units_card}
+
 <div class="card">
   <h2>Verlauf: Artikelzahl je Lieferant</h2>
   <canvas id="trend"></canvas>
 </div>
-
+{units_card}
 <script>
 new Chart(document.getElementById('trend'), {{
   type: 'line',
