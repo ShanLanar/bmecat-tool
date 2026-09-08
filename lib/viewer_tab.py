@@ -580,6 +580,16 @@ class ViewerTab:
                         if name and name not in [n.replace(' ✗', '') for n in all_names]:
                             mark = '' if name in sups_in_db else ' ✗'
                             all_names.append(f"{name}{mark}")
+                # Lieferanten, die in der DB stehen aber nicht in
+                # supplier_config.yaml konfiguriert sind – z.B. per
+                # "BMEcat laden" manuell importierte Ad-hoc-Kataloge (kein
+                # Config-Eintrag nötig, siehe lib/db_importer.py:import_xml).
+                # Ohne das hier zu ergänzen, tauchen sie im Filter nie auf,
+                # obwohl sie in der DB und damit im Viewer suchbar sind.
+                configured_names = {n.replace(' ✗', '') for n in all_names}
+                for name in sups_in_db:
+                    if name not in configured_names:
+                        all_names.append(name)
                 sups = ['Alle'] + sorted(all_names)
             except Exception:
                 sups = ['Alle'] + sorted(sups_in_db)
