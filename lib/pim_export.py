@@ -20,6 +20,7 @@
 import csv
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Callable
 
 from lib.article_db import open_db
@@ -61,6 +62,37 @@ def _tax_to_comma(tax_int) -> str:
         return f"{int(tax_int) / 100:.2f}".replace('.', ',')
     except (TypeError, ValueError):
         return ''
+
+
+_SQL_CHUNK_SIZE = 500   # SQLite-Limit für IN(...)-Variablen
+
+
+def _track_export_date(con, product_ids: list[str]):
+    """
+    Schreibt last_export_date in die articles-Tabelle für alle exportierten
+    Artikel. Gleiche Logik wie lib/db_exporter.py:_track_export_date – der
+    PIM-Export (Softcarrier) läuft unabhängig vom (nicht mehr eingebundenen)
+    VENDOSYS-Export und muss das "Letzter Export"-Datum daher selbst
+    schreiben, sonst bleibt die Spalte für alle nur per PIM-Export
+    exportierten Lieferanten dauerhaft leer bzw. veraltet.
+    """
+    if not product_ids:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        cols = [r[1] for r in con.execute("PRAGMA table_info(articles)")]
+        if 'last_export_date' not in cols:
+            con.execute("ALTER TABLE articles ADD COLUMN last_export_date TEXT")
+        for i in range(0, len(product_ids), _SQL_CHUNK_SIZE):
+            chunk = product_ids[i:i + _SQL_CHUNK_SIZE]
+            placeholders = ','.join('?' * len(chunk))
+            con.execute(
+                f"UPDATE articles SET last_export_date=? "
+                f"WHERE product_id IN ({placeholders})",
+                [now] + chunk)
+        con.commit()
+    except Exception as exc:
+        log.warning(f"last_export_date Fehler: {exc}")
 
 
 def _load_articles(con, product_id_pattern: str) -> list[dict]:
@@ -274,6 +306,8 @@ def export_pim(db_path: str, base_dir: str, out_dir: str,
     if no_rule:
         p(f"PIM-Export: {no_rule} Artikel ohne passende Preisformel "
           f"(vk-Spalten leer)", tag="warn")
+
+    _track_export_date(con, [a['product_id'] for a in articles])
 
     return {
         "aktiv":           len(rows_active),

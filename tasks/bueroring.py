@@ -339,6 +339,17 @@ def run(progress_cb=None, file_progress_cb=None):
         progress_cb=p, file_progress_cb=fp
     )
 
+    try:
+        import config as _cfg
+        from lib.article_db import open_db, mark_exported
+        _con = open_db(_cfg.DB_PATH)
+        try:
+            mark_exported(_con, "Büroring")
+        finally:
+            _con.close()
+    except Exception as e:
+        p(f"Letzter-Export-Zeitstempel übersprungen: {e}", tag="warn")
+
     p("Bueroring abgeschlossen.", tag="ok")
 
 

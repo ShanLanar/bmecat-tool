@@ -878,6 +878,42 @@ def query_by_supplier_pids(con: sqlite3.Connection, supplier_pids: list,
     return result
 
 
+def mark_exported(con: sqlite3.Connection, supplier_names) -> int:
+    """
+    Setzt last_export_date=jetzt für alle aktiven Artikel der angegebenen
+    Lieferanten (Freitextname wie in suppliers.supplier_name).
+
+    Für Exportwege ohne Artikel-für-Artikel-Schleife durch die DB – z.B.
+    der Brickfox-XML-Upload (tasks/bueroring.py, tasks/nordwest.py), der die
+    fertig gemergte Katalog-Datei als Ganzes hochlädt statt Artikel einzeln
+    aus der DB zu lesen. Ohne diesen Aufruf bliebe "Letzter Export" für
+    diese Lieferanten dauerhaft leer bzw. veraltet, obwohl laufend
+    exportiert wird. Nur nach erfolgreichem Upload aufrufen (Exception im
+    Upload lässt diesen Aufruf normalerweise gar nicht erst erreichen).
+    """
+    if isinstance(supplier_names, str):
+        supplier_names = [supplier_names]
+    if not supplier_names:
+        return 0
+    now = _now()
+    try:
+        cols = [r[1] for r in con.execute("PRAGMA table_info(articles)")]
+        if 'last_export_date' not in cols:
+            con.execute("ALTER TABLE articles ADD COLUMN last_export_date TEXT")
+        placeholders = ','.join('?' * len(supplier_names))
+        cur = con.execute(
+            f"UPDATE articles SET last_export_date=? "
+            f"WHERE active=1 AND supplier_id IN ("
+            f"    SELECT id FROM suppliers WHERE supplier_name IN ({placeholders})"
+            f")",
+            [now] + list(supplier_names))
+        con.commit()
+        return cur.rowcount
+    except Exception as exc:
+        log.warning(f"mark_exported Fehler ({supplier_names}): {exc}")
+        return 0
+
+
 def stats(con: sqlite3.Connection) -> dict:
     total    = con.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
     by_sup   = con.execute(
