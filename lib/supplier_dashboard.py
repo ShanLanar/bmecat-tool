@@ -194,6 +194,14 @@ def generate_supplier_dashboard(log_dir: str, db_path: str = None,
             return f'<span class="delta-down">{_de(n)}</span>'
         return f'<span class="dim">±0</span>'
 
+    def _last_export(sup: str):
+        # Live-Wert bevorzugen (z.B. gerade eben über den Viewer-Export
+        # gesetzt) – der Lauf-Report-Snapshot in detail[] wird nur bei einem
+        # vollständigen Pipeline-Lauf neu geschrieben und veraltet sonst,
+        # obwohl die DB längst ein neueres Datum hat.
+        return (live_detail.get(sup, {}).get('last_export')
+                or detail[sup].get('last_export'))
+
     rows = "".join(f"""
     <tr>
       <td class="name">{sup}</td>
@@ -201,7 +209,7 @@ def generate_supplier_dashboard(log_dir: str, db_path: str = None,
       <td class="num online">{_de(detail[sup]['online'])}</td>
       <td class="num offline">{_de(detail[sup]['offline'])}</td>
       <td class="num">{_fmt_delta(delta_by_supplier[sup])}</td>
-      <td class="date">{_fmt_export_date(detail[sup].get('last_export'))}</td>
+      <td class="date">{_fmt_export_date(_last_export(sup))}</td>
     </tr>""" for sup in suppliers)
 
     quality_rows = "".join(f"""
