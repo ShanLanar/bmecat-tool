@@ -918,6 +918,45 @@ def stats(con: sqlite3.Connection) -> dict:
         } for r in detail_rows
     }
 
+    # Datenqualität je Lieferant (aktive Artikel):
+    #  - ohne Preis (price_amount NULL oder 0)
+    #  - ohne Bild (kein article_mimes-Eintrag)
+    #  - Ø Features je Artikel (Feature-Dichte, Indikator für magere Feeds)
+    no_price_rows = con.execute(
+        "SELECT s.supplier_name AS supplier_name, "
+        "       SUM(CASE WHEN a.price_amount IS NULL OR a.price_amount=0 "
+        "                THEN 1 ELSE 0 END) AS no_price "
+        "FROM articles a JOIN suppliers s ON s.id=a.supplier_id "
+        "WHERE a.active=1 "
+        "GROUP BY s.supplier_name"
+    ).fetchall()
+    no_image_rows = con.execute(
+        "SELECT s.supplier_name AS supplier_name, "
+        "       SUM(CASE WHEN m.article_id IS NULL THEN 1 ELSE 0 END) AS no_image "
+        "FROM articles a JOIN suppliers s ON s.id=a.supplier_id "
+        "LEFT JOIN (SELECT DISTINCT article_id FROM article_mimes) m "
+        "       ON m.article_id=a.id "
+        "WHERE a.active=1 "
+        "GROUP BY s.supplier_name"
+    ).fetchall()
+    feature_density_rows = con.execute(
+        "SELECT s.supplier_name AS supplier_name, "
+        "       COUNT(DISTINCT a.id) AS n_articles, "
+        "       COUNT(f.id) AS n_features "
+        "FROM articles a JOIN suppliers s ON s.id=a.supplier_id "
+        "LEFT JOIN article_features f ON f.article_id=a.id "
+        "WHERE a.active=1 "
+        "GROUP BY s.supplier_name"
+    ).fetchall()
+
+    for r in no_price_rows:
+        by_supplier_detail.setdefault(r["supplier_name"], {})["no_price"] = r["no_price"] or 0
+    for r in no_image_rows:
+        by_supplier_detail.setdefault(r["supplier_name"], {})["no_image"] = r["no_image"] or 0
+    for r in feature_density_rows:
+        avg = (r["n_features"] / r["n_articles"]) if r["n_articles"] else 0.0
+        by_supplier_detail.setdefault(r["supplier_name"], {})["avg_features"] = round(avg, 1)
+
     # Mengeneinheiten-Übersicht: wie oft welche ORDER_UNIT/CONTENT_UNIT bei
     # aktiven Artikeln vorkommt (z.B. PCE, SET, LTR ...).
     order_unit_rows = con.execute(

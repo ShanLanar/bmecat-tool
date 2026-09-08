@@ -133,13 +133,15 @@ def generate_supplier_dashboard(log_dir: str, db_path: str = None,
     total_online  = sum(d["online"] for d in detail.values())
     total_offline = sum(d["offline"] for d in detail.values())
 
-    # Mengeneinheiten: immer live aus der DB lesen statt aus dem Lauf-Report –
-    # anders als der Verlauf oben braucht diese Übersicht keine Historie,
-    # sondern nur den aktuellen Stand. So ist sie sofort sichtbar, auch wenn
-    # die vorhandenen lauf_*.json-Reports noch vor Einführung dieses Felds
-    # erzeugt wurden (die es sonst schlicht nicht enthalten).
+    # Mengeneinheiten + Datenqualität (ohne Preis/Bild, Feature-Dichte): immer
+    # live aus der DB lesen statt aus dem Lauf-Report – anders als der
+    # Verlauf oben brauchen diese Übersichten keine Historie, sondern nur den
+    # aktuellen Stand. So sind sie sofort sichtbar, auch wenn die
+    # vorhandenen lauf_*.json-Reports noch vor Einführung dieser Felder
+    # erzeugt wurden (die sie sonst schlicht nicht enthalten).
     by_order_unit   = {}
     by_content_unit = {}
+    live_detail     = {}
     if db_path:
         try:
             from lib.article_db import open_db as _open_db, stats as _article_stats
@@ -150,13 +152,27 @@ def generate_supplier_dashboard(log_dir: str, db_path: str = None,
                 _con.close()
             by_order_unit   = _live.get("by_order_unit", {})
             by_content_unit = _live.get("by_content_unit", {})
+            live_detail     = _live.get("by_supplier_detail", {})
         except Exception as e:
-            log.debug(f"Mengeneinheiten-Live-Fallback fehlgeschlagen: {e}")
+            log.debug(f"Live-Fallback (Einheiten/Datenqualität) fehlgeschlagen: {e}")
     if not by_order_unit and not by_content_unit:
         # Kein db_path übergeben oder Live-Lesen fehlgeschlagen: auf den
         # (evtl. fehlenden) Report-Snapshot zurückfallen.
         by_order_unit   = latest["supplier_stats"].get("by_order_unit", {})
         by_content_unit = latest["supplier_stats"].get("by_content_unit", {})
+    if not live_detail:
+        live_detail = detail
+
+    # Δ seit letztem Lauf: Differenz der Gesamtzahl je Lieferant gegenüber
+    # dem vorletzten Lauf-Report (nicht möglich beim allerersten Lauf).
+    prev_run = runs[-2] if len(runs) >= 2 else None
+    delta_by_supplier = {}
+    for sup in suppliers:
+        if prev_run is None:
+            delta_by_supplier[sup] = None
+            continue
+        prev_total = prev_run["supplier_stats"]["by_supplier_detail"].get(sup, {}).get("total", 0)
+        delta_by_supplier[sup] = detail[sup]["total"] - prev_total
 
     def _unit_rows(unit_counts: dict) -> str:
         items = sorted(unit_counts.items(), key=lambda kv: kv[1], reverse=True)
@@ -169,13 +185,31 @@ def generate_supplier_dashboard(log_dir: str, db_path: str = None,
     order_unit_rows   = _unit_rows(by_order_unit)
     content_unit_rows = _unit_rows(by_content_unit)
 
+    def _fmt_delta(n: int | None) -> str:
+        if n is None:
+            return '<span class="dim">–</span>'
+        if n > 0:
+            return f'<span class="delta-up">+{_de(n)}</span>'
+        if n < 0:
+            return f'<span class="delta-down">{_de(n)}</span>'
+        return f'<span class="dim">±0</span>'
+
     rows = "".join(f"""
     <tr>
       <td class="name">{sup}</td>
       <td class="num">{_de(detail[sup]['total'])}</td>
       <td class="num online">{_de(detail[sup]['online'])}</td>
       <td class="num offline">{_de(detail[sup]['offline'])}</td>
+      <td class="num">{_fmt_delta(delta_by_supplier[sup])}</td>
       <td class="date">{_fmt_export_date(detail[sup].get('last_export'))}</td>
+    </tr>""" for sup in suppliers)
+
+    quality_rows = "".join(f"""
+    <tr>
+      <td class="name">{sup}</td>
+      <td class="num">{_de(live_detail.get(sup, {}).get('no_price', 0))}</td>
+      <td class="num">{_de(live_detail.get(sup, {}).get('no_image', 0))}</td>
+      <td class="num">{live_detail.get(sup, {}).get('avg_features', 0):.1f}</td>
     </tr>""" for sup in suppliers)
 
     stamp = latest.get("ende") or latest.get("start")
@@ -205,6 +239,17 @@ def generate_supplier_dashboard(log_dir: str, db_path: str = None,
       </table>
     </div>
   </div>
+</div>"""
+
+    quality_card = f"""
+<div class="card">
+  <h2>Datenqualität je Lieferant (aktiv)</h2>
+  <table>
+    <thead><tr><th>Lieferant</th><th class="num">Ohne Preis</th>
+      <th class="num">Ohne Bild</th><th class="num">Ø Features/Artikel</th></tr></thead>
+    <tbody>{quality_rows}
+    </tbody>
+  </table>
 </div>"""
 
     html = f"""<!DOCTYPE html>
@@ -237,6 +282,9 @@ def generate_supplier_dashboard(log_dir: str, db_path: str = None,
   td.online {{ color:#4caf50; }}
   td.offline {{ color:#f44336; }}
   td.date {{ color:#888; white-space:nowrap; }}
+  .dim {{ color:#888; }}
+  .delta-up {{ color:#4caf50; }}
+  .delta-down {{ color:#f44336; }}
   .units-grid {{ display:grid; grid-template-columns: 1fr 1fr; gap:24px; }}
   @media (max-width: 600px) {{ .units-grid {{ grid-template-columns: 1fr; }} }}
 </style>
@@ -258,6 +306,7 @@ def generate_supplier_dashboard(log_dir: str, db_path: str = None,
   <table>
     <thead><tr><th>Lieferant</th><th class="num">Gesamt</th>
       <th class="num">Online</th><th class="num">Offline</th>
+      <th class="num">Δ seit letztem Lauf</th>
       <th>Letzter Export</th></tr></thead>
     <tbody>{rows}
     </tbody>
@@ -269,6 +318,7 @@ def generate_supplier_dashboard(log_dir: str, db_path: str = None,
   <canvas id="trend"></canvas>
 </div>
 {units_card}
+{quality_card}
 <script>
 new Chart(document.getElementById('trend'), {{
   type: 'line',
