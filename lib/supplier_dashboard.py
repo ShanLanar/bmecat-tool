@@ -133,11 +133,30 @@ def generate_supplier_dashboard(log_dir: str, db_path: str = None,
     total_online  = sum(d["online"] for d in detail.values())
     total_offline = sum(d["offline"] for d in detail.values())
 
-    # Mengeneinheiten – erst seit Einführung in supplier_stats vorhanden,
-    # ältere lauf_*.json (bzw. der Live-DB-Fallback davor) haben das Feld
-    # noch nicht.
-    by_order_unit   = latest["supplier_stats"].get("by_order_unit", {})
-    by_content_unit = latest["supplier_stats"].get("by_content_unit", {})
+    # Mengeneinheiten: immer live aus der DB lesen statt aus dem Lauf-Report –
+    # anders als der Verlauf oben braucht diese Übersicht keine Historie,
+    # sondern nur den aktuellen Stand. So ist sie sofort sichtbar, auch wenn
+    # die vorhandenen lauf_*.json-Reports noch vor Einführung dieses Felds
+    # erzeugt wurden (die es sonst schlicht nicht enthalten).
+    by_order_unit   = {}
+    by_content_unit = {}
+    if db_path:
+        try:
+            from lib.article_db import open_db as _open_db, stats as _article_stats
+            _con = _open_db(db_path)
+            try:
+                _live = _article_stats(_con)
+            finally:
+                _con.close()
+            by_order_unit   = _live.get("by_order_unit", {})
+            by_content_unit = _live.get("by_content_unit", {})
+        except Exception as e:
+            log.debug(f"Mengeneinheiten-Live-Fallback fehlgeschlagen: {e}")
+    if not by_order_unit and not by_content_unit:
+        # Kein db_path übergeben oder Live-Lesen fehlgeschlagen: auf den
+        # (evtl. fehlenden) Report-Snapshot zurückfallen.
+        by_order_unit   = latest["supplier_stats"].get("by_order_unit", {})
+        by_content_unit = latest["supplier_stats"].get("by_content_unit", {})
 
     def _unit_rows(unit_counts: dict) -> str:
         items = sorted(unit_counts.items(), key=lambda kv: kv[1], reverse=True)
