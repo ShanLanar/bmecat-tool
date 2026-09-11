@@ -33,6 +33,8 @@ DIRS = {
     "ndw_share":  r"\\obs.abe-brands.de\OBS\data\DOWNLOADS\780104811",
     "pim_export_mgmt_share": r"\\mgmt.abe-brands.de\daten\06_Alle\Austausch\S.Berlin",
     "pim_export_obs_share":  r"\\obs.abe-brands.de\obs\data\DOWNLOADS\780102150",
+    "sc_bilder_zips": "",   # Ordner mit GRAPHIK1.ZIP...GRAPHIK9.ZIP (Softcarrier Bild-Patch)
+    "sc_bilder_dir":  "",   # alternativ: bereits entpackter Bilder-Ordner
 }
 
 TOOLS = {
