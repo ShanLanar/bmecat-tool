@@ -235,7 +235,12 @@ def _match_group(folder: str, aids: list, entries: list, http_session) -> list[d
                 best_dist, best_entry = d, entry
             if d == 0:
                 break
-        results.append({"aid": aid, "folder": folder, "entry": best_entry, "dist": best_dist})
+        # imagehash-Subtraktion liefert oft numpy.int64 statt Python int –
+        # sqlite3 erkennt den Typ nicht zuverlässig und kann ihn je nach
+        # Version stillschweigend als BLOB (bytes) statt INTEGER speichern
+        # (Absturz später beim Lesen, siehe flush_csv()). Deshalb hier schon
+        # explizit auf einen echten Python-int casten.
+        results.append({"aid": aid, "folder": folder, "entry": best_entry, "dist": int(best_dist)})
 
     return results
 
@@ -321,6 +326,15 @@ def run_matching(index: dict, affected: list[dict], out_csv: str,
             for rec in affected:
                 aid = rec["supplier_aid"]
                 fld, img, dist = rows.get(aid, ("", "", -2))
+                # Verteidigung gegen kaputte/fremde Altdaten in der Resume-
+                # Checkpoint-DB (z.B. aus einem früheren, fehlerhaften Lauf):
+                # dist muss eine Ganzzahl sein, sonst als "kein Treffer"
+                # behandeln statt den ganzen Lauf mit einem TypeError
+                # abzuschießen.
+                try:
+                    dist = int(dist)
+                except (TypeError, ValueError):
+                    dist = -2
                 qual = ("gut"     if 0 <= dist <= MAX_DIFF // 2 else
                         "ok"      if 0 <= dist <= MAX_DIFF       else
                         "schwach" if dist > MAX_DIFF             else "kein")
