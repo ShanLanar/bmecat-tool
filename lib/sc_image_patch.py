@@ -22,7 +22,7 @@ import logging
 import time
 import zipfile
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from io import BytesIO
 from pathlib import Path
 
@@ -202,12 +202,18 @@ def _match_group(folder: str, aids: list, entries: list, http_session) -> list[d
         h = _phash_from_url(THUMB_URL.format(aid=aid), http_session)
         if h is not None:
             thumb_hashes[aid] = h
-        # Etwas mehr Pause als vorher (war 0.03s) – 4 Worker feuern sonst zu
-        # viele Anfragen in kurzer Zeit gegen softcarrier.de, was dort
-        # Rate-Limiting/Verbindungsabbrüche auslösen kann. Nicht zu hoch
-        # gewählt: bei ~50.000 Artikeln macht sich jede zusätzliche 0,01s
-        # bereits mit mehreren Minuten Gesamtlaufzeit bemerkbar.
-        time.sleep(0.08)
+            # Etwas mehr Pause als vorher (war 0.03s) – 4 Worker feuern sonst
+            # zu viele Anfragen in kurzer Zeit gegen softcarrier.de, was dort
+            # Rate-Limiting/Verbindungsabbrüche auslösen kann. Nicht zu hoch
+            # gewählt: bei ~50.000 Artikeln macht sich jede zusätzliche 0,01s
+            # bereits mit mehreren Minuten Gesamtlaufzeit bemerkbar.
+            time.sleep(0.08)
+        else:
+            # Fehlgeschlagener Download (Timeout, Verbindungsabbruch, 404 …):
+            # deutlich länger pausieren statt sofort weiterzufeuern – sonst
+            # hämmert der Worker bei serverseitigem Rate-Limiting ungebremst
+            # weiter gegen denselben Server und verschärft das Problem.
+            time.sleep(2.0)
 
     local = []
     for entry in entries:
@@ -321,21 +327,59 @@ def run_matching(index: dict, affected: list[dict], out_csv: str,
                 w.writerow([aid, rec["mime_source"], fld, img, dist, qual])
         tmp.replace(Path(out_csv))
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futs = {
-            pool.submit(_match_group, folder,
-                        [r["supplier_aid"] for r in recs],
-                        index[folder], http): (folder, recs)
-            for folder, recs in todo.items()
-        }
-        for fut in as_completed(futs):
+    # Harte Zeitgrenze pro Gruppe: lokale ZIP-Lesevorgänge (_load_image_bytes)
+    # haben – anders als die HTTP-Requests – KEINEN Timeout. Ein einzelner
+    # kaputter/unerreichbarer Eintrag in einer der großen ZIP-Dateien kann
+    # einen Worker-Thread dadurch für immer blockieren. Da alle Gruppen
+    # sofort als Futures eingereicht werden, aber nur `workers` Threads sie
+    # abarbeiten, würde ein einzelner hängender Worker nach und nach den
+    # gesamten Lauf lahmlegen, sobald alle Worker in je eine solche Gruppe
+    # laufen. GROUP_TIMEOUT bricht das Warten auf eine einzelne Gruppe ab
+    # (der Thread selbst lässt sich in Python nicht killen, bleibt also
+    # belegt – aber der Lauf blockiert nicht mehr komplett und wird fertig).
+    GROUP_TIMEOUT = 180  # Sekunden
+
+    # Kein "with ThreadPoolExecutor(...) as pool" – dessen __exit__ ruft
+    # shutdown(wait=True) auf und würde bis zum Ende des Funktionskörpers
+    # blockieren, bis WIRKLICH alle Worker-Threads fertig sind – inklusive
+    # eines für immer blockierten. Das würde die ganze GROUP_TIMEOUT-Logik
+    # unten aushebeln. shutdown(wait=False) am Ende gibt den Pool frei, ohne
+    # auf hängende Threads zu warten (die bleiben bis Prozessende offen,
+    # sind aber harmlos – nur ein paar OS-Threads).
+    pool = ThreadPoolExecutor(max_workers=workers)
+    futs = {
+        pool.submit(_match_group, folder,
+                    [r["supplier_aid"] for r in recs],
+                    index[folder], http): (folder, recs)
+        for folder, recs in todo.items()
+    }
+    submitted_at = {fut: time.time() for fut in futs}
+    pending = set(futs.keys())
+
+    def _record_failure(folder, recs, reason):
+        with db_lock:
+            for r in recs:
+                conn.execute(
+                    "INSERT OR REPLACE INTO results(aid,folder,img,dist) VALUES(?,?,?,?)",
+                    (r["supplier_aid"], folder, "", -1))
+                counters["none"] += 1
+            conn.commit()
+            counters["done"] += 1
+        log.warning("Gruppe %s übersprungen (%s)", folder, reason)
+
+    last_flushed_at = 0
+    last_logged_at  = 0
+
+    while pending:
+        done, pending = wait(pending, timeout=5, return_when=FIRST_COMPLETED)
+
+        for fut in done:
             folder, recs = futs[fut]
             try:
                 results = fut.result()
             except Exception as e:
-                log.error("Gruppe %s: %s", folder, e)
-                results = [{"aid": r["supplier_aid"], "folder": folder,
-                            "entry": None, "dist": -1} for r in recs]
+                _record_failure(folder, recs, f"Fehler: {e}")
+                continue
 
             with db_lock:
                 for r in results:
@@ -351,16 +395,29 @@ def run_matching(index: dict, affected: list[dict], out_csv: str,
                         counters["none"] += 1
                 conn.commit()
                 counters["done"] += 1
-                if counters["done"] % 50 == 0:
-                    flush_csv()
-                if counters["done"] % 10 == 0:
-                    # Häufigere, aber leichtgewichtige Fortschrittsmeldung
-                    # (nur Log-Zeile, kein CSV-Flush) – bei langsamem/
-                    # gedrosseltem Netzwerkzugriff sonst minutenlang ohne
-                    # jede sichtbare Rückmeldung.
-                    p(f"  [{counters['done']:,}/{len(todo):,}]  "
-                      f"Treffer: {counters['match']:,}  Leer: {counters['none']:,}")
 
+        # Gruppen, die seit GROUP_TIMEOUT noch nicht fertig sind (egal ob
+        # schon laufend oder noch gar nicht gestartet, weil alle Worker
+        # belegt sind), als "kein Treffer" verbuchen und aufgeben – der
+        # Lauf soll fertig werden statt endlos zu warten.
+        now = time.time()
+        for fut in [f for f in pending if now - submitted_at[f] > GROUP_TIMEOUT]:
+            pending.discard(fut)
+            folder, recs = futs[fut]
+            _record_failure(folder, recs, f"Timeout nach {GROUP_TIMEOUT}s")
+
+        if counters["done"] - last_flushed_at >= 50:
+            flush_csv()
+            last_flushed_at = counters["done"]
+        if counters["done"] - last_logged_at >= 10:
+            # Häufigere, aber leichtgewichtige Fortschrittsmeldung (nur
+            # Log-Zeile, kein CSV-Flush) – bei langsamem/gedrosseltem
+            # Netzwerkzugriff sonst minutenlang ohne sichtbare Rückmeldung.
+            p(f"  [{counters['done']:,}/{len(todo):,}]  "
+              f"Treffer: {counters['match']:,}  Leer: {counters['none']:,}")
+            last_logged_at = counters["done"]
+
+    pool.shutdown(wait=False)
     flush_csv()
     conn.close()
     return counters
