@@ -12,8 +12,10 @@
 # Ausgabe: sc_image_patch.csv in BASE_DIR
 #   supplier_aid ; old_mime_source ; new_folder ; new_image ; hamming_dist ; qualitaet
 #
-# Integration in softcarrier_merge.py:
-#   <SOURCE>39672.jpg</SOURCE> → <SOURCE>39672_302.jpg</SOURCE>  (pro Artikel)
+# Integration in softcarrier_merge.py (nur im <MIME>-Block mit
+# MIME_TYPE=image/*, der Artikel hat daneben meist noch einen
+# application/pdf-Block fürs Datenblatt, der unangetastet bleiben muss):
+#   <MIME_SOURCE>39672.jpg</MIME_SOURCE> → <MIME_SOURCE>39672_302.jpg</MIME_SOURCE>
 
 import csv
 import logging
@@ -151,12 +153,21 @@ def _entry_filename(entry: tuple, folder: str) -> str:
 
 def find_affected(xml_path: str) -> list[dict]:
     """
-    Findet Artikel im BMEcat-XML, wo mehrere Artikel dieselbe MIME_SOURCE teilen.
-    Gibt [{supplier_aid, mime_source, folder}, ...] zurück.
+    Findet Artikel im BMEcat-XML, wo mehrere Artikel dieselbe Bild-MIME_SOURCE
+    teilen. Gibt [{supplier_aid, mime_source, folder}, ...] zurück.
+
+    Ein Artikel hat pro Bild UND pro Datenblatt (PDF) je einen eigenen
+    <MIME>-Block in <MIME_INFO>, z.B.:
+        <MIME><MIME_TYPE>image/jpeg</MIME_TYPE><MIME_SOURCE>39672.jpg</MIME_SOURCE>...</MIME>
+        <MIME><MIME_TYPE>application/pdf</MIME_TYPE><MIME_SOURCE>39672.pdf</MIME_SOURCE>...</MIME>
+    Muss also gezielt den Bild-Block treffen (MIME_TYPE beginnt mit "image/"),
+    sonst würden PDF-Dateinamen fälschlich als Bild-Duplikate behandelt.
     """
     import re
     AID_PAT = re.compile(r'(?i)<supplier_aid>(.*?)</supplier_aid>')
-    SRC_PAT = re.compile(r'(?i)<source>(.*?)</source>')
+    SRC_PAT = re.compile(
+        r'(?is)<mime>\s*<mime_type>\s*image/[^<]*</mime_type>\s*'
+        r'<mime_source>(.*?)</mime_source>')
     ART_PAT = re.compile(r'(?is)<article[\s>].*?</article>')
 
     groups: dict = defaultdict(list)

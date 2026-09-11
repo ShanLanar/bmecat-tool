@@ -33,7 +33,12 @@ _AID_PAT      = re.compile(r'(?is)<supplier_aid>(.*?)</supplier_aid>')
 _MFR_PAT      = re.compile(r'(?is)<manufacturer_name>(.*?)</manufacturer_name>')
 _ARTICLE_PAT  = re.compile(r'(?is)(<article[\s>].*?</article>)')
 _ART_END_PAT  = re.compile(r'(?i)</article>')
-_SRC_PAT      = re.compile(r'(?i)(<source>)([^<]+)(</source>)')
+# Trifft gezielt den Bild-<MIME>-Block (MIME_TYPE=image/*), nicht den
+# separaten application/pdf-Block fürs Datenblatt, den derselbe Artikel meist
+# zusätzlich hat (siehe lib/sc_image_patch.py:find_affected() für Details).
+_SRC_PAT      = re.compile(
+    r'(?is)(<mime>\s*<mime_type>\s*image/[^<]*</mime_type>\s*<mime_source>)'
+    r'([^<]+)(</mime_source>)')
 
 
 from lib.utils import detect_encoding  # zentralisiert in lib/utils.py
@@ -131,8 +136,10 @@ def _build_udf_block(features: list, indent: str = "      ") -> str:
 
 def _apply_image_patch(article: str, aid: str, patch_map: dict) -> str:
     """
-    Ersetzt <SOURCE>39672.jpg</SOURCE> durch <SOURCE>39672_302.jpg</SOURCE>
-    (Ordner_Dateiname) wenn ein Eintrag in der Patch-Map vorhanden ist.
+    Ersetzt <MIME_SOURCE>39672.jpg</MIME_SOURCE> im Bild-MIME-Block durch
+    <MIME_SOURCE>39672_302.jpg</MIME_SOURCE> (Ordner_Dateiname), wenn ein
+    Eintrag in der Patch-Map vorhanden ist. Der separate PDF-Datenblatt-Block
+    desselben Artikels bleibt unangetastet (_SRC_PAT trifft nur MIME_TYPE=image/*).
     """
     if not patch_map or aid not in patch_map:
         return article
@@ -266,14 +273,16 @@ def merge(xml_path: str, data_csv: str, herstinfo_csv: str,
 
     new_content = _ARTICLE_PAT.sub(_process, content)
 
-    # MIME-Sources mit SOC_-Präfix versehen damit sie mit den Bildnamen übereinstimmen
-    _MIME_SOURCE_PAT = re.compile(r'(?i)(<source>)([^<]+)(</source>)')
+    # Bild-MIME-Sources mit SOC-Präfix versehen, damit sie mit den bei
+    # Allago/OfficeXL hochgeladenen Bildnamen übereinstimmen (siehe
+    # tasks/softcarrier.py:_upload_bilder). Nur der Bild-Block – PDF-
+    # Datenblätter bleiben unverändert (_SRC_PAT trifft nur MIME_TYPE=image/*).
     def _prefix_source(m):
         val = m.group(2).strip()
         if val.upper().startswith("SOC"):
             return m.group()
         return f"{m.group(1)}SOC{val}{m.group(3)}"
-    new_content = _MIME_SOURCE_PAT.sub(_prefix_source, new_content)
+    new_content = _SRC_PAT.sub(_prefix_source, new_content)
 
     p(f"Softcarrier Merge: schreibe {os.path.basename(out_path)} ...")
     Path(out_path).write_text(new_content, encoding="utf-8")
