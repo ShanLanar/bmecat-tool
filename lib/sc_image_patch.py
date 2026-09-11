@@ -35,6 +35,11 @@ MAX_DIFF      = 12
 IMAGE_EXT     = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
 PATCH_FILENAME = "sc_image_patch.csv"
 
+# dist-Sentinel für per GROUP_TIMEOUT aufgegebene Gruppen (siehe run_matching):
+# eigener Wert statt -1 ("kein Treffer"), damit ein Resume solche Gruppen
+# erneut versucht statt sie dauerhaft als erledigt zu betrachten.
+TIMEOUT_DIST = -3
+
 
 # ── Abhängigkeits-Check ───────────────────────────────────────────────────────
 
@@ -299,7 +304,11 @@ def run_matching(index: dict, affected: list[dict], out_csv: str,
                      dist INTEGER, ts TEXT DEFAULT (datetime('now')))""")
     conn.commit()
 
-    done_aids = {r[0] for r in conn.execute("SELECT aid FROM results")}
+    # dist=-3 (TIMEOUT_DIST, siehe unten) zählt bewusst NICHT als erledigt:
+    # das markiert Gruppen, die wegen GROUP_TIMEOUT aufgegeben wurden (z.B.
+    # bei serverseitigem Rate-Limiting) – die sollen beim nächsten Lauf
+    # erneut versucht werden, nicht dauerhaft als "kein Treffer" gelten.
+    done_aids = {r[0] for r in conn.execute("SELECT aid FROM results WHERE dist != -3")}
     todo = {f: recs for f, recs in groups.items()
             if not all(r["supplier_aid"] in done_aids for r in recs)}
     skipped = len(groups) - len(todo)
@@ -370,12 +379,12 @@ def run_matching(index: dict, affected: list[dict], out_csv: str,
     submitted_at = {fut: time.time() for fut in futs}
     pending = set(futs.keys())
 
-    def _record_failure(folder, recs, reason):
+    def _record_failure(folder, recs, reason, dist=-1):
         with db_lock:
             for r in recs:
                 conn.execute(
                     "INSERT OR REPLACE INTO results(aid,folder,img,dist) VALUES(?,?,?,?)",
-                    (r["supplier_aid"], folder, "", -1))
+                    (r["supplier_aid"], folder, "", dist))
                 counters["none"] += 1
             conn.commit()
             counters["done"] += 1
@@ -412,13 +421,17 @@ def run_matching(index: dict, affected: list[dict], out_csv: str,
 
         # Gruppen, die seit GROUP_TIMEOUT noch nicht fertig sind (egal ob
         # schon laufend oder noch gar nicht gestartet, weil alle Worker
-        # belegt sind), als "kein Treffer" verbuchen und aufgeben – der
-        # Lauf soll fertig werden statt endlos zu warten.
+        # belegt sind), aufgeben – der Lauf soll fertig werden statt endlos
+        # zu warten. dist=TIMEOUT_DIST statt -1: das ist möglicherweise nur
+        # ein vorübergehendes Problem (z.B. Rate-Limiting bei softcarrier.de,
+        # das sich später wieder legt) – die Gruppe soll beim nächsten Lauf
+        # erneut versucht werden, nicht dauerhaft als "kein Treffer" gelten
+        # (siehe done_aids-Filter oben).
         now = time.time()
         for fut in [f for f in pending if now - submitted_at[f] > GROUP_TIMEOUT]:
             pending.discard(fut)
             folder, recs = futs[fut]
-            _record_failure(folder, recs, f"Timeout nach {GROUP_TIMEOUT}s")
+            _record_failure(folder, recs, f"Timeout nach {GROUP_TIMEOUT}s", dist=TIMEOUT_DIST)
 
         if counters["done"] - last_flushed_at >= 50:
             flush_csv()
