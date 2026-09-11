@@ -28,7 +28,7 @@ import re
 import os
 import shutil
 import logging
-from lib.utils import xml_escape as _xml_escape
+from lib.utils import xml_escape as _xml_escape, safe_replace
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -411,7 +411,7 @@ def merge(udx_src: str, basis_src: str, out_file: str,
 
     # temp → out ersetzen
     p("Ersetze Ausgabedatei …")
-    os.replace(temp_file, out_file)
+    safe_replace(temp_file, out_file, p=p)
 
     # Erste 3 Zeilen von udx_src (bueroring.xml) in Ausgabe übernehmen
     # (XML-Deklaration + BMECAT-Header der ABE-Datei sind maßgeblich)
@@ -683,7 +683,7 @@ def convert_udx_to_features(xml_path: str, progress_cb=None) -> dict:
     # Zurückschreiben
     temp = xml_path + ".tmp"
     Path(temp).write_text(new_content, encoding="utf-8")
-    os.replace(temp, xml_path)
+    safe_replace(temp, xml_path, p=p)
 
     new_len = len(new_content)
     p(f"  {name}: {count} UDX-Blöcke konvertiert  "
@@ -773,7 +773,7 @@ def deduplicate_fnames(xml_path: str, progress_cb=None) -> dict:
     if total_removed > 0:
         temp = xml_path + ".tmp"
         Path(temp).write_text(new_content, encoding="utf-8")
-        os.replace(temp, xml_path)
+        safe_replace(temp, xml_path, p=p)
         p(f"  {name}: {total_removed} doppelte Features entfernt "
           f"in {len(affected_arts)} Artikel(n)", tag="warn")
         # Detail-Zeilen sind pro Aufruf teuer (GUI-Insert + Datei-Append) –

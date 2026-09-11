@@ -1,7 +1,7 @@
 # tasks/nordwest.py
 import os, glob, shutil, datetime, logging
 from lib.ftp_client import make_client
-from lib.utils import run_7zip as _run_7zip
+from lib.utils import run_7zip as _run_7zip, safe_replace
 from config import CONNECTIONS, DIRS, TOOLS
 
 
@@ -37,7 +37,7 @@ def run(progress_cb=None, file_progress_cb=None):
             src = os.path.join(in_bme, xml_in)
             dst = os.path.join(in_bme, xml_out)
             if os.path.exists(src):
-                os.replace(src, dst)  # replace statt rename: funktioniert auch wenn dst existiert
+                safe_replace(src, dst, p=p)  # replace statt rename: funktioniert auch wenn dst existiert
 
     # Kategorie-Check: neue NDW-Kategorien vs. custom_categories.csv
     try:
@@ -79,7 +79,7 @@ def run(progress_cb=None, file_progress_cb=None):
         src   = os.path.join(in_bme, "artikel_t2.csv")
         dst   = os.path.join(in_bme, f"NDW{datum}.csv")
         if os.path.exists(src):
-            os.replace(src, dst)
+            safe_replace(src, dst, p=p)
             if os.path.isdir(ndw_sh):
                 shutil.move(dst, os.path.join(ndw_sh, os.path.basename(dst)))
                 p(f"Nordwest: KIP-CSV -> {ndw_sh}", tag="ok")

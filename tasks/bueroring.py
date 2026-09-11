@@ -3,7 +3,7 @@ import os, glob, json, shutil, logging, subprocess
 from pathlib import Path
 from lib.ftp_client import make_client
 from lib.bestandsdaten import erstelle_bestandsdaten
-from lib.utils import run_7zip as _run_7zip
+from lib.utils import run_7zip as _run_7zip, safe_replace
 from config import CONNECTIONS, DIRS, TOOLS, AVAILABILITY_FILE
 
 log = logging.getLogger(__name__)
@@ -113,9 +113,7 @@ def _unzip_and_rename(zip_path: str, out_dir: str, dst_name: str,
         p(f"  Mehrere neue Dateien: {sorted(new)} – nehme {src_name}", tag="warn")
 
     src = os.path.join(out_dir, src_name)
-    if os.path.exists(dst):
-        os.remove(dst)
-    os.replace(src, dst)
+    safe_replace(src, dst, p=p)  # ersetzt dst auch wenn schon vorhanden, kein os.remove() nötig
     p(f"  {src_name} → {dst_name}", tag="ok")
     return True
 

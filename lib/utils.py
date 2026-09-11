@@ -8,11 +8,41 @@
 import os
 import glob as _glob
 import subprocess
+import time
 import logging
 
 log = logging.getLogger(__name__)
 
 VERSION = "1.1.0"
+
+
+def safe_replace(src: str, dst: str, retries: int = 5, delay: float = 1.0, p=None):
+    """
+    os.replace() mit Retry bei PermissionError/OSError (Windows: WinError 5/32,
+    "Zugriff verweigert"/"Datei wird von einem anderen Prozess verwendet").
+
+    Tritt vor allem direkt nach 7-Zip-Extraktion auf, wenn Windows Defender
+    (oder ein anderer Echtzeit-Virenscanner) die frisch geschriebene Datei
+    noch kurz sperrt – ein simpler os.replace() ohne Retry lässt den ganzen
+    Task dann mit einem PermissionError abbrechen, obwohl die Datei eine
+    Sekunde später anstandslos verschiebbar wäre.
+
+    Bei allen anderen Fehlern (z.B. FileNotFoundError) wird sofort ohne
+    Retry weitergereicht.
+    """
+    for attempt in range(1, retries + 1):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError as e:
+            if attempt == retries:
+                raise
+            if p:
+                p(f"  ⏳ {os.path.basename(dst)}: gesperrt (Versuch {attempt}/{retries}), "
+                  f"warte {delay:.0f}s ...", tag="dim")
+            else:
+                log.debug(f"safe_replace: {dst} gesperrt (Versuch {attempt}/{retries}): {e}")
+            time.sleep(delay)
 
 
 def run_7zip(seven_z: str, zip_path: str, out_dir: str,

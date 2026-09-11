@@ -1,7 +1,7 @@
 # tasks/systeam.py
 import os, logging
 from lib.ftp_client import make_client
-from lib.utils import run_7zip as _run_7zip
+from lib.utils import run_7zip as _run_7zip, safe_replace
 from config import CONNECTIONS, DIRS, TOOLS
 
 log = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ def run(progress_cb=None, file_progress_cb=None):
         _run_7zip(seven_z, zip_path, root, p=p)
         src = os.path.join(root, "A137942.txt")
         if os.path.exists(src):
-            os.replace(src, os.path.join(in_bme, "systeam.xml"))
+            safe_replace(src, os.path.join(in_bme, "systeam.xml"), p=p)
         os.remove(zip_path)
 
     p("Systeam abgeschlossen.", tag="ok")

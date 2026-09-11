@@ -1,7 +1,7 @@
 # tasks/others.py
 import os, glob, datetime, logging
 from lib.ftp_client import make_client
-from lib.utils import run_7zip as _run_7zip
+from lib.utils import run_7zip as _run_7zip, safe_replace
 from config import CONNECTIONS, DIRS, TOOLS, AVAILABILITY_FILE
 
 
@@ -277,6 +277,6 @@ def run_soennecken(progress_cb=None, file_progress_cb=None):
         client.disconnect()
 
     for f in glob.glob(os.path.join(in_bme, "bmecatabe__*.xml")):
-        os.replace(f, os.path.join(in_bme, "soennecken_vk3.xml"))
+        safe_replace(f, os.path.join(in_bme, "soennecken_vk3.xml"), p=p)
 
     p("Soennecken abgeschlossen.", tag="ok")

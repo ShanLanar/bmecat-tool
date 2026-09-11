@@ -2,7 +2,7 @@
 import os, json, logging
 from pathlib import Path
 from lib.ftp_client import make_client
-from lib.utils import run_7zip as _run_7zip, glob_ci
+from lib.utils import run_7zip as _run_7zip, glob_ci, safe_replace
 from config import CONNECTIONS, DIRS, TOOLS
 
 log = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ def _upload_bilder(jpg_dir: str, p, fp):
         bn = os.path.basename(src)
         if not bn.upper().startswith("SOC"):
             dst = os.path.join(jpg_dir, "SOC" + bn)
-            os.replace(src, dst)
+            safe_replace(src, dst, p=p)
             renamed.append(dst)
         else:
             renamed.append(src)
@@ -136,7 +136,7 @@ def run(progress_cb=None, file_progress_cb=None):
 
     lager = os.path.join(in_bme, "lagerbestand.csv")
     if os.path.exists(lager):
-        os.replace(lager, os.path.join(in_bme, "soc_bestand.csv"))
+        safe_replace(lager, os.path.join(in_bme, "soc_bestand.csv"), p=p)
         import config as _cfg
         from lib.bestandsdaten import import_softcarrier_stock
         import_softcarrier_stock(os.path.join(in_bme, "soc_bestand.csv"),
@@ -144,7 +144,7 @@ def run(progress_cb=None, file_progress_cb=None):
 
     herstinfo = os.path.join(in_bme, "HERSTINFO.CSV")
     if os.path.exists(herstinfo):
-        os.replace(herstinfo, os.path.join(in_bme, "softcarrier_HERSTINFO.CSV"))
+        safe_replace(herstinfo, os.path.join(in_bme, "softcarrier_HERSTINFO.CSV"), p=p)
 
     xml_zip = os.path.join(in_bme, "XML.ZIP")
     if os.path.exists(xml_zip):
@@ -153,7 +153,7 @@ def run(progress_cb=None, file_progress_cb=None):
         _run_7zip(seven_z, xml_zip, root, p=p)
         src = os.path.join(root, "soft-carrier.xml")
         if os.path.exists(src):
-            os.replace(src, os.path.join(in_bme, "soft-carrier.xml"))
+            safe_replace(src, os.path.join(in_bme, "soft-carrier.xml"), p=p)
         os.remove(xml_zip)
 
         # Kategorie-Check: neue SOC-Kategorien vs. custom_categories.csv
@@ -178,7 +178,7 @@ def run(progress_cb=None, file_progress_cb=None):
     for name in ("DATA.CSV", "data.csv"):
         src = os.path.join(in_bme, name)
         if os.path.exists(src):
-            os.replace(src, os.path.join(in_bme, "softcarrier_data.csv"))
+            safe_replace(src, os.path.join(in_bme, "softcarrier_data.csv"), p=p)
             break
 
     # PREVIEW.ZIP entpacken → soc_bilder/
