@@ -264,7 +264,17 @@ def find_affected(xml_path: str) -> list[dict]:
 # ── pHash-Matching einer Gruppe ───────────────────────────────────────────────
 
 def _match_group(folder: str, aids: list, entries: list, http_session,
-                 breaker: "_CircuitBreaker" = None, p=None) -> list[dict]:
+                 breaker: "_CircuitBreaker" = None, p=None,
+                 started_at: dict = None) -> list[dict]:
+    if started_at is not None:
+        # Zeitpunkt des TATSÄCHLICHEN Starts (nicht der Einreichung in den
+        # Pool) – GROUP_TIMEOUT in run_matching() misst ab hier. Bei
+        # tausenden Gruppen und wenigen Workern warten die meisten Gruppen
+        # lange in der Warteschlange, bevor ein Worker frei wird; würde man
+        # ab Einreichung messen, liefen praktisch alle noch nie versuchten
+        # Gruppen nach GROUP_TIMEOUT gleichzeitig in den Abbruch.
+        started_at[folder] = time.time()
+
     results = []
 
     thumb_hashes: dict = {}
@@ -449,14 +459,14 @@ def run_matching(index: dict, affected: list[dict], out_csv: str,
     # unten aushebeln. shutdown(wait=False) am Ende gibt den Pool frei, ohne
     # auf hängende Threads zu warten (die bleiben bis Prozessende offen,
     # sind aber harmlos – nur ein paar OS-Threads).
+    started_at = {}   # folder -> Zeitpunkt des tatsächlichen Bearbeitungsstarts
     pool = ThreadPoolExecutor(max_workers=workers)
     futs = {
         pool.submit(_match_group, folder,
                     [r["supplier_aid"] for r in recs],
-                    index[folder], http, breaker, p): (folder, recs)
+                    index[folder], http, breaker, p, started_at): (folder, recs)
         for folder, recs in todo.items()
     }
-    submitted_at = {fut: time.time() for fut in futs}
     pending = set(futs.keys())
 
     def _record_failure(folder, recs, reason, dist=-1):
@@ -499,16 +509,23 @@ def run_matching(index: dict, affected: list[dict], out_csv: str,
                 conn.commit()
                 counters["done"] += 1
 
-        # Gruppen, die seit GROUP_TIMEOUT noch nicht fertig sind (egal ob
-        # schon laufend oder noch gar nicht gestartet, weil alle Worker
-        # belegt sind), aufgeben – der Lauf soll fertig werden statt endlos
-        # zu warten. dist=TIMEOUT_DIST statt -1: das ist möglicherweise nur
-        # ein vorübergehendes Problem (z.B. Rate-Limiting bei softcarrier.de,
+        # Gruppen, die seit GROUP_TIMEOUT noch nicht fertig sind, aufgeben –
+        # der Lauf soll fertig werden statt endlos zu warten. Gemessen wird
+        # ab dem TATSÄCHLICHEN Start (started_at, von _match_group selbst
+        # gesetzt), NICHT ab der Einreichung in den Pool: bei tausenden
+        # Gruppen und wenigen Workern warten die meisten Gruppen lange in
+        # der Warteschlange, bevor überhaupt ein Worker frei wird – das ist
+        # normal und kein Hänger. Noch gar nicht gestartete Gruppen (kein
+        # Eintrag in started_at) werden hier NICHT angerührt.
+        # dist=TIMEOUT_DIST statt -1: das ist möglicherweise nur ein
+        # vorübergehendes Problem (z.B. Rate-Limiting bei softcarrier.de,
         # das sich später wieder legt) – die Gruppe soll beim nächsten Lauf
         # erneut versucht werden, nicht dauerhaft als "kein Treffer" gelten
         # (siehe done_aids-Filter oben).
         now = time.time()
-        for fut in [f for f in pending if now - submitted_at[f] > GROUP_TIMEOUT]:
+        for fut in [f for f in pending
+                   if futs[f][0] in started_at
+                   and now - started_at[futs[f][0]] > GROUP_TIMEOUT]:
             pending.discard(fut)
             folder, recs = futs[fut]
             _record_failure(folder, recs, f"Timeout nach {GROUP_TIMEOUT}s", dist=TIMEOUT_DIST)
