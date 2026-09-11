@@ -131,7 +131,7 @@ def _phash_from_bytes(data: bytes):
 
 def _phash_from_url(url: str, http_session) -> object:
     try:
-        r = http_session.get(url, timeout=15)
+        r = http_session.get(url, timeout=8)
         return _phash_from_bytes(r.content) if r.status_code == 200 else None
     except Exception:
         return None
@@ -202,7 +202,12 @@ def _match_group(folder: str, aids: list, entries: list, http_session) -> list[d
         h = _phash_from_url(THUMB_URL.format(aid=aid), http_session)
         if h is not None:
             thumb_hashes[aid] = h
-        time.sleep(0.03)
+        # Etwas mehr Pause als vorher (war 0.03s) – 4 Worker feuern sonst zu
+        # viele Anfragen in kurzer Zeit gegen softcarrier.de, was dort
+        # Rate-Limiting/Verbindungsabbrüche auslösen kann. Nicht zu hoch
+        # gewählt: bei ~50.000 Artikeln macht sich jede zusätzliche 0,01s
+        # bereits mit mehreren Minuten Gesamtlaufzeit bemerkbar.
+        time.sleep(0.08)
 
     local = []
     for entry in entries:
@@ -252,7 +257,12 @@ def run_matching(index: dict, affected: list[dict], out_csv: str,
 
     http = requests.Session()
     http.mount("https://", HTTPAdapter(
-        max_retries=Retry(total=3, backoff_factor=1,
+        # Nur 1 Retry, kurzer Backoff: ein abgebrochenes Thumbnail bedeutet
+        # nur "kein Treffer" für diesen Artikel, kein Grund für lange Retry-
+        # Ketten – bei serverseitigem Rate-Limiting (RemoteDisconnected)
+        # kostet jeder Fehlversuch sonst mehrere Sekunden, multipliziert mit
+        # zehntausenden Artikeln macht das den Lauf gefühlt unendlich lang.
+        max_retries=Retry(total=1, backoff_factor=0.3,
                           status_forcelist=[429, 500, 502, 503, 504]),
         pool_connections=workers, pool_maxsize=workers))
     http.headers["User-Agent"] = "Mozilla/5.0 (compatible; SC-Matcher/2.0)"
@@ -343,6 +353,11 @@ def run_matching(index: dict, affected: list[dict], out_csv: str,
                 counters["done"] += 1
                 if counters["done"] % 50 == 0:
                     flush_csv()
+                if counters["done"] % 10 == 0:
+                    # Häufigere, aber leichtgewichtige Fortschrittsmeldung
+                    # (nur Log-Zeile, kein CSV-Flush) – bei langsamem/
+                    # gedrosseltem Netzwerkzugriff sonst minutenlang ohne
+                    # jede sichtbare Rückmeldung.
                     p(f"  [{counters['done']:,}/{len(todo):,}]  "
                       f"Treffer: {counters['match']:,}  Leer: {counters['none']:,}")
 
