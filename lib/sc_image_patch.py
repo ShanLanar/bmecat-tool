@@ -19,6 +19,7 @@
 
 import csv
 import logging
+import threading
 import time
 import zipfile
 from collections import defaultdict
@@ -39,6 +40,55 @@ PATCH_FILENAME = "sc_image_patch.csv"
 # eigener Wert statt -1 ("kein Treffer"), damit ein Resume solche Gruppen
 # erneut versucht statt sie dauerhaft als erledigt zu betrachten.
 TIMEOUT_DIST = -3
+
+
+class _CircuitBreaker:
+    """
+    Thread-sicherer Schalter gegen serverseitiges Rate-Limiting/Blocking.
+
+    Live-Erfahrung: softcarrier.de blockt/drosselt nach einiger Zeit so
+    stark, dass praktisch jede Anfrage fehlschlägt – ohne Gegenmaßnahme
+    würde jede einzelne Gruppe trotzdem einzeln bis zu GROUP_TIMEOUT (180s)
+    lang erfolglos versuchen, was einen kompletten Lauf auf nur wenige
+    hundert Artikel begrenzt und ~20 manuelle Neustarts nötig gemacht hätte.
+
+    Nach `fail_threshold` Fehlschlägen IN FOLGE (über alle Worker hinweg)
+    geht der Schalter für `cooldown`s "auf" – währenddessen werden neue
+    Thumbnail-Requests gar nicht erst versucht (sofortiger Fehlschlag statt
+    Timeout), der Lauf pausiert praktisch von selbst. Nach Ablauf der
+    Cooldown-Zeit macht der Schalter automatisch wieder zu und der Lauf
+    versucht es von selbst erneut – kein manueller Neustart nötig.
+    """
+
+    def __init__(self, fail_threshold: int = 8, cooldown: float = 300.0):
+        self._fail_threshold = fail_threshold
+        self._cooldown       = cooldown
+        self._lock            = threading.Lock()
+        self._consecutive_fails = 0
+        self._cooldown_until    = 0.0
+        self._cooldowns_hit     = 0
+
+    def blocked(self) -> bool:
+        with self._lock:
+            return time.time() < self._cooldown_until
+
+    def record_success(self):
+        with self._lock:
+            self._consecutive_fails = 0
+
+    def record_failure(self, p=None):
+        with self._lock:
+            self._consecutive_fails += 1
+            if (self._consecutive_fails >= self._fail_threshold
+                    and time.time() >= self._cooldown_until):
+                self._cooldown_until = time.time() + self._cooldown
+                self._consecutive_fails = 0
+                self._cooldowns_hit += 1
+                if p:
+                    p(f"  ⏸ {self._fail_threshold} Anfragen in Folge fehlgeschlagen – "
+                      f"pausiere {self._cooldown / 60:.0f} Min. (vermutlich "
+                      f"Rate-Limiting bei softcarrier.de), danach automatischer "
+                      f"Weiterlauf ...", tag="warn")
 
 
 # ── Abhängigkeits-Check ───────────────────────────────────────────────────────
@@ -134,11 +184,25 @@ def _phash_from_bytes(data: bytes):
         return None
 
 
-def _phash_from_url(url: str, http_session) -> object:
+def _phash_from_url(url: str, http_session, breaker: "_CircuitBreaker" = None,
+                    p=None) -> object:
+    if breaker is not None and breaker.blocked():
+        # Läuft gerade eine Cooldown-Pause (siehe _CircuitBreaker) – gar
+        # nicht erst versuchen, spart Zeit und schont den Server zusätzlich.
+        return None
     try:
         r = http_session.get(url, timeout=8)
-        return _phash_from_bytes(r.content) if r.status_code == 200 else None
+        if r.status_code == 200:
+            h = _phash_from_bytes(r.content)
+            if breaker is not None:
+                breaker.record_success()
+            return h
+        if breaker is not None:
+            breaker.record_failure(p)
+        return None
     except Exception:
+        if breaker is not None:
+            breaker.record_failure(p)
         return None
 
 
@@ -199,12 +263,22 @@ def find_affected(xml_path: str) -> list[dict]:
 
 # ── pHash-Matching einer Gruppe ───────────────────────────────────────────────
 
-def _match_group(folder: str, aids: list, entries: list, http_session) -> list[dict]:
+def _match_group(folder: str, aids: list, entries: list, http_session,
+                 breaker: "_CircuitBreaker" = None, p=None) -> list[dict]:
     results = []
 
     thumb_hashes: dict = {}
+    breaker_skipped: set = set()
     for aid in aids:
-        h = _phash_from_url(THUMB_URL.format(aid=aid), http_session)
+        if breaker is not None and breaker.blocked():
+            # Cooldown läuft gerade – nicht mal versuchen und auch nicht
+            # extra pausieren, das würde die Gruppe nur unnötig in die Länge
+            # ziehen ohne jeden Nutzen. dist muss später TIMEOUT_DIST sein
+            # (retry-fähig), nicht -1 (dauerhaft "kein Treffer").
+            breaker_skipped.add(aid)
+            continue
+        h = _phash_from_url(THUMB_URL.format(aid=aid), http_session,
+                            breaker=breaker, p=p)
         if h is not None:
             thumb_hashes[aid] = h
             # Etwas mehr Pause als vorher (war 0.03s) – 4 Worker feuern sonst
@@ -229,6 +303,10 @@ def _match_group(folder: str, aids: list, entries: list, http_session) -> list[d
                 local.append((entry, h))
 
     for aid in aids:
+        if aid in breaker_skipped:
+            results.append({"aid": aid, "folder": folder, "entry": None,
+                            "dist": TIMEOUT_DIST})
+            continue
         th = thumb_hashes.get(aid)
         if th is None or not local:
             results.append({"aid": aid, "folder": folder, "entry": None, "dist": -1})
@@ -282,6 +360,8 @@ def run_matching(index: dict, affected: list[dict], out_csv: str,
                           status_forcelist=[429, 500, 502, 503, 504]),
         pool_connections=workers, pool_maxsize=workers))
     http.headers["User-Agent"] = "Mozilla/5.0 (compatible; SC-Matcher/2.0)"
+
+    breaker = _CircuitBreaker(fail_threshold=8, cooldown=300.0)
 
     # Artikel nach Ordner gruppieren
     groups: dict = defaultdict(list)
@@ -373,7 +453,7 @@ def run_matching(index: dict, affected: list[dict], out_csv: str,
     futs = {
         pool.submit(_match_group, folder,
                     [r["supplier_aid"] for r in recs],
-                    index[folder], http): (folder, recs)
+                    index[folder], http, breaker, p): (folder, recs)
         for folder, recs in todo.items()
     }
     submitted_at = {fut: time.time() for fut in futs}
@@ -447,6 +527,10 @@ def run_matching(index: dict, affected: list[dict], out_csv: str,
     pool.shutdown(wait=False)
     flush_csv()
     conn.close()
+    if breaker._cooldowns_hit:
+        p(f"  ⏸ {breaker._cooldowns_hit}× wegen Rate-Limiting pausiert – "
+          f"bitte diesen Task bei Bedarf einfach erneut starten, "
+          f"bereits erledigte Artikel werden übersprungen.", tag="warn")
     return counters
 
 
