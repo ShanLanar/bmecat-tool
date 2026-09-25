@@ -345,7 +345,7 @@ def _parse_one_price(price_elem, price_details) -> dict:
     }
 
 
-def _parse_article(art_elem, prefix: str) -> dict:
+def _parse_article(art_elem, prefix: str, strip_mime_source_prefix: bool = False) -> dict:
     """Parst ein <ARTICLE>-Element in ein Artikel-Dict."""
 
     # Artikel-ID: BMEcat 1.2 = SUPPLIER_AID, BMEcat 2005 = SUPPLIER_PID
@@ -437,9 +437,21 @@ def _parse_article(art_elem, prefix: str) -> dict:
     # MIME_INFO
     mimes = []
     for mime in _findall(art_elem, './MIME_INFO/MIME'):
+        mime_source = _clean_source(_txt(mime, 'MIME_SOURCE'))
+        if (strip_mime_source_prefix and prefix
+                and mime_source.upper().startswith(prefix.upper())):
+            # Softcarrier: tasks/softcarrier_merge.py hängt beim Schreiben von
+            # soft-carrier_merge.xml bereits das Lieferanten-Präfix an
+            # MIME_SOURCE an (nötig für den direkten Brickfox-Upload dieser
+            # Datei, ohne DB-Umweg). Der DB-Import liest dieselbe Datei –
+            # ohne dieses Abstreifen würde der Export (lib/db_exporter.py:
+            # _add_prefix(), das immer unbedingt präfixiert, wie bei allen
+            # anderen Lieferanten) ein zweites Präfix aufsetzen
+            # ("SOCSOC…jpg" statt "SOC…jpg").
+            mime_source = mime_source[len(prefix):]
         mimes.append({
             'mime_type':    _txt(mime, 'MIME_TYPE'),
-            'mime_source':  _clean_source(_txt(mime, 'MIME_SOURCE')),
+            'mime_source':  mime_source,
             'mime_purpose': _txt(mime, 'MIME_PURPOSE'),
             'mime_desc':    _txt(mime, 'MIME_DESC'),
             'mime_alt':     _txt(mime, 'MIME_ALT'),
@@ -541,7 +553,8 @@ def extract_supplier_name(xml_path: str, max_bytes: int = 2 * 1024 * 1024) -> st
 
 def import_xml(db_path: str, xml_path: str, base_dir: str,
                progress_cb: Callable = None,
-               supplier_name: str = None, prefix: str = None) -> dict:
+               supplier_name: str = None, prefix: str = None,
+               strip_mime_source_prefix: bool = False) -> dict:
     """
     Importiert eine verarbeitete BMEcat-XML-Datei in die Datenbank.
     Gibt Import-Statistik zurück.
@@ -549,6 +562,11 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
     supplier_name/prefix: wenn gesetzt, überschreiben sie den
     Konfig-Lookup über supplier_config.yaml (für manuelle Importe ohne
     Eintrag in der Config, z.B. Ad-hoc-BMEcat-1.2-Dateien).
+
+    strip_mime_source_prefix: True, wenn die Quelldatei MIME_SOURCE bereits
+    mit dem Lieferantenpräfix versehen hat (aktuell nur Softcarrier – siehe
+    _parse_article()). Ohne dieses Abstreifen würde der spätere Export ein
+    zweites Präfix aufsetzen.
     """
     p = progress_cb or (lambda m, **kw: None)
     xml_name = os.path.basename(xml_path)
@@ -653,7 +671,7 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
         if _tag(elem) != 'ARTICLE':
             continue
         try:
-            art = _parse_article(elem, prefix)
+            art = _parse_article(elem, prefix, strip_mime_source_prefix=strip_mime_source_prefix)
             pid = art['supplier_pid']
             if not pid:
                 skipped_no_aid += 1

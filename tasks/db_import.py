@@ -32,6 +32,14 @@ def run_for_supplier(supplier_key: str,
         p(f"DB-Import: kein Mapping für Lieferant '{supplier_key}'", tag='warn')
         return
 
+    # Softcarrier: tasks/softcarrier_merge.py hängt beim Schreiben von
+    # soft-carrier_merge.xml bereits das Lieferantenpräfix an MIME_SOURCE an
+    # (nötig für den direkten Brickfox-Upload derselben Datei). Muss beim
+    # Import wieder abgestreift werden, sonst hängt der spätere Export ein
+    # zweites Präfix an ("SOCSOC…jpg"). Bei allen anderen Lieferanten kommt
+    # MIME_SOURCE unpräfixiert direkt aus dem Lieferanten-XML.
+    strip_mime_source_prefix = (supplier_key == 'softcarrier')
+
     total_stats = {'new': 0, 'updated': 0, 'unchanged': 0, 'errors': 0}
     for xml_name in xml_files:
         xml_path = os.path.join(in_bme, xml_name)
@@ -43,6 +51,7 @@ def run_for_supplier(supplier_key: str,
             xml_path=xml_path,
             base_dir=_cfg.BASE_DIR,
             progress_cb=p,
+            strip_mime_source_prefix=strip_mime_source_prefix,
         )
         for k in total_stats:
             total_stats[k] += stats.get(k, 0)
