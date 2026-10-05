@@ -172,6 +172,8 @@ def _patch_and_export(excel_path: str, csv_in_path: str,
         # Marktkauf – Untermarktplatz von Netto DE, teilt sich dessen Preisspalte:
         # sobald ein netto_de-Preis existiert, auch auf 16 anbieten.
         "p_attributes[marketplace_16][de]": "v_price[ne_de]",
+        # Neues Portal (10/2026), nutzt denselben Preis wie Conrad.
+        "p_attributes[marketplace_19][de]": "v_price[cr_de]",
     }
     for flag, price_col in flag_map.items():
         if flag in master.columns and price_col in master.columns:
