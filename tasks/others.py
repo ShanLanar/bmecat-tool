@@ -1,5 +1,5 @@
 # tasks/others.py
-import os, glob, datetime, logging
+import os, glob, logging
 from lib.ftp_client import make_client
 from lib.utils import run_7zip as _run_7zip, safe_replace
 from config import CONNECTIONS, DIRS, TOOLS, AVAILABILITY_FILE
@@ -144,52 +144,82 @@ def run_bestandsdaten_only(progress_cb=None):
 
 # ── Bilder-Upload ─────────────────────────────────────────────────────────────
 #
-# Delta-Upload: nur Dateien hochladen, die seit dem letzten erfolgreichen
-# Lauf dieses Tasks neu hinzugekommen/geändert wurden (Zeitstempel in
-# logs/bilder_upload_last_run.json) – analog zum Softcarrier-Bilder-Delta
-# (tasks/softcarrier.py:_upload_bilder). Erster Lauf ohne Marker lädt wie
-# bisher alles hoch.
+# Delta-Upload über einen Snapshot (Dateiname → Größe) der zuletzt
+# erfolgreich hochgeladenen Dateien in logs/bilder_upload_snapshot.json –
+# gleiches Prinzip wie der Dokumenten-Snapshot in tasks/bueroring.py und der
+# Softcarrier-Bilder-Snapshot in tasks/softcarrier.py.
+#
+# Bewusst KEIN Zeitstempel-Vergleich (os.path.getmtime): 7-Zip stellt beim
+# Entpacken das Änderungsdatum aus dem Archiv wieder her, d.h. ein von
+# Büroring neu geliefertes Bild trägt sein Original-Fotodatum, nicht das
+# Lieferdatum. Ein "neuer als letzter Lauf"-Filter hat solche Bilder nie
+# hochgeladen (und ein 60-Tage-Löschfilter sie sogar vorher entfernt).
+# Erster Lauf ohne Snapshot lädt alles hoch.
 
-_LAST_RUN_FILE = os.path.join(DIRS.get("logs", "."), "bilder_upload_last_run.json")
+_SNAPSHOT_FILE = os.path.join(DIRS.get("logs", "."), "bilder_upload_snapshot.json")
 
 
-def _load_last_run() -> float:
+def _load_snapshot() -> dict:
     try:
         import json
-        with open(_LAST_RUN_FILE, "r", encoding="utf-8") as f:
-            return json.load(f).get("last_run_ts", 0.0)
+        with open(_SNAPSHOT_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError, ValueError):
-        return 0.0
+        return {}
 
 
-def _save_last_run(ts: float):
+def _save_snapshot(snapshot: dict):
     try:
         import json
-        os.makedirs(os.path.dirname(_LAST_RUN_FILE), exist_ok=True)
-        with open(_LAST_RUN_FILE, "w", encoding="utf-8") as f:
-            json.dump({"last_run_ts": ts}, f)
+        os.makedirs(os.path.dirname(_SNAPSHOT_FILE), exist_ok=True)
+        with open(_SNAPSHOT_FILE, "w", encoding="utf-8") as f:
+            json.dump(snapshot, f, ensure_ascii=False)
     except Exception as e:
         logging.getLogger(__name__).warning(
-            "Bilder-Upload-Zeitstempel konnte nicht gespeichert werden: %s", e)
+            "Bilder-Upload-Snapshot konnte nicht gespeichert werden: %s", e)
 
 
-def _recent_files(pattern: str, since_ts: float) -> list:
-    """Glob-Treffer, gefiltert auf Dateien neuer/geändert seit since_ts."""
-    return [f for f in glob.glob(pattern) if os.path.getmtime(f) >= since_ts]
+# (Label, Glob-Pattern, Schlüssel der Zielpfad-Einstellung in CONNECTIONS)
+def _bilder_quellen(in_dir: str, vertrieb: str) -> list:
+    return [
+        ("in/*.jpg",                  os.path.join(in_dir, "*.jpg"),                 "remote_path_thumbs"),
+        ("in_vertrieb/*.jpg",         os.path.join(vertrieb, "*.jpg"),               "remote_path_thumbs"),
+        ("in_vertrieb/category/*.jpg", os.path.join(vertrieb, "category", "*.jpg"),  "remote_path_category"),
+        ("in_vertrieb/category/*.png", os.path.join(vertrieb, "category", "*.png"),  "remote_path_category"),
+    ]
 
 
-def _upload_recent(client, pattern: str, remote_dir: str, since_ts: float,
-                   label: str, p, fp, delete_after: bool = False):
-    files = _recent_files(pattern, since_ts)
-    skipped = len(glob.glob(pattern)) - len(files)
-    if skipped:
-        p(f"  {label}: {skipped} unveränderte Datei(en) seit letztem Lauf "
-          f"übersprungen.", tag="dim")
-    if not files:
-        return
-    for path in files:
-        client.upload(path, remote_dir, delete_after=delete_after,
-                      progress_cb=p, file_progress_cb=fp)
+def _bilder_delta(sources: list, previous: dict) -> tuple[dict, dict]:
+    """
+    Gibt (changed, current, snapshot) zurück. changed/current:
+    {label: {dateipfad: größe}}, snapshot: {"verzeichnis/dateiname": größe}.
+    changed enthält nur Dateien, die im letzten Snapshot fehlen oder deren
+    Größe sich geändert hat. Der Verzeichnis-Anteil im Schlüssel verhindert
+    Kollisionen gleichnamiger Dateien in in/ und in_vertrieb/.
+    """
+    changed, current, snapshot = {}, {}, {}
+    for label, pattern, _ in sources:
+        changed[label], current[label] = {}, {}
+        for path in sorted(glob.glob(pattern)):
+            key  = f"{os.path.dirname(label)}/{os.path.basename(path)}"
+            size = os.path.getsize(path)
+            current[label][path] = size
+            snapshot[key] = size
+            if previous.get(key) != size:
+                changed[label][path] = size
+    return changed, current, snapshot
+
+
+def _upload_delta(client, remote_cfg: dict, sources: list, changed: dict,
+                  p, fp, delete_after: bool = False):
+    for label, pattern, remote_key in sources:
+        files = changed.get(label, {})
+        skipped = len(glob.glob(pattern)) - len(files)
+        if skipped:
+            p(f"  {label}: {skipped} bereits hochgeladene Datei(en) übersprungen.", tag="dim")
+        for path in files:
+            client.upload(path, remote_cfg[remote_key], delete_after=delete_after,
+                          progress_cb=p, file_progress_cb=fp)
 
 
 def run_bilder(progress_cb=None, file_progress_cb=None):
@@ -204,56 +234,58 @@ def run_bilder(progress_cb=None, file_progress_cb=None):
         p("Bilder: Entpacke Bilder_archive.zip ...")
         _run_7zip(seven_z, zip_path, in_dir, "*.jpg", p)
 
-    cutoff  = datetime.datetime.now().timestamp() - 60 * 86400
-    deleted = sum(
-        1 for jpg in glob.glob(os.path.join(in_dir, "*.jpg"))
-        if os.path.getmtime(jpg) < cutoff and not os.remove(jpg)
-    )
-    if deleted:
-        p(f"Bilder: {deleted} alte JPGs geloescht (>60 Tage).")
-
-    since_ts = _load_last_run()
-    if since_ts:
-        p(f"Bilder-Upload: nur Dateien seit "
-          f"{datetime.datetime.fromtimestamp(since_ts):%d.%m.%Y %H:%M} (letzter Lauf).")
+    sources  = _bilder_quellen(in_dir, vertrieb)
+    previous = _load_snapshot()
+    changed, current, snapshot = _bilder_delta(sources, previous)
+    n_total   = sum(len(v) for v in current.values())
+    n_changed = sum(len(v) for v in changed.values())
+    if previous:
+        p(f"Bilder-Upload: {n_changed} von {n_total} Datei(en) neu/geändert "
+          f"seit letztem erfolgreichen Upload (Vergleich Name+Größe, "
+          f"unabhängig vom Dateidatum).")
     else:
-        p("Bilder-Upload: kein vorheriger Lauf bekannt – lade alles hoch.")
-    run_started_ts = datetime.datetime.now().timestamp()
+        p(f"Bilder-Upload: kein Snapshot vorhanden – lade alle {n_total} Datei(en) hoch.")
 
-    allago = CONNECTIONS["allago_images"]
-    p("Bilder: Upload -> Allago ...")
-    cl = make_client(allago)
-    cl.connect()
-    try:
-        _upload_recent(cl, os.path.join(in_dir, "*.jpg"), allago["remote_path_thumbs"],
-                       since_ts, "in/*.jpg", p, fp)
-        _upload_recent(cl, os.path.join(vertrieb, "*.jpg"), allago["remote_path_thumbs"],
-                       since_ts, "in_vertrieb/*.jpg", p, fp)
-        _upload_recent(cl, os.path.join(vertrieb, "category", "*.jpg"), allago["remote_path_category"],
-                       since_ts, "in_vertrieb/category/*.jpg", p, fp)
-        _upload_recent(cl, os.path.join(vertrieb, "category", "*.png"), allago["remote_path_category"],
-                       since_ts, "in_vertrieb/category/*.png", p, fp)
-    finally:
-        cl.disconnect()
+    if n_changed:
+        allago = CONNECTIONS["allago_images"]
+        p("Bilder: Upload -> Allago ...")
+        cl = make_client(allago)
+        cl.connect()
+        try:
+            _upload_delta(cl, allago, sources, changed, p, fp)
+        finally:
+            cl.disconnect()
 
-    oxl = CONNECTIONS["officexl_images"]
-    p("Bilder: Upload -> OfficeXL ...")
-    cl2 = make_client(oxl)
-    cl2.connect()
-    try:
-        _upload_recent(cl2, os.path.join(in_dir, "*.jpg"), oxl["remote_path_thumbs"],
-                       since_ts, "in/*.jpg", p, fp, delete_after=True)
-        _upload_recent(cl2, os.path.join(vertrieb, "*.jpg"), oxl["remote_path_thumbs"],
-                       since_ts, "in_vertrieb/*.jpg", p, fp, delete_after=True)
-        _upload_recent(cl2, os.path.join(vertrieb, "category", "*.jpg"), oxl["remote_path_category"],
-                       since_ts, "in_vertrieb/category/*.jpg", p, fp, delete_after=True)
-        _upload_recent(cl2, os.path.join(vertrieb, "category", "*.png"), oxl["remote_path_category"],
-                       since_ts, "in_vertrieb/category/*.png", p, fp, delete_after=True)
-    finally:
-        cl2.disconnect()
+        oxl = CONNECTIONS["officexl_images"]
+        p("Bilder: Upload -> OfficeXL ...")
+        cl2 = make_client(oxl)
+        cl2.connect()
+        try:
+            _upload_delta(cl2, oxl, sources, changed, p, fp, delete_after=True)
+        finally:
+            cl2.disconnect()
+    else:
+        p("Bilder-Upload: nichts Neues – Upload übersprungen.", tag="dim")
 
-    # Zeitstempel erst NACH erfolgreichem Upload auf beiden Servern speichern
-    _save_last_run(run_started_ts)
+    # Snapshot erst NACH erfolgreichem Upload auf beiden Servern speichern
+    _save_snapshot(snapshot)
+
+    # Lokal aufräumen: Dateien, die unverändert bereits auf beiden Shops liegen
+    # (z.B. erneut aus Bilder_archive.zip entpackt) – entspricht dem, was
+    # delete_after nach dem OfficeXL-Upload ohnehin tut. Ersetzt den alten
+    # 60-Tage-Filter nach Dateidatum, der neu gelieferte Bilder mit altem
+    # Original-Datum vor dem Upload gelöscht hat.
+    deleted = 0
+    for label, files in current.items():
+        for path in files:
+            if path not in changed.get(label, {}) and os.path.exists(path):
+                try:
+                    os.remove(path)
+                    deleted += 1
+                except OSError:
+                    pass
+    if deleted:
+        p(f"Bilder: {deleted} bereits hochgeladene Datei(en) lokal entfernt.", tag="dim")
     p("Bilder-Upload abgeschlossen.", tag="ok")
 
 
