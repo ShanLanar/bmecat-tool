@@ -134,6 +134,11 @@ echo  - chardet (Encoding-Erkennung)...
 !PYTHON! -m pip install "chardet>=5.0.0" --quiet
 if errorlevel 1 ( echo    Warnung: chardet nicht installiert (optional) ) else ( echo    OK )
 
+:: PyYAML – supplier_config.yaml (Lieferanten-Zuordnung beim DB-Import)
+echo  - PyYAML (Lieferanten-Konfiguration)...
+!PYTHON! -m pip install "PyYAML>=6.0" --quiet
+if errorlevel 1 ( echo    FEHLER! & set DEPS_OK=0 ) else ( echo    OK )
+
 :: pywin32 – Windows-Integration
 echo  - pywin32 (Windows-Scheduler)...
 !PYTHON! -m pip install "pywin32>=306" --quiet
@@ -173,7 +178,7 @@ echo.
 :: ── 6. Installation prüfen ────────────────────────────────────
 echo [6/6] Pruefe Installation...
 
-!PYTHON! -c "import paramiko, openpyxl, pandas; print('  Alle Pflicht-Pakete geladen.')"
+!PYTHON! -c "import paramiko, openpyxl, pandas, yaml; print('  Alle Pflicht-Pakete geladen.')"
 if errorlevel 1 (
     echo  FEHLER bei der Pruefung!
     pause

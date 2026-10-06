@@ -85,9 +85,18 @@ def _load_supplier_map(base_dir: str) -> dict:
     """
     try:
         import yaml
-        cfg_path = os.path.join(base_dir, 'supplier_config.yaml')
+    except ImportError:
+        # Bewusst kein stilles Weiterlaufen: ohne Mapping würde import_xml()
+        # jede XML unter ihrem Dateinamen als eigenen Pseudo-Lieferanten
+        # anlegen (passiert auf einem neuen Rechner ohne PyYAML).
+        raise RuntimeError(
+            "Python-Paket 'PyYAML' fehlt – supplier_config.yaml kann nicht "
+            "gelesen werden. Bitte install.bat ausführen bzw. "
+            "'python -m pip install pyyaml'.")
+    cfg_path = os.path.join(base_dir, 'supplier_config.yaml')
+    try:
         with open(cfg_path, encoding='utf-8') as f:
-            cfg = yaml.safe_load(f)
+            cfg = yaml.safe_load(f) or {}
     except Exception as e:
         log.warning(f"supplier_config.yaml nicht lesbar: {e}")
         return {}
@@ -572,9 +581,25 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
     xml_name = os.path.basename(xml_path)
 
     # Supplier-Konfiguration
-    sup_map   = _load_supplier_map(base_dir)
+    try:
+        sup_map = _load_supplier_map(base_dir)
+    except RuntimeError:
+        # PyYAML fehlt: nur tödlich, wenn das Mapping gebraucht wird – ein
+        # manueller Import mit explizitem Lieferantennamen darf weiterlaufen.
+        if not supplier_name:
+            raise
+        sup_map = {}
     sup_cfg   = sup_map.get(xml_name, {})
-    sup_name  = supplier_name or sup_cfg.get('supplier_name', xml_name.replace('.xml', ''))
+    if not supplier_name and not sup_cfg:
+        # Kein expliziter Name (manueller Import) und kein Eintrag in
+        # supplier_config.yaml: abbrechen statt – wie früher – den Dateinamen
+        # als Lieferantennamen zu nehmen. Das hat Pseudo-Lieferanten wie
+        # "bueroring_merged" mit zehntausenden Dubletten in der DB erzeugt
+        # (Aufräumen: tools/fix_pseudo_suppliers.py).
+        raise RuntimeError(
+            f"Kein Eintrag für '{xml_name}' in supplier_config.yaml "
+            f"({base_dir}) – DB-Import abgebrochen.")
+    sup_name  = supplier_name or sup_cfg['supplier_name']
     sup_altid = sup_cfg.get('supplier_alt_aid', '')
     prefix    = prefix if prefix is not None else sup_cfg.get('prefix', '')
 

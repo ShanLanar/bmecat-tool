@@ -204,7 +204,7 @@ def detect_encoding(path: str) -> str:
 def check_dependencies() -> list:
     """Prüft ob alle benötigten Python-Pakete installiert sind (ohne sie zu laden)."""
     import importlib.util
-    return [pkg for pkg in ("paramiko", "openpyxl")
+    return [pkg for pkg in ("paramiko", "openpyxl", "yaml")
             if importlib.util.find_spec(pkg) is None]
 
 
