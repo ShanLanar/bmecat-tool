@@ -54,24 +54,38 @@ def run_bestandsdaten_only(progress_cb=None):
     in_bme = config.DIRS["in_bme"]
     csv_in = os.path.join(in_bme, "br-bestand.csv")
 
-    if not os.path.exists(csv_in):
-        p("br-bestand.csv nicht gefunden – lade von Büroring nach ...")
-        from lib.ftp_client import make_client
-        from config import CONNECTIONS, TOOLS
-        seven_z = TOOLS["7zip"]
-        client  = make_client(CONNECTIONS["bueroring"])
+    # br-bestand.zip IMMER frisch laden – nicht nur, wenn br-bestand.csv fehlt.
+    # Früher wurde eine einmal vorhandene br-bestand.csv auf Dauer
+    # wiederverwendet: gelöscht wird sie nur vom Task "Aufräumen"
+    # (Vorbereitung), der im Tageslauf nicht mitläuft – die Bestände waren
+    # dadurch tagelang veraltet. Schlägt der Download fehl, läuft der Lauf
+    # mit der vorhandenen (alten) CSV weiter, aber mit deutlicher Warnung.
+    from lib.ftp_client import make_client
+    from lib.utils import run_7zip
+    from config import CONNECTIONS, TOOLS
+    zip_path = os.path.join(in_bme, "br-bestand.zip")
+    try:
+        p("Lade br-bestand.zip von Büroring ...")
+        client = make_client(CONNECTIONS["bueroring"])
         client.connect()
         try:
             client.download("downloads/bueroforum/br-bestand.zip",
                             in_bme, progress_cb=p)
         finally:
             client.disconnect()
-        zip_path = os.path.join(in_bme, "br-bestand.zip")
-        if os.path.exists(zip_path):
-            import subprocess
-            subprocess.run([seven_z, "e", zip_path, f"-o{in_bme}", "-y"],
-                           capture_output=True, timeout=120)
-            os.remove(zip_path)
+        if not os.path.exists(zip_path):
+            raise FileNotFoundError("br-bestand.zip nicht heruntergeladen")
+        if not run_7zip(TOOLS["7zip"], zip_path, in_bme, "*.csv", p):
+            raise RuntimeError("br-bestand.zip konnte nicht entpackt werden")
+        os.remove(zip_path)
+        p("br-bestand.csv aktualisiert.", tag="ok")
+    except Exception as e:
+        if os.path.exists(csv_in):
+            alter = datetime.datetime.fromtimestamp(os.path.getmtime(csv_in))
+            p(f"⚠ br-bestand.zip konnte nicht geladen werden ({e}) – verwende "
+              f"vorhandene br-bestand.csv vom {alter:%d.%m.%Y %H:%M}!", tag="warn")
+        else:
+            raise
 
     out = os.path.join(in_bme, config.AVAILABILITY_FILE)
     erstelle_bestandsdaten(in_bme, out, progress_cb=p)

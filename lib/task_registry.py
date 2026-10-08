@@ -40,14 +40,6 @@ TASKS = [
     },
     # ── Täglich ───────────────────────────────────────────────────────────────
     {
-        "id":      "bueroring_bestand",
-        "name":    "Büroring – Bestand+Preis",
-        "desc":    "Excel patchen + Products/CsvExchange erzeugen + Brickfox-Upload – eigenständig, ohne BMEcat-Download/-Merge/-Upload",
-        "fn":      "tasks.bueroring_bestand:run",
-        "default": False,
-        "group":   "Täglich",
-    },
-    {
         "id":      "article_rights",
         "name":    "Artikelrechte-Export (Allago + OfficeXL)",
         "desc":    "SKU-Listen je Katalog (AS/WS/WZ/BRG/GREEN/FR/IT) für Allago + OfficeXL erzeugen (Ablösung altes SQL/Velocity)",
@@ -57,9 +49,17 @@ TASKS = [
     },
     {
         "id":      "bestandsdaten",
-        "name":    "Bestandsdaten (nur CSV)",
-        "desc":    "Availability-CSV aus br-bestand.csv erzeugen (kein FTP)",
+        "name":    "Bestandsdaten (Büroring-Bestand → Availability-CSV)",
+        "desc":    "br-bestand.zip frisch von Büroring laden, Availability-CSV erzeugen, ATP-Merge, Mindest-Abgleich, Upload zu Mercateo-Unite – muss VOR 'Büroring – Bestand+Preis' laufen",
         "fn":      "tasks.others:run_bestandsdaten_only",
+        "default": False,
+        "group":   "Täglich",
+    },
+    {
+        "id":      "bueroring_bestand",
+        "name":    "Büroring – Bestand+Preis",
+        "desc":    "Excel patchen + Products/CsvExchange erzeugen + Brickfox-Upload – eigenständig, ohne BMEcat-Download/-Merge/-Upload",
+        "fn":      "tasks.bueroring_bestand:run",
         "default": False,
         "group":   "Täglich",
     },
@@ -347,6 +347,11 @@ TASK_ORDER_INDEX = {t["id"]: i for i, t in enumerate(TASKS)}
 #
 # (trigger_id, empfohlene_begleitung_id, Hinweistext)
 TASK_HINTS = [
+    (
+        "bueroring_bestand", "bestandsdaten",
+        "nutzt die Availability-CSV vom letzten Lauf – aktuelle Büroring-"
+        "Bestände kommen nur über",
+    ),
     (
         "bueroring_bilder", "bilder_upload",
         "lädt/entpackt nur – der eigentliche Bilder-Upload zu Allago + "
