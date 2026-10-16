@@ -1,6 +1,6 @@
 """Crawlt die NK_-Kategorieseiten von www.officexl.de parallel und gibt den Baum aus.
 
-Aufruf:  python tools/officexl_tree.py [ausgabe.txt]
+Aufruf:  python tools/officexl_tree.py [baum.txt]   (schreibt zusaetzlich baum.csv mit Elternseite/Pfad)
 Regeln:  NK_-Links werden geladen und rekursiv verfolgt; Links mit "CategoryPath"
          sind Blaetter (werden gelistet, nicht geladen). Erste Entdeckung (BFS) gewinnt,
          so landen Navigationslinks, die auf jeder Seite stehen, nicht als Kinder.
@@ -98,6 +98,26 @@ def render(children, names):
     return "\n".join(lines)
 
 
+def write_csv(path, children, names):
+    """Eine Zeile je Seite mit Elternseite und Pfad (Breadcrumb) -> filterbar in Excel."""
+    import csv
+    rows = []
+
+    def walk(u, trail):
+        t = trail + [names.get(u) or u[len(BASE):]]
+        rows.append([len(t) - 1, " > ".join(t), names.get(u, ""), u, trail and t[-2] or "",
+                     "Blatt" if "CategoryPath" in u else "Kategorie"])
+        for k in children.get(u, []):
+            walk(k, t)
+
+    for r in ROOTS:
+        walk(BASE + r, [])
+    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f, delimiter=";")
+        w.writerow(["Ebene", "Pfad", "Name", "URL", "Elternseite", "Typ"])
+        w.writerows(rows)
+
+
 def _selftest():
     html = ('<a title="x" href="../../NK_Papier"><img/> <span>Papier</span></a>'
             '<a href="../../search?filterCategoryPathROOT=Tinte+%26+Toner&amp;keyword=*">T</a>'
@@ -110,7 +130,9 @@ def _selftest():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     _selftest()
-    tree = render(*crawl())
+    data = crawl()
+    tree = render(*data)
     if len(sys.argv) > 1:
         open(sys.argv[1], "w", encoding="utf-8").write(tree)
+        write_csv(sys.argv[1].rsplit(".", 1)[0] + ".csv", *data)
     print(tree)
