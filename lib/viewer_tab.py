@@ -20,6 +20,48 @@ _FONT_HEAD = ("Segoe UI Semibold", 10)
 
 _PAGE_SIZE = 100
 
+_CAT_ENCODINGS = ("utf-8-sig", "utf-8", "cp1252", "latin-1")
+
+
+def _load_alt_categories() -> dict:
+    """
+    Lädt custom_categories.csv (BASE_DIR) → {CATEGORY_CODE_UPPER: product_category_code}.
+
+    category_code entspricht der catalog_node_group_id aus der DB,
+    product_category_code ist die alternative (eigene) Kategorie. Zeilen
+    ohne product_category_code werden übersprungen. Fehlt die Datei oder
+    ist sie nicht lesbar, kommt ein leeres Dict zurück (Export läuft trotzdem).
+    """
+    import csv
+    import logging
+    try:
+        import config as _cfg
+        path = os.path.join(_cfg.BASE_DIR, "custom_categories.csv")
+    except Exception:
+        return {}
+    if not os.path.exists(path):
+        return {}
+    for enc in _CAT_ENCODINGS:
+        try:
+            mapping = {}
+            with open(path, "r", encoding=enc, errors="strict", newline="") as f:
+                reader = csv.DictReader(f, delimiter=";")
+                for row in reader:
+                    code = (row.get("category_code") or "").strip()
+                    alt  = (row.get("product_category_code") or "").strip()
+                    if not code or code.startswith("#") or not alt:
+                        continue
+                    mapping[code.upper()] = alt
+            return mapping
+        except (UnicodeDecodeError, KeyError):
+            continue
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "custom_categories.csv konnte nicht gelesen werden: %s", exc)
+            return {}
+    return {}
+
+
 # Spalten: (db-key, Überschrift, Breite, stretch)
 _COLS = [
     ("product_id",        "Artikel-Nr.",   155, False),
@@ -918,10 +960,13 @@ class ViewerTab:
         ws.title = "Artikel"
 
         # Wie die Viewer-Tabelle, plus "Katalog-ID" (catalog_node_group_id)
+        # und "Alt. Kategorie" (product_category_code aus custom_categories.csv)
         # direkt hinter dem Katalognamen – in der Tabelle selbst nicht
         # angezeigt, im Excel aber gewünscht (Weiterverarbeitung).
+        alt_cats = _load_alt_categories()
         xlsx_cols = list(_COLS)
         xlsx_cols.insert(5, ("catalog_node_group_id", "Katalog-ID", 110, False))
+        xlsx_cols.insert(6, ("alt_category", "Alt. Kategorie", 110, False))
         headers = [heading for _, heading, *_ in xlsx_cols] + ["Features (FNAME=FVALUE)"]
         ws.append(headers)
         for cell in ws[1]:
@@ -931,14 +976,16 @@ class ViewerTab:
             feat_txt = "; ".join(
                 f"{f.get('fname','')}={f.get('fvalue','')}"
                 for f in (a.get("features") or []))
+            cat_id = str(a.get("catalog_node_group_id") or a.get("catalog_sub_group_id")
+                         or a.get("catalog_group_id") or "")
             ws.append([
                 a.get("product_id", ""),
                 a.get("ean", ""),
                 a.get("description_short", ""),
                 a.get("supplier_name", ""),
                 a.get("catalog_display", ""),
-                (a.get("catalog_node_group_id") or a.get("catalog_sub_group_id")
-                 or a.get("catalog_group_id") or ""),
+                cat_id,
+                alt_cats.get(cat_id.upper(), ""),
                 a.get("price_display", ""),
                 a.get("stock_qty", "") or "",
                 a.get("online_display", ""),
