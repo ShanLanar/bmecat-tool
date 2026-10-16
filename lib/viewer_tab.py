@@ -917,7 +917,12 @@ class ViewerTab:
         ws = wb.active
         ws.title = "Artikel"
 
-        headers = [heading for _, heading, *_ in _COLS] + ["Features (FNAME=FVALUE)"]
+        # Wie die Viewer-Tabelle, plus "Katalog-ID" (catalog_node_group_id)
+        # direkt hinter dem Katalognamen – in der Tabelle selbst nicht
+        # angezeigt, im Excel aber gewünscht (Weiterverarbeitung).
+        xlsx_cols = list(_COLS)
+        xlsx_cols.insert(5, ("catalog_node_group_id", "Katalog-ID", 110, False))
+        headers = [heading for _, heading, *_ in xlsx_cols] + ["Features (FNAME=FVALUE)"]
         ws.append(headers)
         for cell in ws[1]:
             cell.font = Font(bold=True)
@@ -932,6 +937,8 @@ class ViewerTab:
                 a.get("description_short", ""),
                 a.get("supplier_name", ""),
                 a.get("catalog_display", ""),
+                (a.get("catalog_node_group_id") or a.get("catalog_sub_group_id")
+                 or a.get("catalog_group_id") or ""),
                 a.get("price_display", ""),
                 a.get("stock_qty", "") or "",
                 a.get("online_display", ""),
@@ -940,8 +947,9 @@ class ViewerTab:
                 feat_txt,
             ])
 
-        for i, (_, heading, width, *_r) in enumerate(_COLS, start=1):
-            ws.column_dimensions[chr(64 + i) if i <= 26 else "A"].width = max(10, width // 7)
+        from openpyxl.utils import get_column_letter
+        for i, (_, heading, width, *_r) in enumerate(xlsx_cols, start=1):
+            ws.column_dimensions[get_column_letter(i)].width = max(10, width // 7)
         ws.freeze_panes = "A2"
 
         wb.save(path)
