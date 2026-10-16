@@ -989,6 +989,22 @@ class ViewerTab:
         # direkt hinter dem Katalognamen – in der Tabelle selbst nicht
         # angezeigt, im Excel aber gewünscht (Weiterverarbeitung).
         alt_cats, cat_nodes = _load_alt_categories()
+        # Katalog-ID in der Form des BMEcat-Exports: group_id im Katalogbaum
+        # liegt ohne Lieferantenpräfix in der DB (z.B. "65019"), der Export
+        # schreibt "BRG65019" (+ ggf. postprocess_catalog_remap.csv).
+        # custom_categories.csv bezieht sich auf diese Export-Form.
+        try:
+            import config as _cfg
+            from lib.db_exporter import (
+                _supplier_prefix, _add_prefix_if_missing,
+                _apply_catalog_remap, _load_catalog_remap, _load_prefix_map)
+            prefix_map  = _load_prefix_map(_cfg.BASE_DIR)
+            remap_rules = _load_catalog_remap(_cfg.BASE_DIR)
+        except Exception:
+            _supplier_prefix = lambda a, m=None: ""
+            _add_prefix_if_missing = lambda v, p: v
+            _apply_catalog_remap = lambda g, s, r: g
+            prefix_map, remap_rules = {}, []
         xlsx_cols = list(_COLS)
         xlsx_cols.insert(5, ("catalog_node_group_id", "Katalog-ID", 110, False))
         xlsx_cols.insert(6, ("alt_category", "Alt. Kategorie", 110, False))
@@ -1002,9 +1018,15 @@ class ViewerTab:
             feat_txt = "; ".join(
                 f"{f.get('fname','')}={f.get('fvalue','')}"
                 for f in (a.get("features") or []))
-            cat_id = str(a.get("catalog_node_group_id") or a.get("catalog_sub_group_id")
+            raw_id = str(a.get("catalog_node_group_id") or a.get("catalog_sub_group_id")
                          or a.get("catalog_group_id") or "")
-            alt_cat = alt_cats.get(cat_id.upper(), "")
+            cat_id = raw_id
+            if raw_id:
+                prefix = _supplier_prefix(a, prefix_map)
+                cat_id = _add_prefix_if_missing(raw_id, prefix)
+                if remap_rules:
+                    cat_id = _apply_catalog_remap(cat_id, a.get("supplier_name", ""), remap_rules)
+            alt_cat = alt_cats.get(cat_id.upper()) or alt_cats.get(raw_id.upper(), "")
             ws.append([
                 a.get("product_id", ""),
                 a.get("ean", ""),
