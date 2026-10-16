@@ -500,7 +500,7 @@ def _read_bestand_csv(path: str) -> dict:
     return result
 
 
-def build_revise_end_from_bestand(template_path: str, bestand_csv_path: str,
+def build_revise_end_from_bestand(template_path: str, bestand_csv_path,
                                   out_dir: str, progress_cb=None) -> dict:
     """
     Liest die von eBay heruntergeladene 'eBay-edit-price-quantity-template.csv'
@@ -510,6 +510,10 @@ def build_revise_end_from_bestand(template_path: str, bestand_csv_path: str,
     (Action=End, EndingReason=NotAvailable) statt mit Quantity=0 revised zu
     werden. Angebote ohne SKU oder ohne Treffer in BestandBueroring.csv
     bleiben unverändert im Revise-Batch (Preis/Menge nicht angetastet).
+
+    bestand_csv_path: ein Pfad oder eine Liste von Pfaden in Prioritäts-
+    reihenfolge (erste Datei gewinnt bei gleicher SKU), z.B.
+    [BestandBueroring_EDI.csv, BestandBueroring.csv].
     """
     p = progress_cb or (lambda m, **kw: None)
     os.makedirs(out_dir, exist_ok=True)
@@ -527,8 +531,16 @@ def build_revise_end_from_bestand(template_path: str, bestand_csv_path: str,
     template_rows = list(csv.DictReader(lines, delimiter=";"))
     p(f"eBay-Template: {len(template_rows)} aktive Angebote gelesen.")
 
-    stock_map = _read_bestand_csv(bestand_csv_path)
-    p(f"BestandBueroring.csv: {len(stock_map)} SKUs mit Bestand geladen.")
+    paths = ([bestand_csv_path] if isinstance(bestand_csv_path, str)
+             else list(bestand_csv_path))
+    stock_map: dict = {}
+    for pth in reversed(paths):          # niedrigste Priorität zuerst, dann überschreiben
+        part = _read_bestand_csv(pth)
+        p(f"{os.path.basename(pth)}: {len(part)} SKUs mit Bestand geladen.")
+        stock_map.update(part)
+    if len(paths) > 1:
+        p(f"Bestände zusammengeführt: {len(stock_map)} SKUs "
+          f"(Vorrang: {os.path.basename(paths[0])}).")
 
     revise_rows, end_rows = [], []
     no_sku = not_in_bestand = updated = 0
