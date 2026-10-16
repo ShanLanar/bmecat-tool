@@ -9,12 +9,13 @@ import logging
 import re
 import sys
 import urllib.request
-from collections import deque
+from collections import Counter, deque
 from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
 
 BASE = "https://www.officexl.de/"
-ROOTS = ["NK_Buerobedarf", "NK_Papier", "NK_Schreibwaren", "NK_Ordnen", "NK_Versand",
+ROOTS = ["NK_Buerobedarf", "NK_Papier", "search?filterCategoryPathROOT=Tinte+%26+Toner&keyword=*&sort=_",
+         "NK_Schreibwaren", "NK_Ordnen", "NK_Versand",
          "NK_Praesentation", "NK_SchuleundStudium", "NK_Technik", "NK_Hygiene", "NK_Drogerie",
          "NK_HaushaltUCatering", "NK_Lebensmittel", "NK_HausUHandwerk",
          "NK_WerkzeugeUWerkstatt", "NK_Arbeitsschutz", "NK_Bueroeinrichtung", "NK_Freizeit"]
@@ -42,16 +43,17 @@ class _Links(HTMLParser):
 
 
 def normalize(href):
-    """'../../NK_Papier' -> BASE + 'NK_Papier' (relative Tiefe der Seite ist egal)."""
-    return BASE + re.sub(r"^(\.{1,2}/)+", "", href.replace("&amp;", "&"))
+    """Relative ('../../NK_Papier') und absolute (https://officexl.de/NK_Papier) Links -> BASE + Pfad."""
+    h = href.replace("&amp;", "&").strip()
+    h = re.sub(r"^https?://(www\.)?officexl\.de/*", "", h)
+    return BASE + re.sub(r"^(\.{1,2}/)+", "", h).lstrip("/")
 
 
 def extract(html):
     """Liefert [(url, text)] fuer NK_- und CategoryPath-Links."""
     p = _Links()
     p.feed(html)
-    out = [(normalize(h), t) for h, t in p.links if "NK_" in h or "CategoryPath" in h]
-    return out
+    return [(normalize(h), t) for h, t in p.links if "NK_" in h or "CategoryPath" in h]
 
 
 def fetch(url):
@@ -64,37 +66,58 @@ def fetch(url):
 
 
 def crawl():
+    """Runde 1: Wurzelseiten laden; Links, die auf > der Haelfte davon stehen, sind Navigation
+    (Mega-Menue) und werden nie als Kind gewertet. Danach BFS; erste Entdeckung gewinnt."""
     children, names = {}, {}
-    seen = {BASE + r for r in ROOTS}
-    queue = deque(sorted(seen, key=lambda u: ROOTS.index(u[len(BASE):])))
+    roots = [BASE + r for r in ROOTS if "CategoryPath" not in r]
     with ThreadPoolExecutor(WORKERS) as ex:
+        pages = dict(zip(roots, ex.map(fetch, roots)))
+        links = {u: extract(h) for u, h in pages.items()}
+        count = Counter(l for ls in links.values() for l in {x[0] for x in ls})
+        nav = {u for u, c in count.items() if c > len(roots) / 2}
+        for ls in links.values():  # Anzeigenamen der Wurzeln stehen im Menue
+            for u, t in ls:
+                if u in roots and t:
+                    names.setdefault(u, t)
+        seen = set(roots) | nav
+        queue = deque()
+        for u in roots:
+            queue.append((u, links[u]))
         while queue:
             batch = [queue.popleft() for _ in range(len(queue))]
-            for url, html in zip(batch, ex.map(fetch, batch)):
+            nxt = []
+            for url, ls in batch:
                 kids = []
-                for u, t in extract(html):
+                for u, t in ls:
                     if u in seen:
                         continue
                     seen.add(u)
                     names[u] = t
                     kids.append(u)
                     if "CategoryPath" not in u:
-                        queue.append(u)
+                        nxt.append(u)
                 children[url] = kids
-                log.info("%s: %d neue Links", url, len(kids))
+                log.info("%s: %d Unterseiten", url, len(kids))
+            for u, h in zip(nxt, ex.map(fetch, nxt)):
+                queue.append((u, extract(h)))
     return children, names
+
+
+def _roots():
+    return [BASE + r for r in ROOTS]
 
 
 def render(children, names):
     lines = []
 
-    def walk(u, depth):
-        lines.append("  " * depth + f"{names.get(u) or u[len(BASE):]}  <{u}>")
+    def walk(u, depth, parent):
+        n = names.get(u) or u[len(BASE):]
+        lines.append("  " * depth + f"{n}  <- {parent}  <{u}>" if parent else f"{n}  <{u}>")
         for k in children.get(u, []):
-            walk(k, depth + 1)
+            walk(k, depth + 1, n)
 
-    for r in ROOTS:
-        walk(BASE + r, 0)
+    for r in _roots():
+        walk(r, 0, "")
     return "\n".join(lines)
 
 
@@ -110,8 +133,8 @@ def write_csv(path, children, names):
         for k in children.get(u, []):
             walk(k, t)
 
-    for r in ROOTS:
-        walk(BASE + r, [])
+    for r in _roots():
+        walk(r, [])
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f, delimiter=";")
         w.writerow(["Ebene", "Pfad", "Name", "URL", "Elternseite", "Typ"])
@@ -122,6 +145,8 @@ def _selftest():
     html = ('<a title="x" href="../../NK_Papier"><img/> <span>Papier</span></a>'
             '<a href="../../search?filterCategoryPathROOT=Tinte+%26+Toner&amp;keyword=*">T</a>'
             '<a href="/impressum">x</a>')
+    assert normalize("https://officexl.de/NK_Papier") == BASE + "NK_Papier"
+    assert normalize("https://www.officexl.de/NK_Papier") == BASE + "NK_Papier"
     assert extract(html) == [
         (BASE + "NK_Papier", "Papier"),
         (BASE + "search?filterCategoryPathROOT=Tinte+%26+Toner&keyword=*", "T")]
