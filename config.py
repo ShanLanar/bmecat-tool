@@ -35,6 +35,10 @@ DIRS = {
     "pim_export_obs_share":  r"\\obs.abe-brands.de\obs\data\DOWNLOADS\780102150",
     "sc_bilder_zips": "",   # Ordner mit GRAPHIK1.ZIP...GRAPHIK9.ZIP (Softcarrier Bild-Patch)
     "sc_bilder_dir":  "",   # alternativ: bereits entpackter Bilder-Ordner
+    # Büroring-Bestand aus dem EDI-Netzlaufwerk (Dateipfad). Wird vom Task
+    # "eBay – Bestand aus BestandBueroring.csv" nach in_BME kopiert und hat
+    # dort Vorrang vor der per FTP geladenen Datei. Leer = nur FTP-Datei.
+    "brg_bestand_edi": r"\\obs\OBS\DATA\EDI\Büroring\BestandBueroring.csv",
 }
 
 TOOLS = {

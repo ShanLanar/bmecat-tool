@@ -66,7 +66,7 @@ TASKS = [
     {
         "id":      "ebay_bestand_revise",
         "name":    "eBay – Bestand aus BestandBueroring.csv",
-        "desc":    "eBay-edit-price-quantity-template.csv (BASE_DIR) + BestandBueroring.csv (in_BME) einlesen → eBay-Revise_<Datum>.csv (Bestand aktualisiert) + eBay-end_<Datum>.csv (Bestand 0) in BASE_DIR/eBay",
+        "desc":    "BestandBueroring.csv vom EDI-Laufwerk (Pfade → brg_bestand_edi) nach in_BME holen, mit eBay-edit-price-quantity-template.csv (BASE_DIR) abgleichen → eBay-Revise_<Datum>.csv (Bestand aktualisiert) + eBay-end_<Datum>.csv (Bestand 0) in BASE_DIR/eBay",
         "fn":      "tasks.ebay:run_bestand_revise",
         "default": False,
         "group":   "Täglich",

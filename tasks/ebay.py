@@ -71,10 +71,39 @@ def run_learn_category_map(progress_cb=None, file_progress_cb=None) -> dict:
     return learn_category_map(in_path, DB_PATH, BASE_DIR, progress_cb=p)
 
 
+def _fetch_edi_bestand(edi_path: str, dest_path: str, p) -> bool:
+    """
+    Kopiert BestandBueroring.csv vom EDI-Netzlaufwerk nach in_BME.
+    Nicht erreichbar/fehlend → Warnung, vorhandene in_BME-Datei bleibt.
+    """
+    import shutil
+    import datetime as _dt
+    try:
+        if not os.path.isfile(edi_path):
+            p(f"eBay-Bestand-Revise: EDI-Datei nicht gefunden: {edi_path} "
+              f"– verwende vorhandene Datei in in_BME.", tag="warn")
+            return False
+        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+        tmp = dest_path + ".tmp"
+        shutil.copy2(edi_path, tmp)
+        from lib.utils import safe_replace
+        safe_replace(tmp, dest_path, p=p)
+        stamp = _dt.datetime.fromtimestamp(os.path.getmtime(dest_path))
+        size  = f"{os.path.getsize(dest_path):,}".replace(",", ".")
+        p(f"eBay-Bestand-Revise: BestandBueroring.csv vom EDI-Laufwerk übernommen "
+          f"(Stand {stamp:%d.%m.%Y %H:%M}, {size} Bytes).", tag="ok")
+        return True
+    except Exception as e:
+        p(f"eBay-Bestand-Revise: EDI-Datei konnte nicht kopiert werden ({e}) "
+          f"– verwende vorhandene Datei in in_BME.", tag="warn")
+        return False
+
+
 def run_bestand_revise(progress_cb=None, file_progress_cb=None) -> dict:
     """
     Task D: aktive eBay-Angebote (eBay-edit-price-quantity-template.csv,
-    BASE_DIR) + BestandBueroring.csv (in_BME, per Büroring-Download) →
+    BASE_DIR) + BestandBueroring.csv (vom EDI-Laufwerk DIRS.brg_bestand_edi
+    nach in_BME kopiert; Fallback: per Büroring-Download geladene Datei) →
     eBay-Revise_<Datum>.csv (Bestand aktualisiert) + eBay-end_<Datum>.csv
     (Bestand 0) in BASE_DIR/eBay.
     """
@@ -83,6 +112,15 @@ def run_bestand_revise(progress_cb=None, file_progress_cb=None) -> dict:
 
     template_path = os.path.join(BASE_DIR, "eBay-edit-price-quantity-template.csv")
     bestand_path  = os.path.join(DIRS["in_bme"], "BestandBueroring.csv")
+
+    # Bestand vom EDI-Netzlaufwerk holen (DIRS.brg_bestand_edi, Reiter "Pfade").
+    # Kopiert nach in_BME und ersetzt dort die per FTP geladene Datei.
+    edi_path = (DIRS.get("brg_bestand_edi") or "").strip()
+    if edi_path:
+        _fetch_edi_bestand(edi_path, bestand_path, p)
+    else:
+        p("eBay-Bestand-Revise: kein EDI-Pfad konfiguriert (Pfade → brg_bestand_edi) "
+          "– verwende FTP-Datei in in_BME.", tag="dim")
 
     if not os.path.exists(template_path):
         p(f"eBay-Bestand-Revise: Datei nicht gefunden: {template_path}", tag="warn")
