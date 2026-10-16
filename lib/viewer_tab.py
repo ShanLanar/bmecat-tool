@@ -23,14 +23,19 @@ _PAGE_SIZE = 100
 _CAT_ENCODINGS = ("utf-8-sig", "utf-8", "cp1252", "latin-1")
 
 
-def _load_alt_categories() -> dict:
+def _load_alt_categories() -> tuple:
     """
-    Lädt custom_categories.csv (BASE_DIR) → {CATEGORY_CODE_UPPER: product_category_code}.
+    Lädt custom_categories.csv (BASE_DIR).
 
-    category_code entspricht der catalog_node_group_id aus der DB,
-    product_category_code ist die alternative (eigene) Kategorie. Zeilen
-    ohne product_category_code werden übersprungen. Fehlt die Datei oder
-    ist sie nicht lesbar, kommt ein leeres Dict zurück (Export läuft trotzdem).
+    Returns (alt_map, nodes):
+      alt_map: {CATEGORY_CODE_UPPER: product_category_code}
+               – category_code entspricht der catalog_node_group_id aus der DB,
+                 product_category_code ist die alternative (eigene) Kategorie.
+                 Zeilen ohne product_category_code fehlen hier.
+      nodes:   {CATEGORY_CODE_UPPER: (name, PARENT_CODE_UPPER)} für alle Zeilen
+               – Grundlage für _category_path().
+    Fehlt die Datei oder ist sie nicht lesbar, kommen leere Dicts zurück
+    (Export läuft trotzdem, Spalten bleiben leer).
     """
     import csv
     import logging
@@ -38,28 +43,48 @@ def _load_alt_categories() -> dict:
         import config as _cfg
         path = os.path.join(_cfg.BASE_DIR, "custom_categories.csv")
     except Exception:
-        return {}
+        return {}, {}
     if not os.path.exists(path):
-        return {}
+        return {}, {}
     for enc in _CAT_ENCODINGS:
         try:
-            mapping = {}
+            mapping, nodes = {}, {}
             with open(path, "r", encoding=enc, errors="strict", newline="") as f:
                 reader = csv.DictReader(f, delimiter=";")
                 for row in reader:
                     code = (row.get("category_code") or "").strip()
-                    alt  = (row.get("product_category_code") or "").strip()
-                    if not code or code.startswith("#") or not alt:
+                    if not code or code.startswith("#"):
                         continue
-                    mapping[code.upper()] = alt
-            return mapping
+                    nodes[code.upper()] = ((row.get("name") or "").strip(),
+                                           (row.get("parent") or "").strip().upper())
+                    alt = (row.get("product_category_code") or "").strip()
+                    if alt:
+                        mapping[code.upper()] = alt
+            return mapping, nodes
         except (UnicodeDecodeError, KeyError):
             continue
         except Exception as exc:
             logging.getLogger(__name__).warning(
                 "custom_categories.csv konnte nicht gelesen werden: %s", exc)
-            return {}
-    return {}
+            return {}, {}
+    return {}, {}
+
+
+def _category_path(nodes: dict, code: str) -> str:
+    """
+    Pfad einer Kategorie von der Wurzel bis zur Kategorie selbst,
+    z.B. "Zentralshop\\Büroeinrichtung\\Möbel\\Sonstiges".
+    Läuft über die parent-Spalte nach oben; unbekannter Code → "".
+    Zyklen werden abgefangen.
+    """
+    names, seen = [], set()
+    c = (code or "").strip().upper()
+    while c and c in nodes and c not in seen:
+        seen.add(c)
+        name, parent = nodes[c]
+        names.append(name)
+        c = parent
+    return "\\".join(reversed(names))
 
 
 # Spalten: (db-key, Überschrift, Breite, stretch)
@@ -963,10 +988,11 @@ class ViewerTab:
         # und "Alt. Kategorie" (product_category_code aus custom_categories.csv)
         # direkt hinter dem Katalognamen – in der Tabelle selbst nicht
         # angezeigt, im Excel aber gewünscht (Weiterverarbeitung).
-        alt_cats = _load_alt_categories()
+        alt_cats, cat_nodes = _load_alt_categories()
         xlsx_cols = list(_COLS)
         xlsx_cols.insert(5, ("catalog_node_group_id", "Katalog-ID", 110, False))
         xlsx_cols.insert(6, ("alt_category", "Alt. Kategorie", 110, False))
+        xlsx_cols.insert(7, ("alt_category_path", "Alt. Kategorie-Pfad", 350, False))
         headers = [heading for _, heading, *_ in xlsx_cols] + ["Features (FNAME=FVALUE)"]
         ws.append(headers)
         for cell in ws[1]:
@@ -978,6 +1004,7 @@ class ViewerTab:
                 for f in (a.get("features") or []))
             cat_id = str(a.get("catalog_node_group_id") or a.get("catalog_sub_group_id")
                          or a.get("catalog_group_id") or "")
+            alt_cat = alt_cats.get(cat_id.upper(), "")
             ws.append([
                 a.get("product_id", ""),
                 a.get("ean", ""),
@@ -985,7 +1012,8 @@ class ViewerTab:
                 a.get("supplier_name", ""),
                 a.get("catalog_display", ""),
                 cat_id,
-                alt_cats.get(cat_id.upper(), ""),
+                alt_cat,
+                _category_path(cat_nodes, alt_cat),
                 a.get("price_display", ""),
                 a.get("stock_qty", "") or "",
                 a.get("online_display", ""),
