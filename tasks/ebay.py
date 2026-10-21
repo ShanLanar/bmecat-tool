@@ -11,7 +11,7 @@
 #
 # Ausgabedateien landen in export_dir/ebay/ mit sprechendem Namen + Timestamp
 # (z.B. eBay_Neuanlage_20260427_143012.csv) – Task D landet stattdessen direkt
-# in BASE_DIR/eBay/ (eBay-Revise_<Datum>.csv / eBay-end_<Datum>.csv).
+# in BASE_DIR/eBay/ (eBay-Revise_<Datum_Uhrzeit>.csv / eBay-end_<Datum_Uhrzeit>.csv).
 
 import os
 from config import DB_PATH, DIRS, BASE_DIR, EXPORT_DIR
@@ -105,7 +105,7 @@ def run_bestand_revise(progress_cb=None, file_progress_cb=None) -> dict:
     BASE_DIR) + BestandBueroring_EDI.csv (vom EDI-Laufwerk DIRS.brg_bestand_edi
     nach in_BME kopiert) + BestandBueroring.csv (per FTP, in_BME); beide
     zusammengeführt, EDI hat Vorrang →
-    eBay-Revise_<Datum>.csv (Bestand aktualisiert) + eBay-end_<Datum>.csv
+    eBay-Revise_<Datum_Uhrzeit>.csv (Bestand aktualisiert) + eBay-end_<Datum_Uhrzeit>.csv
     (Bestand 0) in BASE_DIR/eBay.
     """
     p = progress_cb or (lambda m, **kw: None)

@@ -566,7 +566,7 @@ def build_revise_end_from_bestand(template_path: str, bestand_csv_path,
             revise_rows.append([row.get(h, "") for h in _REVISE_HEADER])
             updated += 1
 
-    ts = datetime.now().strftime("%Y%m%d")
+    ts = datetime.now().strftime("%Y%m%d_%H%M")   # Datum+Uhrzeit: mehrere Läufe pro Tag
     out = {}
     if revise_rows:
         path = os.path.join(out_dir, f"eBay-Revise_{ts}.csv")
