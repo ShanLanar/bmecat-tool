@@ -346,6 +346,32 @@ Kommentarzeilen beginnen mit #.
     ),
     (
         """\
+postprocess_features.csv""",
+        """\
+Zusatz-Features (Maße, Gewicht, ...)""",
+        """\
+Features (FNAME/FVALUE)""",
+        """\
+Zusätzliche ARTICLE_FEATURES pro Artikel, die beim VENDOSYS-Export
+ergänzt werden – z. B. Länge/Breite/Höhe/Gewicht aus einer Lieferanten-
+Datei. Existiert im Artikel bereits ein Feature mit gleichem FNAME, wird
+dessen Wert/Einheit ersetzt; sonst wird das Feature hinten angehängt
+(FUSAGE 1, FSEARCHABLE 1).
+
+Spalten (Semikolon, UTF-8):
+  product_id    – Artikel-ID mit Präfix, z. B. BRGAIR2899555003
+  supplier_pid  – alternativ: native ID ohne Präfix (wenn product_id leer)
+  fname         – Feature-Name, z. B. Länge
+  fvalue        – Wert, z. B. 165 (Dezimalpunkt)
+  funit         – Einheit, z. B. mm / kg (optional)
+
+Büroring-Maßdatei (artnr;laenge;breite;hoehe;gewicht) umwandeln:
+  python tools/brg_masse_to_features.py "BRG-Artikelmaße.csv"
+Die Zeilen werden in diese Datei gemischt; andere Einträge bleiben.
+"""
+    ),
+    (
+        """\
 postprocess_fname_blacklist.csv""",
         """\
 FNAME-Blacklist (Feature-Filter)""",

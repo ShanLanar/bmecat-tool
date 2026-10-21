@@ -10,6 +10,7 @@
 #                                     erhalten, z.B. für URL/SEO/Bestellhistorie,
 #                                     wird nur als nicht verkäuflich markiert)
 #   postprocess_fname_blacklist.csv– FNAME-Werte die nicht exportiert werden (Wildcards: *Marke*)
+#   postprocess_features.csv       – Zusätzliche Features pro Artikel (z.B. Maße/Gewicht vom Lieferanten)
 #   postprocess_prices.csv         – Preisformeln pro Lieferant/Artikelmuster
 #   postprocess_price_types.csv    – Preis-Typ-Konvertierung (net_list→nrp etc.)
 #   postprocess_suffixes.csv       – AID-Suffix pro Lieferant
@@ -207,6 +208,74 @@ def _apply_fname_blacklist(features: list, blacklist: list) -> list:
 
 
 # ── Preisberechnung ───────────────────────────────────────────────────────────
+
+# ── Zusätzliche Features (postprocess_features.csv) ──────────────────────────
+
+def _load_extra_features(base_dir: str) -> tuple[dict, dict]:
+    """
+    Liest postprocess_features.csv:
+        product_id | supplier_pid ; fname ; fvalue ; funit (optional)
+    Mindestens eine der Spalten product_id / supplier_pid muss gefüllt sein.
+    Returns (by_product_id, by_supplier_pid): {KEY_UPPER: [feature_dict, ...]}
+    """
+    rows = _read_csv(os.path.join(base_dir, 'postprocess_features.csv'))
+    by_pid: dict = {}
+    by_spid: dict = {}
+    n = 0
+    for row in rows:
+        fname = row.get('fname', '')
+        if not fname or fname.startswith('#'):
+            continue
+        feat = {
+            'fname':       fname,
+            'fvalue':      row.get('fvalue', ''),
+            'funit':       row.get('funit', ''),
+            'fusage':      1,
+            'forder':      0,
+            'fsearchable': 1,
+            'fselectable': 0,
+            'value_index': 0,
+        }
+        pid  = row.get('product_id', '')
+        spid = row.get('supplier_pid', '')
+        if pid:
+            by_pid.setdefault(pid.upper(), []).append(feat)
+        elif spid:
+            by_spid.setdefault(spid.upper(), []).append(feat)
+        else:
+            continue
+        n += 1
+    if n:
+        log.info(f"postprocess_features.csv: {n} Zusatz-Features für "
+                 f"{len(by_pid) + len(by_spid)} Artikel geladen")
+    return by_pid, by_spid
+
+
+def _apply_extra_features(features: list, extra: list) -> list:
+    """
+    Fügt Zusatz-Features an. Existiert bereits ein Feature mit gleichem FNAME
+    (case-insensitiv), wird dessen Wert/Einheit durch den Zusatzwert ersetzt
+    (Lieferantendatei gilt als aktueller); sonst wird es hinten angehängt.
+    """
+    if not extra:
+        return features
+    result = [dict(f) for f in features]
+    by_name = {(f.get('fname') or '').strip().lower(): f for f in result}
+    max_order = max((int(f.get('forder') or 0) for f in result), default=0)
+    for e in extra:
+        key = e['fname'].strip().lower()
+        if key in by_name:
+            by_name[key]['fvalue'] = e['fvalue']
+            if e.get('funit'):
+                by_name[key]['funit'] = e['funit']
+        else:
+            max_order += 1
+            nf = dict(e)
+            nf['forder'] = max_order
+            result.append(nf)
+            by_name[key] = nf
+    return result
+
 
 def _parse_price_formula(formula: str):
     formula = formula.strip()
@@ -594,6 +663,7 @@ class PostProcessor:
         self._offline_list = _load_offline_list(base_dir)
         self._fname_blacklist = _load_fname_blacklist(base_dir)
         self._fusage3      = _load_fusage3(base_dir)
+        self._extra_by_pid, self._extra_by_spid = _load_extra_features(base_dir)
         self._price_rules  = _load_price_rules(base_dir)
         self._price_rule_exact, self._price_rule_wildcard = build_price_rule_index(self._price_rules)
         self._price_warnings: list[str] = _check_price_expiry(self._price_rules)
@@ -632,6 +702,12 @@ class PostProcessor:
         # ── Offline-Liste: Artikel bleibt im Export, aber ONLINE=0 ────────────
         if self.is_forced_offline(art):
             art['online'] = 0
+
+        # ── Zusatz-Features (postprocess_features.csv) ───────────────────────
+        extra = (self._extra_by_pid.get(pid.upper())
+                 or self._extra_by_spid.get((art.get('supplier_pid') or '').upper()))
+        if extra:
+            art['features'] = _apply_extra_features(art.get('features', []), extra)
 
         # ── FNAME-Blacklist ──────────────────────────────────────────────────
         art['features'] = _apply_fname_blacklist(art.get('features', []), self._fname_blacklist)
