@@ -607,6 +607,12 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
 
     desc_regex_rules = _load_description_regex(base_dir)
     udx_inject_map    = _load_udx_inject(base_dir)
+    # Zusatz-Features (postprocess_features.csv, z.B. Büroring-Maße) schon
+    # beim Import in die DB übernehmen – damit sie im Viewer/Excel/PIM-Export
+    # sichtbar sind und der content_hash stabil bleibt.
+    from lib.db_postprocess import _load_extra_features, _apply_extra_features
+    extra_by_pid, extra_by_spid = _load_extra_features(base_dir)
+    extra_applied = 0
 
     con = open_db(db_path)
     import_start = _now()   # Zeitstempel für Stale-Cleanup
@@ -708,6 +714,12 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
                 _apply_description_regex(art, desc_regex_rules)
             if udx_inject_map:
                 _apply_udx_inject(art, udx_inject_map)
+            if extra_by_pid or extra_by_spid:
+                extra = (extra_by_pid.get((art.get('product_id') or '').upper())
+                         or extra_by_spid.get(pid.upper()))
+                if extra:
+                    art['features'] = _apply_extra_features(art.get('features', []), extra)
+                    extra_applied += 1
             batch.append(art)
             if len(batch) >= batch_size:
                 _flush(batch)
@@ -724,6 +736,10 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
 
     if batch:
         _flush(batch)
+
+    if extra_applied:
+        p(f"DB-Import [{sup_name}]: Zusatz-Features (postprocess_features.csv) "
+          f"bei {extra_applied} Artikeln übernommen")
 
     # Stale-Cleanup (Soft-Delete): Artikel dieses Lieferanten die in diesem Lauf
     # nicht angefasst wurden (last_seen < import_start) → im BMEcat nicht mehr

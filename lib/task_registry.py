@@ -183,6 +183,14 @@ TASKS = [
     },
     # ── Extras ────────────────────────────────────────────────────────────────
     {
+        "id":      "extra_features_db",
+        "name":    "Zusatz-Features in DB einspielen",
+        "desc":    "postprocess_features.csv (z.B. Büroring-Maße: Länge/Breite/Höhe/Gewicht) in die Artikel-DB übernehmen – gleichnamige Features ersetzen, neue anhängen. Beim DB-Import passiert das automatisch; dieser Task aktualisiert die bereits vorhandenen Artikel",
+        "fn":      "tasks.extra_features:run",
+        "default": False,
+        "group":   "Extras",
+    },
+    {
         "id":      "fname_analyse",
         "name":    "FNAME-Analyse",
         "desc":    "Alle FNAMEs aus XMLs extrahieren, Kollisionen prüfen, fname_alle.csv erzeugen",
