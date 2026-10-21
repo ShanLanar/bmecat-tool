@@ -59,14 +59,17 @@ def schedule_daily(hour: int, minute: int,
                    progress_cb=None) -> bool:
     """
     Richtet einen täglichen Task im Windows Task Scheduler ein.
-    Startet main.py mit allen Standard-Tasks (--auto).
+    Startet main.py mit --auto-daily = nur die Aufgaben der Gruppe "Täglich"
+    (Bestandsdaten, Bestand+Preis, eBay, PIM-Export, Unite-Preise).
+    Katalog-/Bilder-Läufe ("Standard") werden weiterhin manuell gestartet.
     """
     p = progress_cb or (lambda m, **kw: None)
     time_str = f"{hour:02d}:{minute:02d}"
-    p(f"Erstelle Task '{TASK_NAME}' für täglich {time_str} Uhr ...")
-    ok = _create_task(TASK_NAME, "--auto", ["/sc", "DAILY", "/st", time_str], p)
+    p(f"Erstelle Task '{TASK_NAME}' für täglich {time_str} Uhr (Gruppe 'Täglich') ...")
+    ok = _create_task(TASK_NAME, "--auto-daily", ["/sc", "DAILY", "/st", time_str], p)
     if ok:
         p(f"  Zeit:    täglich {time_str} Uhr")
+        p("  Aufgaben: Gruppe 'Täglich' (wie der Button 'Täglich' im Hauptfenster)")
     return ok
 
 
@@ -192,7 +195,7 @@ def open_scheduler_dialog(parent=None):
                           relief="flat", bd=4)
     min_spin.grid(row=0, column=3, padx=(4, 12))
 
-    tk.Label(time_frame, text="Uhr (täglich)",
+    tk.Label(time_frame, text="Uhr – Gruppe 'Täglich' (Bestand, eBay, PIM, Unite)",
              font=("Segoe UI", 10), bg=BG, fg=FG_DIM
              ).grid(row=0, column=4)
 
