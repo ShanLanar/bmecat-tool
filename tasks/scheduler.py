@@ -149,21 +149,20 @@ def open_scheduler_dialog(parent=None):
     status_frame = tk.Frame(win, bg=BG2, padx=16, pady=10)
     status_frame.pack(fill="x", padx=10, pady=(8, 4))
 
-    info = get_schedule_info()
-    if info["exists"]:
-        status_text = (f"Task aktiv\n"
-                       f"Nächste Ausführung: {info.get('next_run', '?')}\n"
-                       f"Letzte Ausführung:  {info.get('last_run', '?')}")
-        status_color = GREEN
-    else:
-        status_text  = "Kein automatischer Start eingerichtet."
-        status_color = FG_DIM
+    def _daily_status():
+        info = get_schedule_info()
+        if info["exists"]:
+            return (f"Task aktiv (Gruppe 'Täglich')\n"
+                    f"Nächste Ausführung: {info.get('next_run', '?')}\n"
+                    f"Letzte Ausführung:  {info.get('last_run', '?')}"), GREEN
+        return "Kein automatischer Start eingerichtet.", FG_DIM
 
     tk.Label(status_frame, text="Status:", font=("Segoe UI", 9),
              bg=BG2, fg=FG_DIM).grid(row=0, column=0, sticky="w")
-    tk.Label(status_frame, text=status_text, font=("Consolas", 9),
-             bg=BG2, fg=status_color, justify="left"
-             ).grid(row=0, column=1, sticky="w", padx=8)
+    _t, _c = _daily_status()
+    status_lbl = tk.Label(status_frame, text=_t, font=("Consolas", 9),
+                          bg=BG2, fg=_c, justify="left")
+    status_lbl.grid(row=0, column=1, sticky="w", padx=8)
 
     ttk.Separator(win, orient="horizontal").pack(fill="x", padx=10, pady=6)
 
@@ -176,6 +175,16 @@ def open_scheduler_dialog(parent=None):
 
     hour_var   = tk.StringVar(value="06")
     minute_var = tk.StringVar(value="00")
+    # Vorbelegung: Startzeit des bestehenden Tasks (aus "Nächste Ausführung")
+    try:
+        _nr = get_schedule_info().get("next_run", "")
+        import re as _re
+        _m = _re.search(r"(\d{1,2}):(\d{2}):\d{2}", _nr)
+        if _m:
+            hour_var.set(f"{int(_m.group(1)):02d}")
+            minute_var.set(_m.group(2))
+    except Exception:
+        pass
 
     hour_spin = tk.Spinbox(time_frame, from_=0, to=23, width=3,
                            textvariable=hour_var, format="%02.0f",
@@ -203,15 +212,22 @@ def open_scheduler_dialog(parent=None):
     ttk.Separator(win, orient="horizontal").pack(fill="x", padx=10, pady=6)
     ebay_frame = tk.Frame(win, bg=BG, padx=16, pady=4)
     ebay_frame.pack(fill="x")
-    ebay_info = get_schedule_info(EBAY_TASK_NAME)
-    if ebay_info["exists"]:
-        ebay_status = f"eBay-Bestand stündlich aktiv – nächste Ausführung: {ebay_info.get('next_run', '?')}"
-        ebay_color  = GREEN
-    else:
-        ebay_status = "eBay-Bestand stündlich: nicht eingerichtet."
-        ebay_color  = FG_DIM
-    tk.Label(ebay_frame, text=ebay_status, font=("Consolas", 9),
-             bg=BG, fg=ebay_color).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 4))
+    def _ebay_status():
+        info = get_schedule_info(EBAY_TASK_NAME)
+        if info["exists"]:
+            return (f"eBay-Bestand stündlich aktiv – nächste Ausführung: "
+                    f"{info.get('next_run', '?')}"), GREEN
+        return "eBay-Bestand stündlich: nicht eingerichtet.", FG_DIM
+
+    _t, _c = _ebay_status()
+    ebay_lbl = tk.Label(ebay_frame, text=_t, font=("Consolas", 9), bg=BG, fg=_c)
+    ebay_lbl.grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 4))
+
+    def refresh_status():
+        t, c = _daily_status()
+        status_lbl.config(text=t, fg=c)
+        t, c = _ebay_status()
+        ebay_lbl.config(text=t, fg=c)
     tk.Label(ebay_frame, text="eBay-Bestand per API:", font=("Segoe UI", 10),
              bg=BG, fg=FG).grid(row=1, column=0, sticky="w")
     ebay_min_var = tk.StringVar(value="05")
@@ -248,13 +264,17 @@ def open_scheduler_dialog(parent=None):
         except ValueError:
             p("Ungültige Zeitangabe.", "warn")
             return
-        schedule_daily(h, m, progress_cb=p)
+        if schedule_daily(h, m, progress_cb=p):
+            info = get_schedule_info()
+            p(f"  Nächste Ausführung laut Windows: {info.get('next_run', '?')}", "ok")
+        refresh_status()
 
     def do_remove():
         if messagebox.askyesno("Task entfernen",
                                "Automatischen Start wirklich entfernen?",
                                parent=win):
             remove_schedule(progress_cb=p)
+            refresh_status()
 
     def do_schedule_ebay():
         try:
@@ -262,13 +282,17 @@ def open_scheduler_dialog(parent=None):
         except ValueError:
             p("Ungültige Minute.", "warn")
             return
-        schedule_hourly_ebay(m, progress_cb=p)
+        if schedule_hourly_ebay(m, progress_cb=p):
+            info = get_schedule_info(EBAY_TASK_NAME)
+            p(f"  Nächste Ausführung laut Windows: {info.get('next_run', '?')}", "ok")
+        refresh_status()
 
     def do_remove_ebay():
         if messagebox.askyesno("Task entfernen",
                                "Stündlichen eBay-Bestandsabgleich wirklich entfernen?",
                                parent=win):
             remove_schedule(progress_cb=p, task_name=EBAY_TASK_NAME)
+            refresh_status()
 
     def do_test_all():
         p("Teste alle Verbindungen ...")
