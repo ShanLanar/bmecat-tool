@@ -74,7 +74,7 @@ TASKS = [
     {
         "id":      "ebay_api_bestand_live",
         "name":    "eBay – Bestand per API aktualisieren",
-        "desc":    "Ersatz für den CSV-Weg: aktive Angebote per eBay-API holen, Bestand aus EDI+FTP (EDI hat Vorrang) abgleichen und direkt senden – neue Menge je Angebot, Bestand 0 → Angebot beenden. Preise bleiben unverändert. Umgebung laut Konfiguration ebay → environment (sandbox|production); Report in BASE_DIR/eBay",
+        "desc":    "Ersatz für den CSV-Weg: aktive Angebote per eBay-API holen, Bestand aus EDI+FTP (EDI hat Vorrang) abgleichen und direkt senden – neue Menge je Angebot, Bestand 0 → Angebot beenden. Preise: 'Start price' aus eBay-edit-price-quantity-template.csv (BASE_DIR) wird gesendet, wenn er vom eBay-Preis abweicht. Umgebung laut Konfiguration ebay → environment (sandbox|production); Report in BASE_DIR/eBay",
         "fn":      "tasks.ebay:run_api_bestand_live",
         "default": False,
         "group":   "Täglich",

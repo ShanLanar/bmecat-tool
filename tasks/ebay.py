@@ -253,23 +253,91 @@ def run_api_listings(progress_cb=None, file_progress_cb=None) -> dict:
     return {"total": len(items), "with_sku": len(with_sku), "file": path}
 
 
-def _plan_api_changes(items: list, stock_map: dict) -> tuple[list, list, dict]:
-    """Returns (revise=[{item_id, sku, old, quantity}], end=[{item_id, sku, old}], stats)."""
+def _load_template_prices(p) -> dict:
+    """
+    Preise aus eBay-edit-price-quantity-template.csv (BASE_DIR):
+    {item_id: "12.34"}. Die Datei ist der eBay-Export der aktiven Angebote;
+    wird dort "Start price" geändert, sendet der API-Task den neuen Preis.
+    Fehlt die Datei → {} (Preise bleiben unverändert).
+    """
+    import csv
+    path = os.path.join(BASE_DIR, "eBay-edit-price-quantity-template.csv")
+    if not os.path.exists(path):
+        p("Kein eBay-edit-price-quantity-template.csv im Stammverzeichnis – Preise bleiben "
+          "wie bei eBay.", tag="dim")
+        return {}
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            raw = f.read()
+    except UnicodeDecodeError:
+        with open(path, encoding="cp1252", errors="replace") as f:
+            raw = f.read()
+    lines = raw.splitlines()
+    if lines and lines[0].startswith("#INFO"):
+        lines = lines[1:]
+    prices = {}
+    for r in csv.DictReader(lines, delimiter=";"):
+        iid = (r.get("Item number") or "").strip()
+        price = (r.get("Start price") or "").strip().replace(",", ".")
+        if iid and price:
+            try:
+                prices[iid] = f"{float(price):.2f}"
+            except ValueError:
+                pass
+    import datetime as _dt
+    stamp = _dt.datetime.fromtimestamp(os.path.getmtime(path))
+    p(f"Preisquelle: eBay-edit-price-quantity-template.csv ({len(prices)} Preise, "
+      f"Stand {stamp:%d.%m.%Y %H:%M})")
+    return prices
+
+
+def _price_differs(a: str, b: str) -> bool:
+    try:
+        return abs(float(a) - float(b)) >= 0.005
+    except (TypeError, ValueError):
+        return False
+
+
+def _plan_api_changes(items: list, stock_map: dict, prices: dict = None) -> tuple[list, list, dict]:
+    """
+    Returns (revise, end, stats).
+      revise: [{item_id, sku, old, quantity, price_old, price}]  – quantity/price None = unverändert
+      end:    [{item_id, sku, old}]
+    Preis wird nur gesetzt, wenn er im Template vom aktuellen eBay-Preis abweicht.
+    """
+    prices = prices or {}
     revise, end = [], []
-    stats = {"no_sku": 0, "not_in_bestand": 0, "unchanged": 0}
+    stats = {"no_sku": 0, "not_in_bestand": 0, "unchanged": 0, "price_changes": 0}
     for it in items:
         sku = it["sku"]
+        iid = it["item_id"]
+        new_price = prices.get(iid)
+        price_change = new_price is not None and _price_differs(new_price, it["price"])
         if not sku:
             stats["no_sku"] += 1
+            if price_change:   # Preisänderung auch ohne SKU möglich (Item number reicht)
+                revise.append({"item_id": iid, "sku": sku, "old": it["quantity"], "quantity": None,
+                               "price_old": it["price"], "price": new_price})
+                stats["price_changes"] += 1
             continue
         if sku not in stock_map:
             stats["not_in_bestand"] += 1
+            if price_change:
+                revise.append({"item_id": iid, "sku": sku, "old": it["quantity"], "quantity": None,
+                               "price_old": it["price"], "price": new_price})
+                stats["price_changes"] += 1
             continue
         stock = stock_map[sku]
         if stock <= 0:
-            end.append({"item_id": it["item_id"], "sku": sku, "old": it["quantity"]})
-        elif stock != it["quantity"]:
-            revise.append({"item_id": it["item_id"], "sku": sku, "old": it["quantity"], "quantity": stock})
+            end.append({"item_id": iid, "sku": sku, "old": it["quantity"]})
+            continue
+        qty_change = stock != it["quantity"]
+        if qty_change or price_change:
+            revise.append({"item_id": iid, "sku": sku, "old": it["quantity"],
+                           "quantity": stock if qty_change else None,
+                           "price_old": it["price"], "price": new_price if price_change else None})
+            if price_change:
+                stats["price_changes"] += 1
         else:
             stats["unchanged"] += 1
     return revise, end, stats
@@ -300,25 +368,35 @@ def run_api_bestand(progress_cb=None, file_progress_cb=None, live: bool = False)
         p(f"eBay API: {e}", tag="err")
         return {}
 
-    revise, end, stats = _plan_api_changes(items, stock_map)
-    p(f"{len(items)} aktive Angebote: {len(revise)} Menge ändern, {len(end)} beenden, "
-      f"{stats['unchanged']} unverändert, {stats['no_sku']} ohne SKU, "
+    prices = _load_template_prices(p)
+    revise, end, stats = _plan_api_changes(items, stock_map, prices)
+    n_qty = sum(1 for r in revise if r["quantity"] is not None)
+    p(f"{len(items)} aktive Angebote: {n_qty} Menge ändern, {stats['price_changes']} Preis ändern, "
+      f"{len(end)} beenden, {stats['unchanged']} unverändert, {stats['no_sku']} ohne SKU, "
       f"{stats['not_in_bestand']} SKU nicht im Bestand",
       tag="ok")
-    for r in revise[:15]:
-        p(f"  Menge  {r['item_id']}  {r['sku']:<18} {r['old']} → {r['quantity']}", tag="dim")
+    for r in revise[:20]:
+        parts = []
+        if r["quantity"] is not None:
+            parts.append(f"Menge {r['old']} → {r['quantity']}")
+        if r["price"] is not None:
+            parts.append(f"Preis {r['price_old']} → {r['price']}")
+        p(f"  Revise {r['item_id']}  {r['sku']:<18} {', '.join(parts)}", tag="dim")
     for e in end[:15]:
         p(f"  Ende   {e['item_id']}  {e['sku']:<18} {e['old']} → 0", tag="dim")
-    if len(revise) > 15 or len(end) > 15:
+    if len(revise) > 20 or len(end) > 15:
         p("  … (vollständig im Report)", tag="dim")
 
-    rows = [["revise", r["item_id"], r["sku"], r["old"], r["quantity"], "", ""] for r in revise] + \
-           [["end",    e["item_id"], e["sku"], e["old"], 0, "", ""] for e in end]
+    _hdr = ["aktion", "item_id", "sku", "menge_alt", "menge_neu", "preis_alt", "preis_neu", "status", "meldung"]
+    rows = [["revise", r["item_id"], r["sku"], r["old"],
+             r["quantity"] if r["quantity"] is not None else "",
+             r["price_old"], r["price"] if r["price"] is not None else "", "", ""] for r in revise] + \
+           [["end", e["item_id"], e["sku"], e["old"], 0, "", "", "", ""] for e in end]
     result = {"total": len(items), "revise": len(revise), "end": len(end), **stats,
               "sent": 0, "failed": 0, "live": live}
 
     if not live:
-        path = _write_report("ebay_api_probelauf", ["aktion", "item_id", "sku", "menge_alt", "menge_neu", "status", "meldung"], rows)
+        path = _write_report("ebay_api_probelauf", _hdr, rows)
         p(f"Probelauf-Report: {os.path.basename(path)} – es wurde NICHTS gesendet.", tag="ok")
         result["file"] = path
         return result
@@ -331,8 +409,9 @@ def run_api_bestand(progress_cb=None, file_progress_cb=None, live: bool = False)
     sent = failed = 0
     status = {}
     if revise:
-        p(f"Sende {len(revise)} Mengenänderungen (ReviseInventoryStatus, je 4 pro Aufruf) ...")
-        res = revise_inventory_status(cfg, [{"item_id": r["item_id"], "quantity": r["quantity"]} for r in revise])
+        p(f"Sende {len(revise)} Änderungen (ReviseInventoryStatus, je 4 pro Aufruf) ...")
+        res = revise_inventory_status(cfg, [{"item_id": r["item_id"], "quantity": r["quantity"],
+                                             "price": r["price"]} for r in revise])
         for r in res:
             status[r["item_id"]] = ("OK" if r["ok"] else "FEHLER", r["message"])
             if r["ok"]:
@@ -358,8 +437,8 @@ def run_api_bestand(progress_cb=None, file_progress_cb=None, live: bool = False)
     for row in rows:
         st = status.get(str(row[1]))
         if st:
-            row[5], row[6] = st
-    path = _write_report("ebay_api_live", ["aktion", "item_id", "sku", "menge_alt", "menge_neu", "status", "meldung"], rows)
+            row[7], row[8] = st
+    path = _write_report("ebay_api_live", _hdr, rows)
     p(f"Gesendet: {sent} OK, {failed} Fehler – Report: {os.path.basename(path)}",
       tag="ok" if not failed else "warn")
     result.update({"sent": sent, "failed": failed, "file": path})
