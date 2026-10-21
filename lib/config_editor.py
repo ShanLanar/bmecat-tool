@@ -197,6 +197,22 @@ class ConfigEditor(tk.Toplevel):
         ("protocol", "Protokoll", False),
     ]
 
+    # eBay-API-Verbindungen (protocol "ebay-api") haben eigene Felder
+    EBAY_FIELDS = [
+        ("environment",   "Umgebung (sandbox|production)", False),
+        ("client_id",     "App ID (Client ID)",            False),
+        ("client_secret", "Cert ID (Client Secret)",       True),
+        ("dev_id",        "Dev ID",                        False),
+        ("ru_name",       "RuName (Redirect)",             False),
+        ("refresh_token", "Refresh-Token",                 True),
+        ("site_id",       "Site ID (77 = DE)",             False),
+    ]
+
+    def _conn_fields(self, conn_name: str, conn_cfg: dict) -> list:
+        if conn_cfg.get("protocol") == "ebay-api":
+            return [f for f in self.EBAY_FIELDS if f[0] in conn_cfg]
+        return self.CONN_FIELDS
+
     def _populate(self):
         # ── Verbindungen ──────────────────────────────────────────────────────
         f = self._conn_frame
@@ -216,7 +232,13 @@ class ConfigEditor(tk.Toplevel):
             self._conn_vars[conn_name] = {}
             user_conn = conn_overrides.get(conn_name, {})
 
-            for field, label, is_pw in self.CONN_FIELDS:
+            if conn_cfg.get("protocol") == "ebay-api":
+                _mk_btn(f, "🔑  eBay-Anmeldung (Token holen)",
+                        lambda n=conn_name: self._ebay_login(n), small=True).grid(
+                    row=row, column=1, sticky="w", padx=(0, 12), pady=(0, 4))
+                row += 1
+
+            for field, label, is_pw in self._conn_fields(conn_name, conn_cfg):
                 default = user_conn.get(field, conn_cfg.get(field, ""))
                 var = tk.StringVar(value=str(default))
                 self._conn_vars[conn_name][field] = var
@@ -328,6 +350,47 @@ class ConfigEditor(tk.Toplevel):
         if path:
             self._tool_vars[key].set(path)
 
+    # ── eBay-Anmeldung ────────────────────────────────────────────────────────
+
+    def _ebay_login(self, conn_name: str):
+        """Browser öffnen → Code einfügen → Refresh-Token ins Feld übernehmen."""
+        import webbrowser
+        from tkinter import simpledialog
+        from lib.ebay_api import build_authorize_url, exchange_code, encrypt_secret, EbayError
+        vars_ = self._conn_vars.get(conn_name, {})
+        cfg = {k: v.get() for k, v in vars_.items()}
+        cfg["_environment"] = "sandbox" if conn_name == "ebay_sandbox" else "production"
+        try:
+            url = build_authorize_url(cfg)
+        except EbayError as e:
+            messagebox.showerror("eBay-Anmeldung", str(e), parent=self)
+            return
+        webbrowser.open(url)
+        code = simpledialog.askstring(
+            "eBay-Anmeldung",
+            f"Im Browser mit dem eBay-Verkäuferkonto anmelden und zustimmen "
+            f"({cfg['_environment']}).\n\nDanach die komplette Adresse der "
+            f"Zielseite (…?code=…) oder nur den Code hier einfügen:",
+            parent=self)
+        if not code:
+            return
+        try:
+            tok = exchange_code(cfg, code)
+        except EbayError as e:
+            messagebox.showerror("eBay-Anmeldung", str(e), parent=self)
+            return
+        rt = tok.get("refresh_token", "")
+        if not rt:
+            messagebox.showerror("eBay-Anmeldung", f"Kein Refresh-Token erhalten:\n{tok}", parent=self)
+            return
+        if "refresh_token" in vars_:
+            vars_["refresh_token"].set(encrypt_secret(rt))
+        days = int(tok.get("refresh_token_expires_in", 0)) // 86400
+        messagebox.showinfo(
+            "eBay-Anmeldung",
+            f"Refresh-Token erhalten (gültig ca. {days} Tage).\n"
+            f"Jetzt unten auf 'Speichern' klicken.", parent=self)
+
     # ── Speichern / Zurücksetzen ──────────────────────────────────────────────
 
     def _save(self):
@@ -337,11 +400,12 @@ class ConfigEditor(tk.Toplevel):
             data["connections"][conn_name] = {
                 field: var.get() for field, var in fields.items()
             }
-            try:
-                data["connections"][conn_name]["port"] = int(
-                    data["connections"][conn_name].get("port", 21))
-            except ValueError:
-                pass
+            if "port" in data["connections"][conn_name]:
+                try:
+                    data["connections"][conn_name]["port"] = int(
+                        data["connections"][conn_name].get("port", 21))
+                except ValueError:
+                    pass
 
         for key, var in self._dir_vars.items():
             data["dirs"][key] = var.get()

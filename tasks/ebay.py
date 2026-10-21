@@ -99,6 +99,38 @@ def _fetch_edi_bestand(edi_path: str, dest_path: str, p) -> bool:
         return False
 
 
+def _collect_bestand_paths(p) -> list:
+    """
+    EDI-Bestand vom Netzlaufwerk nach in_BME holen (eigene Datei) und die
+    vorhandenen Bestandsdateien in Prioritätsreihenfolge (EDI vor FTP)
+    zurückgeben. Leere Liste = keine Bestandsdatei vorhanden (Warnung im Log).
+    """
+    bestand_ftp = os.path.join(DIRS["in_bme"], "BestandBueroring.csv")
+    bestand_edi = os.path.join(DIRS["in_bme"], "BestandBueroring_EDI.csv")
+
+    # Zweiten Bestand vom EDI-Netzlaufwerk holen (DIRS.brg_bestand_edi,
+    # Reiter "Pfade"). Wird als eigene Datei BestandBueroring_EDI.csv nach
+    # in_BME kopiert – die per FTP geladene BestandBueroring.csv bleibt
+    # unangetastet. Beide werden zusammengeführt, EDI hat Vorrang.
+    edi_src = (DIRS.get("brg_bestand_edi") or "").strip()
+    if edi_src:
+        _fetch_edi_bestand(edi_src, bestand_edi, p)
+    else:
+        p("eBay-Bestand: kein EDI-Pfad konfiguriert (Pfade → brg_bestand_edi) "
+          "– nur FTP-Bestand.", tag="dim")
+
+    paths = [pth for pth in (bestand_edi, bestand_ftp) if os.path.exists(pth)]
+    if not paths:
+        p(f"eBay-Bestand: keine Bestandsdatei gefunden ({bestand_ftp}, {bestand_edi})",
+          tag="warn")
+        p("Bitte den Büroring-Download ausführen (lädt BestandBueroring.csv nach "
+          "in_BME) und/oder den EDI-Pfad prüfen.", tag="warn")
+    elif len(paths) < 2:
+        p(f"eBay-Bestand: nur eine Bestandsdatei vorhanden: "
+          f"{os.path.basename(paths[0])}", tag="warn")
+    return paths
+
+
 def run_bestand_revise(progress_cb=None, file_progress_cb=None) -> dict:
     """
     Task D: aktive eBay-Angebote (eBay-edit-price-quantity-template.csv,
@@ -112,19 +144,6 @@ def run_bestand_revise(progress_cb=None, file_progress_cb=None) -> dict:
     from lib.ebay_export import build_revise_end_from_bestand
 
     template_path = os.path.join(BASE_DIR, "eBay-edit-price-quantity-template.csv")
-    bestand_ftp   = os.path.join(DIRS["in_bme"], "BestandBueroring.csv")
-    bestand_edi   = os.path.join(DIRS["in_bme"], "BestandBueroring_EDI.csv")
-
-    # Zweiten Bestand vom EDI-Netzlaufwerk holen (DIRS.brg_bestand_edi,
-    # Reiter "Pfade"). Wird als eigene Datei BestandBueroring_EDI.csv nach
-    # in_BME kopiert – die per FTP geladene BestandBueroring.csv bleibt
-    # unangetastet. Beide werden zusammengeführt, EDI hat Vorrang.
-    edi_src = (DIRS.get("brg_bestand_edi") or "").strip()
-    if edi_src:
-        _fetch_edi_bestand(edi_src, bestand_edi, p)
-    else:
-        p("eBay-Bestand-Revise: kein EDI-Pfad konfiguriert (Pfade → brg_bestand_edi) "
-          "– nur FTP-Bestand.", tag="dim")
 
     if not os.path.exists(template_path):
         p(f"eBay-Bestand-Revise: Datei nicht gefunden: {template_path}", tag="warn")
@@ -132,18 +151,257 @@ def run_bestand_revise(progress_cb=None, file_progress_cb=None) -> dict:
           "'eBay-edit-price-quantity-template.csv' nach BASE_DIR legen.", tag="warn")
         return {}
 
-    # Reihenfolge = Priorität: EDI vor FTP
-    bestand_paths = [pth for pth in (bestand_edi, bestand_ftp) if os.path.exists(pth)]
+    bestand_paths = _collect_bestand_paths(p)
     if not bestand_paths:
-        p(f"eBay-Bestand-Revise: keine Bestandsdatei gefunden ({bestand_ftp}, "
-          f"{bestand_edi})", tag="warn")
-        p("Bitte den Büroring-Download ausführen (lädt BestandBueroring.csv nach "
-          "in_BME) und/oder den EDI-Pfad prüfen.", tag="warn")
         return {}
-    if len(bestand_paths) < 2:
-        p(f"eBay-Bestand-Revise: nur eine Bestandsdatei vorhanden: "
-          f"{os.path.basename(bestand_paths[0])}", tag="warn")
 
     out_dir = os.path.join(BASE_DIR, "eBay")
     return build_revise_end_from_bestand(template_path, bestand_paths, out_dir,
                                          progress_cb=p)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# eBay API (Trading API, OAuth) – siehe lib/ebay_api.py
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _ebay_cfg(p):
+    from config import CONNECTIONS
+    from lib.ebay_api import resolve_config
+    env, cfg = resolve_config(CONNECTIONS)
+    p(f"eBay API: Umgebung {env.upper()} "
+      f"({'Testsystem, keine echten Angebote' if env == 'sandbox' else 'LIVE – echte Angebote'})",
+      tag="warn" if env == "production" else "dim")
+    return env, cfg
+
+
+def _write_report(name: str, header: list, rows: list) -> str:
+    import csv
+    from datetime import datetime
+    out_dir = os.path.join(BASE_DIR, "eBay")
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"{name}_{datetime.now():%Y%m%d_%H%M}.csv")
+    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f, delimiter=";")
+        w.writerow(header)
+        w.writerows(rows)
+    return path
+
+
+def run_api_listings(progress_cb=None, file_progress_cb=None) -> dict:
+    """
+    Nur lesend: aktive Angebote per API abrufen, als CSV ablegen und – falls
+    vorhanden – mit eBay-edit-price-quantity-template.csv (BASE_DIR) vergleichen.
+    """
+    p = progress_cb or (lambda m, **kw: None)
+    from lib.ebay_api import get_active_listings, get_user, EbayError
+    try:
+        env, cfg = _ebay_cfg(p)
+        u = get_user(cfg)
+        p(f"eBay API: angemeldet als {u.get('user_id', '?')}")
+        items = get_active_listings(cfg, progress_cb=p)
+    except EbayError as e:
+        p(f"eBay API: {e}", tag="err")
+        return {}
+
+    with_sku = [i for i in items if i["sku"]]
+    p(f"eBay API: {len(items)} aktive Angebote, davon {len(with_sku)} mit SKU, "
+      f"{len(items) - len(with_sku)} ohne SKU", tag="ok")
+    path = _write_report("ebay_api_angebote",
+                         ["item_id", "sku", "title", "quantity", "quantity_sold", "price", "currency", "listing_type"],
+                         [[i[k] for k in ("item_id", "sku", "title", "quantity", "quantity_sold",
+                                          "price", "currency", "listing_type")] for i in items])
+    p(f"Liste: {os.path.basename(path)}")
+
+    # Vergleich mit dem manuell heruntergeladenen Template
+    template_path = os.path.join(BASE_DIR, "eBay-edit-price-quantity-template.csv")
+    if os.path.exists(template_path):
+        import csv
+        try:
+            with open(template_path, encoding="utf-8-sig") as f:
+                raw = f.read()
+        except UnicodeDecodeError:
+            with open(template_path, encoding="cp1252", errors="replace") as f:
+                raw = f.read()
+        lines = raw.splitlines()
+        if lines and lines[0].startswith("#INFO"):
+            lines = lines[1:]
+        tpl = {(r.get("Item number") or "").strip(): r
+               for r in csv.DictReader(lines, delimiter=";")}
+        api = {i["item_id"]: i for i in items}
+        only_tpl = sorted(set(tpl) - set(api))
+        only_api = sorted(set(api) - set(tpl))
+        qty_diff = [(iid, tpl[iid].get("Available quantity", ""), api[iid]["quantity"])
+                    for iid in set(tpl) & set(api)
+                    if (tpl[iid].get("Available quantity") or "").strip() != str(api[iid]["quantity"])]
+        sku_diff = [(iid, tpl[iid].get("Custom label (SKU)", ""), api[iid]["sku"])
+                    for iid in set(tpl) & set(api)
+                    if (tpl[iid].get("Custom label (SKU)") or "").strip() != api[iid]["sku"]]
+        p(f"Vergleich mit Template ({len(tpl)} Angebote): "
+          f"{len(only_tpl)} nur im Template, {len(only_api)} nur per API, "
+          f"{len(qty_diff)} Mengen-Abweichungen, {len(sku_diff)} SKU-Abweichungen",
+          tag="ok" if not (only_tpl or only_api or sku_diff) else "warn")
+        for iid in only_tpl[:10]:
+            p(f"  nur Template: {iid}", tag="dim")
+        for iid in only_api[:10]:
+            p(f"  nur API:      {iid}  {api[iid]['sku']}  {api[iid]['title'][:50]}", tag="dim")
+        for iid, a, b in qty_diff[:10]:
+            p(f"  Menge {iid}: Template {a} / API {b}", tag="dim")
+        for iid, a, b in sku_diff[:10]:
+            p(f"  SKU   {iid}: Template '{a}' / API '{b}'", tag="dim")
+    else:
+        p("Kein Template zum Vergleich vorhanden (eBay-edit-price-quantity-template.csv).", tag="dim")
+    return {"total": len(items), "with_sku": len(with_sku), "file": path}
+
+
+def _plan_api_changes(items: list, stock_map: dict) -> tuple[list, list, dict]:
+    """Returns (revise=[{item_id, sku, old, quantity}], end=[{item_id, sku, old}], stats)."""
+    revise, end = [], []
+    stats = {"no_sku": 0, "not_in_bestand": 0, "unchanged": 0}
+    for it in items:
+        sku = it["sku"]
+        if not sku:
+            stats["no_sku"] += 1
+            continue
+        if sku not in stock_map:
+            stats["not_in_bestand"] += 1
+            continue
+        stock = stock_map[sku]
+        if stock <= 0:
+            end.append({"item_id": it["item_id"], "sku": sku, "old": it["quantity"]})
+        elif stock != it["quantity"]:
+            revise.append({"item_id": it["item_id"], "sku": sku, "old": it["quantity"], "quantity": stock})
+        else:
+            stats["unchanged"] += 1
+    return revise, end, stats
+
+
+def run_api_bestand(progress_cb=None, file_progress_cb=None, live: bool = False) -> dict:
+    """
+    Bestand der aktiven eBay-Angebote per API aktualisieren.
+    live=False: Probelauf – nur Plan (Log + CSV), nichts wird gesendet.
+    live=True:  ReviseInventoryStatus (neue Menge) / EndFixedPriceItem (Bestand 0).
+    """
+    p = progress_cb or (lambda m, **kw: None)
+    from lib.ebay_api import (get_active_listings, revise_inventory_status,
+                              end_fixed_price_item, EbayError)
+    from lib.ebay_export import load_stock_map
+
+    mode = "LIVE" if live else "PROBELAUF"
+    p(f"eBay API Bestand – {mode}")
+    bestand_paths = _collect_bestand_paths(p)
+    if not bestand_paths:
+        return {}
+    stock_map = load_stock_map(bestand_paths, p)
+
+    try:
+        env, cfg = _ebay_cfg(p)
+        items = get_active_listings(cfg, progress_cb=p)
+    except EbayError as e:
+        p(f"eBay API: {e}", tag="err")
+        return {}
+
+    revise, end, stats = _plan_api_changes(items, stock_map)
+    p(f"{len(items)} aktive Angebote: {len(revise)} Menge ändern, {len(end)} beenden, "
+      f"{stats['unchanged']} unverändert, {stats['no_sku']} ohne SKU, "
+      f"{stats['not_in_bestand']} SKU nicht im Bestand",
+      tag="ok")
+    for r in revise[:15]:
+        p(f"  Menge  {r['item_id']}  {r['sku']:<18} {r['old']} → {r['quantity']}", tag="dim")
+    for e in end[:15]:
+        p(f"  Ende   {e['item_id']}  {e['sku']:<18} {e['old']} → 0", tag="dim")
+    if len(revise) > 15 or len(end) > 15:
+        p("  … (vollständig im Report)", tag="dim")
+
+    rows = [["revise", r["item_id"], r["sku"], r["old"], r["quantity"], "", ""] for r in revise] + \
+           [["end",    e["item_id"], e["sku"], e["old"], 0, "", ""] for e in end]
+    result = {"total": len(items), "revise": len(revise), "end": len(end), **stats,
+              "sent": 0, "failed": 0, "live": live}
+
+    if not live:
+        path = _write_report("ebay_api_probelauf", ["aktion", "item_id", "sku", "menge_alt", "menge_neu", "status", "meldung"], rows)
+        p(f"Probelauf-Report: {os.path.basename(path)} – es wurde NICHTS gesendet.", tag="ok")
+        result["file"] = path
+        return result
+
+    if not revise and not end:
+        p("Keine Änderungen – nichts zu senden.", tag="ok")
+        return result
+
+    # ── Senden ────────────────────────────────────────────────────────────────
+    sent = failed = 0
+    status = {}
+    if revise:
+        p(f"Sende {len(revise)} Mengenänderungen (ReviseInventoryStatus, je 4 pro Aufruf) ...")
+        res = revise_inventory_status(cfg, [{"item_id": r["item_id"], "quantity": r["quantity"]} for r in revise])
+        for r in res:
+            status[r["item_id"]] = ("OK" if r["ok"] else "FEHLER", r["message"])
+            if r["ok"]:
+                sent += 1
+            else:
+                failed += 1
+                p(f"  ✗ {r['item_id']}: {r['message']}", tag="err")
+    if end:
+        p(f"Beende {len(end)} Angebote (EndFixedPriceItem) ...")
+        for i, e in enumerate(end, 1):
+            r = end_fixed_price_item(cfg, e["item_id"])
+            status[r["item_id"]] = ("OK" if r["ok"] else "FEHLER", r["message"])
+            if r["ok"]:
+                sent += 1
+            else:
+                failed += 1
+                p(f"  ✗ {r['item_id']}: {r['message']}", tag="err")
+            if file_progress_cb:
+                try:
+                    file_progress_cb(i, len(end))
+                except Exception:
+                    pass
+    for row in rows:
+        st = status.get(str(row[1]))
+        if st:
+            row[5], row[6] = st
+    path = _write_report("ebay_api_live", ["aktion", "item_id", "sku", "menge_alt", "menge_neu", "status", "meldung"], rows)
+    p(f"Gesendet: {sent} OK, {failed} Fehler – Report: {os.path.basename(path)}",
+      tag="ok" if not failed else "warn")
+    result.update({"sent": sent, "failed": failed, "file": path})
+    return result
+
+
+def run_api_bestand_dry(progress_cb=None, file_progress_cb=None) -> dict:
+    return run_api_bestand(progress_cb, file_progress_cb, live=False)
+
+
+def run_api_bestand_live(progress_cb=None, file_progress_cb=None) -> dict:
+    return run_api_bestand(progress_cb, file_progress_cb, live=True)
+
+
+def run_sandbox_test_listings(progress_cb=None, file_progress_cb=None) -> dict:
+    """
+    Nur Sandbox: 3 Testangebote mit echten SKUs aus den Bestandsdateien anlegen,
+    damit der Bestands-Task dort etwas zum Aktualisieren hat.
+    """
+    p = progress_cb or (lambda m, **kw: None)
+    from lib.ebay_api import add_test_listing, EbayError
+    from lib.ebay_export import load_stock_map
+    try:
+        env, cfg = _ebay_cfg(p)
+    except EbayError as e:
+        p(f"eBay API: {e}", tag="err")
+        return {}
+    if env != "sandbox":
+        p("Testangebote werden nur in der Sandbox angelegt – Umgebung steht auf production. "
+          "Konfiguration → Verbindungen → ebay → environment = sandbox", tag="err")
+        return {}
+    paths = _collect_bestand_paths(p)
+    stock = load_stock_map(paths, p) if paths else {}
+    skus = [s for s, q in stock.items() if q > 0][:3] or ["TEST-SKU-1", "TEST-SKU-2", "TEST-SKU-3"]
+    created = []
+    for sku in skus:
+        try:
+            iid = add_test_listing(cfg, sku, f"Testartikel {sku} (Sandbox)", quantity=99)
+            created.append((iid, sku))
+            p(f"  angelegt: {iid}  SKU {sku}  Menge 99", tag="ok")
+        except EbayError as e:
+            p(f"  ✗ {sku}: {e}", tag="err")
+    p(f"{len(created)} Testangebote angelegt. Danach: 'eBay API – Bestand aktualisieren (Probelauf)'.",
+      tag="ok" if created else "warn")
+    return {"created": created}

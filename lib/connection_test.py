@@ -98,6 +98,27 @@ def _test_mysql(name: str, cfg: dict) -> TestResult:
         return TestResult(name, False, f"Fehler: {e}")
 
 
+def _test_ebay(name: str, cfg: dict) -> TestResult:
+    """eBay API: Refresh-Token → Zugriffstoken → GetUser."""
+    import time
+    from lib.ebay_api import get_user, EbayError
+    c = dict(cfg)
+    c["_environment"] = "sandbox" if name == "ebay_sandbox" else "production"
+    if not (c.get("client_id") or "").strip():
+        return TestResult(name, False, "nicht konfiguriert (client_id leer) – übersprungen")
+    if not (c.get("refresh_token") or "").strip():
+        return TestResult(name, False, "kein Refresh-Token – Konfiguration → Verbindungen → eBay-Anmeldung")
+    t0 = time.monotonic()
+    try:
+        u = get_user(c)
+        ms = round((time.monotonic() - t0) * 1000)
+        return TestResult(name, True, f"angemeldet als {u.get('user_id', '?')} ({c['_environment']})", ms)
+    except EbayError as e:
+        return TestResult(name, False, str(e))
+    except Exception as e:
+        return TestResult(name, False, f"{type(e).__name__}: {e}")
+
+
 def test_all(progress_cb: Optional[Callable] = None) -> list[TestResult]:
     """Testet alle Verbindungen aus config.CONNECTIONS sequenziell."""
     from config import CONNECTIONS
@@ -111,6 +132,8 @@ def test_all(progress_cb: Optional[Callable] = None) -> list[TestResult]:
             r = _test_sftp(name, cfg)
         elif protocol == "mysql":
             r = _test_mysql(name, cfg)
+        elif protocol == "ebay-api":
+            r = _test_ebay(name, cfg)
         else:
             r = _test_ftp(name, cfg)
 

@@ -128,6 +128,32 @@ CONNECTIONS = {
                     "article_db.sqlite, live editierte Config-CSVs – alles was "
                     "nicht in Git liegt). Für Server-Umzug per FTP.",
     },
+    # ── eBay API (Developer-Programm) ────────────────────────────────────────
+    # Keys aus developer.ebay.com → Application Keys. client_secret und
+    # refresh_token über den Konfigurations-Editor eintragen bzw. per
+    # "eBay-Anmeldung" erzeugen. "environment" in "ebay" entscheidet, welches
+    # Keyset die eBay-API-Tasks verwenden: sandbox (Test) oder production (Live).
+    "ebay": {
+        "host":          "api.ebay.com",
+        "protocol":      "ebay-api",
+        "environment":   "sandbox",
+        "client_id":     "",
+        "client_secret": "",
+        "dev_id":        "",
+        "ru_name":       "",
+        "refresh_token": "",
+        "site_id":       "77",
+    },
+    "ebay_sandbox": {
+        "host":          "api.sandbox.ebay.com",
+        "protocol":      "ebay-api",
+        "client_id":     "",
+        "client_secret": "",
+        "dev_id":        "",
+        "ru_name":       "",
+        "refresh_token": "",
+        "site_id":       "77",
+    },
     "erp_mysql": {
         "host":     "",
         "user":     "",

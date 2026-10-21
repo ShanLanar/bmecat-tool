@@ -533,6 +533,25 @@ def _read_bestand_csv(path: str) -> dict:
     return result
 
 
+def load_stock_map(bestand_csv_path, progress_cb=None) -> dict:
+    """
+    Bestand aus einer oder mehreren Dateien (Prioritätsreihenfolge: erste
+    Datei gewinnt bei gleicher SKU). Returns {sku: bestand_int}.
+    """
+    p = progress_cb or (lambda m, **kw: None)
+    paths = ([bestand_csv_path] if isinstance(bestand_csv_path, str)
+             else list(bestand_csv_path))
+    stock_map: dict = {}
+    for pth in reversed(paths):          # niedrigste Priorität zuerst, dann überschreiben
+        part = _read_bestand_csv(pth)
+        p(f"{os.path.basename(pth)}: {len(part)} SKUs mit Bestand geladen.")
+        stock_map.update(part)
+    if len(paths) > 1:
+        p(f"Bestände zusammengeführt: {len(stock_map)} SKUs "
+          f"(Vorrang: {os.path.basename(paths[0])}).")
+    return stock_map
+
+
 def build_revise_end_from_bestand(template_path: str, bestand_csv_path,
                                   out_dir: str, progress_cb=None) -> dict:
     """
@@ -564,16 +583,7 @@ def build_revise_end_from_bestand(template_path: str, bestand_csv_path,
     template_rows = list(csv.DictReader(lines, delimiter=";"))
     p(f"eBay-Template: {len(template_rows)} aktive Angebote gelesen.")
 
-    paths = ([bestand_csv_path] if isinstance(bestand_csv_path, str)
-             else list(bestand_csv_path))
-    stock_map: dict = {}
-    for pth in reversed(paths):          # niedrigste Priorität zuerst, dann überschreiben
-        part = _read_bestand_csv(pth)
-        p(f"{os.path.basename(pth)}: {len(part)} SKUs mit Bestand geladen.")
-        stock_map.update(part)
-    if len(paths) > 1:
-        p(f"Bestände zusammengeführt: {len(stock_map)} SKUs "
-          f"(Vorrang: {os.path.basename(paths[0])}).")
+    stock_map = load_stock_map(bestand_csv_path, p)
 
     revise_rows, end_rows = [], []
     no_sku = not_in_bestand = updated = 0
