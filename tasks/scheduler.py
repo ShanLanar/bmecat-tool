@@ -13,6 +13,7 @@ from datetime import datetime
 log = logging.getLogger(__name__)
 
 TASK_NAME = "BMEcatDownloadTool"
+EBAY_TASK_NAME = "BMEcatEbayBestand"
 
 
 # ── Windows Task Scheduler ────────────────────────────────────────────────────
@@ -22,68 +23,88 @@ def _python_exe() -> str:
     return sys.executable or "python"
 
 
+def _err_text(result) -> str:
+    return (result.stderr or result.stdout or "").strip() or f"Exit-Code {result.returncode}"
+
+
+def _create_task(task_name: str, main_args: str, schedule_args: list, p) -> bool:
+    """
+    schtasks /create ohne '/rl HIGHEST' – das verlangt Administratorrechte
+    ("Zugriff verweigert"), ist für das Tool aber nicht nötig. Der Task läuft
+    im Konto des angemeldeten Benutzers.
+    """
+    script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    main_py    = os.path.join(script_dir, "main.py")
+    python_exe = _python_exe()
+
+    subprocess.run(["schtasks", "/delete", "/tn", task_name, "/f"], capture_output=True)
+    cmd = ["schtasks", "/create", "/tn", task_name,
+           "/tr", f'"{python_exe}" "{main_py}" {main_args}', *schedule_args, "/f"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode == 0:
+        p(f"Task '{task_name}' erfolgreich eingerichtet.", tag="ok")
+        p(f"  Python:  {python_exe}")
+        p(f"  Skript:  {main_py} {main_args}")
+        return True
+    msg = _err_text(result)
+    p(f"Fehler beim Einrichten: {msg}", tag="warn")
+    if "verweigert" in msg.lower() or "denied" in msg.lower():
+        p("Hinweis: Zugriff auf den Aufgabenplaner verweigert – ggf. ist die Aufgaben-"
+          "planung per Gruppenrichtlinie gesperrt oder der Task gehört einem anderen "
+          "Benutzer (dann zuerst in der Aufgabenplanung löschen).", tag="warn")
+    return False
+
+
 def schedule_daily(hour: int, minute: int,
                    progress_cb=None) -> bool:
     """
     Richtet einen täglichen Task im Windows Task Scheduler ein.
-    Startet main.py mit allen Standard-Tasks.
-    Gibt True bei Erfolg zurück.
+    Startet main.py mit allen Standard-Tasks (--auto).
     """
     p = progress_cb or (lambda m, **kw: None)
-
-    script_dir  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    main_py     = os.path.join(script_dir, "main.py")
-    python_exe  = _python_exe()
-    time_str    = f"{hour:02d}:{minute:02d}"
-
-    # Bestehenden Task zuerst löschen (Fehler ignorieren)
-    subprocess.run(
-        ["schtasks", "/delete", "/tn", TASK_NAME, "/f"],
-        capture_output=True)
-
-    cmd = [
-        "schtasks", "/create",
-        "/tn",  TASK_NAME,
-        "/tr",  f'"{python_exe}" "{main_py}" --auto',
-        "/sc",  "DAILY",
-        "/st",  time_str,
-        "/rl",  "HIGHEST",
-        "/f",
-    ]
-
-    p(f"Erstelle Task '{TASK_NAME}' für {time_str} Uhr ...")
-    result = subprocess.run(cmd, capture_output=True, text=True)
-
-    if result.returncode == 0:
-        p(f"Task '{TASK_NAME}' erfolgreich eingerichtet.", tag="ok")
-        p(f"  Python:  {python_exe}")
-        p(f"  Skript:  {main_py}")
+    time_str = f"{hour:02d}:{minute:02d}"
+    p(f"Erstelle Task '{TASK_NAME}' für täglich {time_str} Uhr ...")
+    ok = _create_task(TASK_NAME, "--auto", ["/sc", "DAILY", "/st", time_str], p)
+    if ok:
         p(f"  Zeit:    täglich {time_str} Uhr")
-        return True
-    else:
-        p(f"Fehler beim Einrichten: {result.stderr.strip()}", tag="warn")
-        p("Hinweis: Administratorrechte erforderlich.", tag="warn")
-        return False
+    return ok
 
 
-def remove_schedule(progress_cb=None) -> bool:
+def schedule_hourly_ebay(minute: int, progress_cb=None) -> bool:
+    """
+    Stündlicher Task für "eBay – Bestand per API aktualisieren"
+    (main.py --auto-tasks=ebay_api_bestand_live), jeweils zur Minute `minute`.
+    """
+    p = progress_cb or (lambda m, **kw: None)
+    time_str = f"00:{minute:02d}"
+    p(f"Erstelle Task '{EBAY_TASK_NAME}' stündlich zur Minute {minute:02d} ...")
+    ok = _create_task(EBAY_TASK_NAME, "--auto-tasks=ebay_api_bestand_live",
+                      ["/sc", "HOURLY", "/mo", "1", "/st", time_str], p)
+    if ok:
+        p(f"  Zeit:    jede Stunde um xx:{minute:02d}")
+        p("  Hinweis: läuft nur, solange der Benutzer angemeldet ist (auch gesperrt).")
+    return ok
+
+
+def remove_schedule(progress_cb=None, task_name: str = None) -> bool:
     """Entfernt den Task aus dem Windows Task Scheduler."""
     p = progress_cb or (lambda m, **kw: None)
+    task_name = task_name or TASK_NAME
     result = subprocess.run(
-        ["schtasks", "/delete", "/tn", TASK_NAME, "/f"],
+        ["schtasks", "/delete", "/tn", task_name, "/f"],
         capture_output=True, text=True)
     if result.returncode == 0:
-        p(f"Task '{TASK_NAME}' entfernt.", tag="ok")
+        p(f"Task '{task_name}' entfernt.", tag="ok")
         return True
     else:
-        p(f"Task nicht gefunden oder Fehler: {result.stderr.strip()}", tag="warn")
+        p(f"Task nicht gefunden oder Fehler: {_err_text(result)}", tag="warn")
         return False
 
 
-def get_schedule_info() -> dict:
+def get_schedule_info(task_name: str = None) -> dict:
     """Liest den aktuellen Status des Tasks aus."""
     result = subprocess.run(
-        ["schtasks", "/query", "/tn", TASK_NAME, "/fo", "LIST"],
+        ["schtasks", "/query", "/tn", task_name or TASK_NAME, "/fo", "LIST"],
         capture_output=True, text=True)
     if result.returncode != 0:
         return {"exists": False}
@@ -113,8 +134,8 @@ def open_scheduler_dialog(parent=None):
     win = tk.Toplevel(parent)
     win.title("Automatischer Start")
     win.configure(bg=BG)
-    win.geometry("480x400")
-    win.minsize(420, 340)
+    win.geometry("560x520")
+    win.minsize(520, 460)
     win.grab_set()
 
     tk.Label(win, text="Automatischer Start einrichten",
@@ -175,6 +196,29 @@ def open_scheduler_dialog(parent=None):
              font=("Segoe UI", 10), bg=BG, fg=FG_DIM
              ).grid(row=0, column=4)
 
+    # ── eBay-Bestand stündlich ────────────────────────────────────────────────
+    ttk.Separator(win, orient="horizontal").pack(fill="x", padx=10, pady=6)
+    ebay_frame = tk.Frame(win, bg=BG, padx=16, pady=4)
+    ebay_frame.pack(fill="x")
+    ebay_info = get_schedule_info(EBAY_TASK_NAME)
+    if ebay_info["exists"]:
+        ebay_status = f"eBay-Bestand stündlich aktiv – nächste Ausführung: {ebay_info.get('next_run', '?')}"
+        ebay_color  = GREEN
+    else:
+        ebay_status = "eBay-Bestand stündlich: nicht eingerichtet."
+        ebay_color  = FG_DIM
+    tk.Label(ebay_frame, text=ebay_status, font=("Consolas", 9),
+             bg=BG, fg=ebay_color).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 4))
+    tk.Label(ebay_frame, text="eBay-Bestand per API:", font=("Segoe UI", 10),
+             bg=BG, fg=FG).grid(row=1, column=0, sticky="w")
+    ebay_min_var = tk.StringVar(value="05")
+    tk.Spinbox(ebay_frame, values=["00","05","10","15","20","25","30","35","40","45","50","55"],
+               width=3, textvariable=ebay_min_var, font=("Consolas", 12),
+               bg=BG3, fg=FG, buttonbackground=BG2, relief="flat", bd=4
+               ).grid(row=1, column=1, padx=(12, 4))
+    tk.Label(ebay_frame, text="Minute, jede Stunde", font=("Segoe UI", 10),
+             bg=BG, fg=FG_DIM).grid(row=1, column=2, sticky="w")
+
     # Log
     from tkinter import scrolledtext
     log_txt = scrolledtext.ScrolledText(win, font=("Consolas", 9),
@@ -209,6 +253,20 @@ def open_scheduler_dialog(parent=None):
                                parent=win):
             remove_schedule(progress_cb=p)
 
+    def do_schedule_ebay():
+        try:
+            m = int(ebay_min_var.get())
+        except ValueError:
+            p("Ungültige Minute.", "warn")
+            return
+        schedule_hourly_ebay(m, progress_cb=p)
+
+    def do_remove_ebay():
+        if messagebox.askyesno("Task entfernen",
+                               "Stündlichen eBay-Bestandsabgleich wirklich entfernen?",
+                               parent=win):
+            remove_schedule(progress_cb=p, task_name=EBAY_TASK_NAME)
+
     def do_test_all():
         p("Teste alle Verbindungen ...")
         from config import CONNECTIONS
@@ -234,13 +292,14 @@ def open_scheduler_dialog(parent=None):
         if result.returncode == 0:
             p("Zugriff OK.", "ok")
         else:
-            p("Kein Zugriff – Administratorrechte erforderlich.", "warn")
+            p(f"Kein Zugriff auf den Aufgabenplaner: {_err_text(result)}", "warn")
 
     for text, cmd, color in [
-        ("Einrichten",           do_schedule,  ACCENT),
-        ("Entfernen",            do_remove,    RED),
-        ("Verbindungen testen",  do_test_all,  BG2),
-        ("Scheduler testen",     do_test,      BG2),
+        ("Täglich einrichten",   do_schedule,       ACCENT),
+        ("Täglich entfernen",    do_remove,         RED),
+        ("eBay stündlich",       do_schedule_ebay,  ACCENT),
+        ("eBay entfernen",       do_remove_ebay,    RED),
+        ("Scheduler testen",     do_test,           BG2),
     ]:
         tk.Button(btn_frame, text=text, command=cmd,
                   font=("Segoe UI", 9), bg=color, fg=FG,
@@ -265,6 +324,23 @@ def is_auto_daily_mode() -> bool:
     (führt nur die Aufgaben der Rubrik "Täglich" aus, unabhängig von den
     sonst angehakten Standard-Aufgaben)."""
     return "--auto-daily" in sys.argv
+
+
+def auto_task_ids() -> list:
+    """Task-IDs aus --auto-tasks=id1,id2 (Scheduler-Start einzelner Aufgaben)."""
+    for a in sys.argv:
+        if a.startswith("--auto-tasks="):
+            return [t.strip() for t in a.split("=", 1)[1].split(",") if t.strip()]
+    return []
+
+
+def is_auto_tasks_mode() -> bool:
+    return bool(auto_task_ids())
+
+
+def is_unattended() -> bool:
+    """True bei jedem Scheduler-Start (--auto, --auto-daily, --auto-tasks=...)."""
+    return is_auto_mode() or is_auto_daily_mode() or is_auto_tasks_mode()
 
 
 def is_dry_run() -> bool:

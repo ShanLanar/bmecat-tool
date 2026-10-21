@@ -652,6 +652,17 @@ class App(tk.Tk):
                 self._checks[task["id"]].set(True)
         self._refresh_all_btns()
 
+    def _select_task_ids(self, ids):
+        for v in self._checks.values():
+            v.set(False)
+        unknown = [i for i in ids if i not in self._checks]
+        for i in ids:
+            if i in self._checks:
+                self._checks[i].set(True)
+        if unknown:
+            self._append_log(f"⚠ Unbekannte Task-IDs ignoriert: {', '.join(unknown)}", tag="warn")
+        self._refresh_all_btns()
+
     def _select_bilder(self):
         for v in self._checks.values():
             v.set(False)
@@ -888,8 +899,8 @@ class App(tk.Tk):
             return
 
         # Disk-Space-Check
-        from tasks.scheduler import is_auto_mode, is_auto_daily_mode
-        unattended = is_auto_mode() or is_auto_daily_mode()
+        from tasks.scheduler import is_unattended
+        unattended = is_unattended()
         try:
             import shutil
             usage = shutil.disk_usage(config.BASE_DIR)
@@ -1137,8 +1148,8 @@ class App(tk.Tk):
         self._stop_btn.config(state="disabled")
         self._set_status("Übersprungen – anderer Lauf bereits aktiv", _T("YELLOW"))
 
-        from tasks.scheduler import is_auto_mode, is_auto_daily_mode
-        if is_auto_mode() or is_auto_daily_mode():
+        from tasks.scheduler import is_unattended
+        if is_unattended():
             self.after(3000, self.destroy)
 
     def _finish(self, errors, dedup_total=None):
@@ -1161,8 +1172,8 @@ class App(tk.Tk):
         # Scheduler-Lauf: Fenster nicht offen stehen lassen – sonst zeigt der
         # Task Scheduler den Task dauerhaft als "Wird ausgeführt" an, obwohl
         # der Lauf längst fertig ist.
-        from tasks.scheduler import is_auto_mode, is_auto_daily_mode
-        if is_auto_mode() or is_auto_daily_mode():
+        from tasks.scheduler import is_unattended
+        if is_unattended():
             self.after(3000, self.destroy)
 
     # ── Hilfsmethoden ─────────────────────────────────────────────────────────
@@ -1264,8 +1275,12 @@ if __name__ == "__main__":
     app = App()
     # --auto: direkt Standard-Tasks starten (für Scheduler)
     # --auto-daily: nur die Aufgaben der Rubrik "Täglich" starten (für Scheduler)
-    from tasks.scheduler import is_auto_mode, is_auto_daily_mode
-    if is_auto_daily_mode():
+    # --auto-tasks=id1,id2: nur diese Aufgaben starten (z.B. stündlicher eBay-Bestand)
+    from tasks.scheduler import is_auto_mode, is_auto_daily_mode, auto_task_ids
+    if auto_task_ids():
+        app.after(400, lambda: app._select_task_ids(auto_task_ids()))
+        app.after(500, app._start_run)
+    elif is_auto_daily_mode():
         app.after(400, app._select_daily)
         app.after(500, app._start_run)   # kurz warten bis GUI bereit
     elif is_auto_mode():
