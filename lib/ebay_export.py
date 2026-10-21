@@ -235,14 +235,47 @@ def build_end_row(item_id: str, reason: str = "NotAvailable") -> list:
 
 # ── CSV-Schreiber ─────────────────────────────────────────────────────────────
 
+def _render_csv(info_lines: list, header: list, rows: list) -> str:
+    import io
+    buf = io.StringIO(newline="")
+    writer = csv.writer(buf, delimiter=";")
+    for line in info_lines:
+        buf.write(line + "\n")
+    writer.writerow(header)
+    for row in rows:
+        writer.writerow(row)
+    return buf.getvalue()
+
+
 def _write_csv(path: str, info_lines: list, header: list, rows: list):
     with open(path, "w", encoding="utf-8", newline="") as f:
-        writer = csv.writer(f, delimiter=";")
-        for line in info_lines:
-            f.write(line + "\n")
-        writer.writerow(header)
-        for row in rows:
-            writer.writerow(row)
+        f.write(_render_csv(info_lines, header, rows))
+
+
+def _latest_file(out_dir: str, prefix: str) -> str:
+    """Jüngste bereits vorhandene Datei prefix*.csv in out_dir (nach Name), sonst ''."""
+    import glob
+    files = sorted(glob.glob(os.path.join(out_dir, f"{prefix}*.csv")))
+    return files[-1] if files else ""
+
+
+def _write_if_changed(path: str, content: str, prefix: str, p) -> tuple:
+    """
+    Schreibt content nach path, außer die jüngste vorhandene Datei mit
+    gleichem Präfix hat exakt denselben Inhalt. Returns (geschriebener
+    Pfad oder '', Pfad der unveränderten Vorgängerdatei oder '').
+    """
+    prev = _latest_file(os.path.dirname(path), prefix)
+    if prev:
+        try:
+            with open(prev, encoding="utf-8", newline="") as f:
+                if f.read() == content:
+                    return "", prev
+        except Exception:
+            pass
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(content)
+    return path, ""
 
 
 # ── SKU-Liste einlesen ────────────────────────────────────────────────────────
@@ -568,18 +601,33 @@ def build_revise_end_from_bestand(template_path: str, bestand_csv_path,
 
     ts = datetime.now().strftime("%Y%m%d_%H%M")   # Datum+Uhrzeit: mehrere Läufe pro Tag
     out = {}
+    unchanged = {}
+    # Nur schreiben, wenn sich der Inhalt gegenüber der jüngsten vorhandenen
+    # Datei geändert hat – sonst ist kein erneuter Upload nötig.
     if revise_rows:
         path = os.path.join(out_dir, f"eBay-Revise_{ts}.csv")
-        _write_csv(path, [_REVISE_INFO_LINE], _REVISE_HEADER, revise_rows)
-        out["revise"] = path
-        p(f"eBay-Revise: {len(revise_rows)} Angebote ({updated} mit neuem Bestand) "
-          f"→ {os.path.basename(path)}", tag="ok")
+        content = _render_csv([_REVISE_INFO_LINE], _REVISE_HEADER, revise_rows)
+        written, prev = _write_if_changed(path, content, "eBay-Revise_", p)
+        if written:
+            out["revise"] = written
+            p(f"eBay-Revise: {len(revise_rows)} Angebote ({updated} mit neuem Bestand) "
+              f"→ {os.path.basename(written)}", tag="ok")
+        else:
+            unchanged["revise"] = prev
+            p(f"eBay-Revise: unverändert gegenüber {os.path.basename(prev)} – "
+              f"keine neue Datei, kein Upload nötig.", tag="ok")
     if end_rows:
         path = os.path.join(out_dir, f"eBay-end_{ts}.csv")
-        _write_csv(path, [], _END_HEADER, end_rows)
-        out["end"] = path
-        p(f"eBay-end (Bestand 0): {len(end_rows)} Angebote → {os.path.basename(path)}",
-          tag="ok")
+        content = _render_csv([], _END_HEADER, end_rows)
+        written, prev = _write_if_changed(path, content, "eBay-end_", p)
+        if written:
+            out["end"] = written
+            p(f"eBay-end (Bestand 0): {len(end_rows)} Angebote → {os.path.basename(written)}",
+              tag="ok")
+        else:
+            unchanged["end"] = prev
+            p(f"eBay-end: unverändert gegenüber {os.path.basename(prev)} – "
+              f"keine neue Datei, kein Upload nötig.", tag="ok")
     if no_sku:
         p(f"⚠ {no_sku} Angebot(e) ohne Custom label (SKU) – unverändert übernommen.",
           tag="warn")
@@ -590,6 +638,7 @@ def build_revise_end_from_bestand(template_path: str, bestand_csv_path,
     return {
         "total": len(template_rows), "updated": updated, "ended": len(end_rows),
         "no_sku": no_sku, "not_in_bestand": not_in_bestand, "files": out,
+        "unchanged": unchanged,
     }
 
 
