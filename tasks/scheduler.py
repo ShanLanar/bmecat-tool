@@ -24,7 +24,9 @@ def _python_exe() -> str:
 
 
 def _err_text(result) -> str:
-    return (result.stderr or result.stdout or "").strip() or f"Exit-Code {result.returncode}"
+    raw = result.stderr or result.stdout or b""
+    txt = _decode_console(raw) if isinstance(raw, bytes) else raw
+    return txt.strip() or f"Exit-Code {result.returncode}"
 
 
 def _create_task(task_name: str, main_args: str, schedule_args: list, p) -> bool:
@@ -40,7 +42,7 @@ def _create_task(task_name: str, main_args: str, schedule_args: list, p) -> bool
     subprocess.run(["schtasks", "/delete", "/tn", task_name, "/f"], capture_output=True)
     cmd = ["schtasks", "/create", "/tn", task_name,
            "/tr", f'"{python_exe}" "{main_py}" {main_args}', *schedule_args, "/f"]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True)
     if result.returncode == 0:
         p(f"Task '{task_name}' erfolgreich eingerichtet.", tag="ok")
         p(f"  Python:  {python_exe}")
@@ -95,7 +97,7 @@ def remove_schedule(progress_cb=None, task_name: str = None) -> bool:
     task_name = task_name or TASK_NAME
     result = subprocess.run(
         ["schtasks", "/delete", "/tn", task_name, "/f"],
-        capture_output=True, text=True)
+        capture_output=True)
     if result.returncode == 0:
         p(f"Task '{task_name}' entfernt.", tag="ok")
         return True
@@ -104,22 +106,46 @@ def remove_schedule(progress_cb=None, task_name: str = None) -> bool:
         return False
 
 
+def _decode_console(raw: bytes) -> str:
+    """schtasks schreibt in der OEM-Codepage (cp850), nicht cp1252/utf-8."""
+    for enc in ("cp850", "cp1252", "utf-8"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("latin-1", errors="replace")
+
+
+def _norm_key(label: str) -> str:
+    """Zeilenbezeichner vergleichbar machen: Kleinschreibung, nur ASCII-Buchstaben."""
+    return "".join(ch for ch in label.lower() if ch.isascii() and ch.isalpha())
+
+
 def get_schedule_info(task_name: str = None) -> dict:
-    """Liest den aktuellen Status des Tasks aus."""
+    """
+    Liest den aktuellen Status des Tasks aus (schtasks /query /fo LIST).
+    Deutsche ("Nächste Laufzeit", "Letzte Laufzeit") und englische
+    ("Next Run Time", "Last Run Time") Bezeichner werden erkannt.
+    """
     result = subprocess.run(
         ["schtasks", "/query", "/tn", task_name or TASK_NAME, "/fo", "LIST"],
-        capture_output=True, text=True)
+        capture_output=True)
     if result.returncode != 0:
         return {"exists": False}
 
-    info = {"exists": True, "raw": result.stdout}
-    for line in result.stdout.splitlines():
-        if "Nächste Ausführungszeit" in line or "Next Run Time" in line:
-            info["next_run"] = line.split(":", 1)[-1].strip()
-        if "Letzte Ausführungszeit" in line or "Last Run Time" in line:
-            info["last_run"] = line.split(":", 1)[-1].strip()
-        if "Status" in line:
-            info["status"] = line.split(":", 1)[-1].strip()
+    out = _decode_console(result.stdout or b"")
+    info = {"exists": True, "raw": out}
+    for line in out.splitlines():
+        if ":" not in line:
+            continue
+        label, value = line.split(":", 1)
+        key, value = _norm_key(label), value.strip()
+        if key in ("nchstelaufzeit", "nachstelaufzeit", "nchsteausfhrungszeit", "nextruntime"):
+            info["next_run"] = value
+        elif key in ("letztelaufzeit", "letzteausfhrungszeit", "lastruntime"):
+            info["last_run"] = value
+        elif key == "status":
+            info["status"] = value
     return info
 
 
