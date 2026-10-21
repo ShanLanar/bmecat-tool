@@ -236,10 +236,19 @@ def run_api_listings(progress_cb=None, file_progress_cb=None) -> dict:
         sku_diff = [(iid, tpl[iid].get("Custom label (SKU)", ""), api[iid]["sku"])
                     for iid in set(tpl) & set(api)
                     if (tpl[iid].get("Custom label (SKU)") or "").strip() != api[iid]["sku"]]
+        price_diff = [(iid, (tpl[iid].get("Start price") or "").strip(), api[iid]["price"])
+                      for iid in set(tpl) & set(api)
+                      if _price_differs((tpl[iid].get("Start price") or "").replace(",", "."), api[iid]["price"])]
         p(f"Vergleich mit Template ({len(tpl)} Angebote): "
           f"{len(only_tpl)} nur im Template, {len(only_api)} nur per API, "
-          f"{len(qty_diff)} Mengen-Abweichungen, {len(sku_diff)} SKU-Abweichungen",
-          tag="ok" if not (only_tpl or only_api or sku_diff) else "warn")
+          f"{len(qty_diff)} Mengen-Abweichungen, {len(price_diff)} Preis-Abweichungen, "
+          f"{len(sku_diff)} SKU-Abweichungen",
+          tag="ok" if not (only_tpl or only_api or sku_diff or price_diff) else "warn")
+        if price_diff:
+            p("Preis-Abweichungen (Template / aktuell bei eBay) – diese Preise würde "
+              "'eBay – Bestand per API aktualisieren' setzen:", tag="warn")
+        for iid, a, b in sorted(price_diff):
+            p(f"  Preis {iid}  {api[iid]['sku']:<18} Template {a} / eBay {b}", tag="dim")
         for iid in only_tpl[:10]:
             p(f"  nur Template: {iid}", tag="dim")
         for iid in only_api[:10]:
@@ -375,7 +384,8 @@ def run_api_bestand(progress_cb=None, file_progress_cb=None, live: bool = False)
       f"{len(end)} beenden, {stats['unchanged']} unverändert, {stats['no_sku']} ohne SKU, "
       f"{stats['not_in_bestand']} SKU nicht im Bestand",
       tag="ok")
-    for r in revise[:20]:
+    _show = revise if not live else revise[:20]
+    for r in _show:
         parts = []
         if r["quantity"] is not None:
             parts.append(f"Menge {r['old']} → {r['quantity']}")
@@ -384,7 +394,7 @@ def run_api_bestand(progress_cb=None, file_progress_cb=None, live: bool = False)
         p(f"  Revise {r['item_id']}  {r['sku']:<18} {', '.join(parts)}", tag="dim")
     for e in end[:15]:
         p(f"  Ende   {e['item_id']}  {e['sku']:<18} {e['old']} → 0", tag="dim")
-    if len(revise) > 20 or len(end) > 15:
+    if len(revise) > len(_show) or len(end) > 15:
         p("  … (vollständig im Report)", tag="dim")
 
     _hdr = ["aktion", "item_id", "sku", "menge_alt", "menge_neu", "preis_alt", "preis_neu", "status", "meldung"]
