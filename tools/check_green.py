@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))
 
 import config
 from lib.article_db import open_db
-from lib.article_rights_export import _GREEN_FNAME, _GREEN_TRUE_VALUES, _green_skus
+from lib.article_rights_export import _GREEN_FNAME, _GREEN_TRUE_VALUES, _green_skus, _load_green_rules
 
 
 def main():
@@ -43,7 +43,7 @@ def main():
         GROUP BY f.fvalue, a.active, a.online ORDER BY n DESC
     """, (_GREEN_FNAME,)).fetchall()
     if not rows:
-        print("   -> keine Zeilen. Lieferantenname in der DB prüfen (siehe 3).")
+        print("   -> keine Zeilen (Feature 'Be Green' nicht mehr vorhanden?) – siehe Regeln in 4).")
     for r in rows:
         ok = (r['fvalue'] or '').strip().lower() in _GREEN_TRUE_VALUES
         print(f"   fvalue={r['fvalue']!r:<16} active={r['active']} online={r['online']} "
@@ -54,10 +54,21 @@ def main():
                          "JOIN articles a ON a.supplier_id = s.id GROUP BY supplier_name"):
         print(f"   {r['supplier_name']!r:<30} {r['n']:>8} Artikel")
 
-    skus = _green_skus(con, "Büroring")
-    print(f"\n4) Ergebnis Katalogbedingung: {len(skus)} Artikel würden in Allago/79.csv und Oxl/88.csv landen.")
+    rules = _load_green_rules(str(ROOT))
+    print("\n4) Green-Regeln (mindestens eine muss zutreffen):")
+    for fn, vals in rules:
+        print(f"   {fn!r}: {'jeder nicht-leere Wert' if vals is None else sorted(vals)}")
+        rows = con.execute("""
+            SELECT a.active, a.online, COUNT(DISTINCT a.id) AS n
+            FROM article_features f JOIN articles a ON a.id = f.article_id
+            JOIN suppliers s ON s.id = a.supplier_id
+            WHERE s.supplier_name = 'Büroring' AND LOWER(f.fname) = ?
+            GROUP BY a.active, a.online""", (fn.lower(),)).fetchall()
+        for r in rows:
+            print(f"      active={r['active']} online={r['online']}  {r['n']} Artikel")
+    skus = _green_skus(con, "Büroring", rules)
+    print(f"\n5) Ergebnis: {len(skus)} Artikel würden in Allago/79.csv und Oxl/88.csv landen.")
     print("   Beispiele:", ", ".join(skus[:10]) or "-")
-    print(f"\n   Als WAHR gelten: {sorted(_GREEN_TRUE_VALUES)}")
     con.close()
 
 

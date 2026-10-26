@@ -40,6 +40,49 @@ _GREEN_FNAME = "Be Green"
 # (Ja) und Boolean aus dem BMEcat-Rohtext (true). Alles case-insensitive.
 _GREEN_TRUE_VALUES = {"ja", "true", "caa016", "1", "wahr"}
 
+# Regeln für den Green-Katalog: (FNAME, erlaubte Werte oder None).
+#   None  = jeder nicht-leere Wert zählt (ein Artikel mit mindestens einem
+#           solchen Feature gehört in den Katalog)
+#   set   = nur diese Werte (case-insensitive) zählen als "wahr"
+# Ein Artikel ist "green", wenn mindestens EINE Regel zutrifft.
+# Büroring liefert seit Oktober 2026 statt "Be Green" das Feature
+# "Umweltfreundliches Merkmal" (ggf. mehrfach je Artikel, z.B. "Blauer Engel").
+# Optional überschreibbar per green_catalog_features.csv im BASE_DIR
+# (Spalten: fname;fvalue – fvalue leer = jeder Wert).
+_GREEN_RULES_DEFAULT = [
+    (_GREEN_FNAME, _GREEN_TRUE_VALUES),
+    ("Umweltfreundliches Merkmal", None),
+]
+
+
+def _load_green_rules(base_dir: str) -> list:
+    path = os.path.join(base_dir, 'green_catalog_features.csv')
+    if not os.path.exists(path):
+        return list(_GREEN_RULES_DEFAULT)
+    rules: dict = {}
+    try:
+        with open(path, 'r', encoding='utf-8-sig', newline='') as f:
+            sample = f.read(2048); f.seek(0)
+            delim = ';' if sample.count(';') >= sample.count(',') else ','
+            for row in csv.DictReader(f, delimiter=delim):
+                fname = (row.get('fname') or '').strip()
+                if not fname or fname.startswith('#'):
+                    continue
+                fvalue = (row.get('fvalue') or '').strip().lower()
+                key = fname.lower()
+                if fvalue:
+                    if rules.get(key, set()) is None:
+                        continue          # bereits "jeder Wert"
+                    rules.setdefault(key, set()).add(fvalue)
+                else:
+                    rules[key] = None
+    except Exception as e:
+        log.warning(f"green_catalog_features.csv nicht lesbar ({e}) – Standardregeln")
+        return list(_GREEN_RULES_DEFAULT)
+    if not rules:
+        return list(_GREEN_RULES_DEFAULT)
+    return [(k, v) for k, v in rules.items()]
+
 # Softcarrier wird per Katalog-Gruppen-ID aufgeteilt (siehe _load_it_groups)
 _FR_CATALOG = ("FR", "Softcarrier", 197, 107)   # NICHT in it_groups
 _IT_CATALOG = ("IT", "Softcarrier", 198, 108)   # IN it_groups
@@ -65,18 +108,30 @@ def _active_skus(con, supplier_name: str) -> list:
     return [r['product_id'] for r in rows]
 
 
-def _green_skus(con, supplier_name: str) -> list:
-    all_rows = con.execute("""
-        SELECT a.product_id, f.fvalue
+def _green_skus(con, supplier_name: str, rules: list = None) -> list:
+    """Artikel (active+online) des Lieferanten, auf die mindestens eine Green-Regel zutrifft."""
+    rules = rules if rules is not None else list(_GREEN_RULES_DEFAULT)
+    if not rules:
+        return []
+    placeholders = ",".join("?" * len(rules))
+    all_rows = con.execute(f"""
+        SELECT a.product_id, f.fname, f.fvalue
         FROM articles a
         JOIN suppliers s ON s.id = a.supplier_id
         JOIN article_features f ON f.article_id = a.id
         WHERE s.supplier_name = ? AND a.active = 1 AND a.online = 1
-          AND LOWER(f.fname) = LOWER(?)
-    """, (supplier_name, _GREEN_FNAME)).fetchall()
-    skus = sorted({r['product_id'] for r in all_rows
-                   if (r['fvalue'] or '').strip().lower() in _GREEN_TRUE_VALUES})
-    return skus
+          AND LOWER(f.fname) IN ({placeholders})
+    """, (supplier_name, *[fn.lower() for fn, _ in rules])).fetchall()
+    allowed = {fn.lower(): vals for fn, vals in rules}
+    skus = set()
+    for r in all_rows:
+        vals = allowed.get((r['fname'] or '').lower())
+        val = (r['fvalue'] or '').strip().lower()
+        if not val:
+            continue
+        if vals is None or val in vals:
+            skus.add(r['product_id'])
+    return sorted(skus)
 
 
 def _softcarrier_split_skus(con, it_groups: set) -> tuple:
@@ -137,7 +192,10 @@ def export_article_rights(db_path: str, base_dir: str, out_dir: str,
 
     # BRG Green
     code, supplier_name, allago_id, oxl_id = _GREEN_CATALOG
-    skus = _green_skus(con, supplier_name)
+    rules = _load_green_rules(base_dir)
+    p("Artikelrechte GREEN-Regeln: " + "; ".join(
+        f"{fn} = {'beliebiger Wert' if v is None else '/'.join(sorted(v))}" for fn, v in rules), tag="dim")
+    skus = _green_skus(con, supplier_name, rules)
     allago_path = _write_file(out_dir, "Allago", allago_id, skus)
     oxl_path    = _write_file(out_dir, "Oxl", oxl_id, skus)
     stats[code] = {"count": len(skus), "allago_path": allago_path, "oxl_path": oxl_path}
