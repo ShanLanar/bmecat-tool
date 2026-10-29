@@ -31,6 +31,15 @@ _EXCLUDE_DIRS = {
     "backups", "brickfox", "eBay", "__pycache__", ".git", "restore_review",
 }
 
+# Dateien aus ausgeschlossenen Ordnern, die trotzdem mitmüssen: die Upload-
+# Snapshots in logs/. Ohne sie lädt der nächste Bilder-/Dokumente-Upload auf
+# dem neuen Server ALLES erneut hoch ("kein Snapshot vorhanden").
+_ALWAYS_INCLUDE = [
+    "logs/bilder_upload_snapshot.json",        # Bilder-Upload Allago/OfficeXL
+    "logs/bilder_snapshot.json",               # Softcarrier-Bilder
+    "logs/bueroring_dokumente_snapshot.json",  # Büroring-Dokumente
+]
+
 # Fallback falls git nicht verfügbar ist – deckt die kritischsten Dateien ab.
 _FALLBACK_FILES = [
     "config_user.json", ".fernet.key", "article_db.sqlite",
@@ -86,6 +95,9 @@ def collect_backup_files(base_dir: str, progress_cb=None) -> list[str]:
         files = [f for f in _FALLBACK_FILES
                 if os.path.exists(os.path.join(base_dir, f))]
 
+    for rel in _ALWAYS_INCLUDE:
+        if os.path.exists(os.path.join(base_dir, rel)) and rel not in files:
+            files.append(rel)
     return files
 
 
