@@ -162,22 +162,14 @@ class ConfigEditor(tk.Toplevel):
         self._tab_conn.columnconfigure(0, weight=1)
         self._tab_conn.rowconfigure(0, weight=1)
 
-        conn_canvas = tk.Canvas(self._tab_conn, bg=BG2, highlightthickness=0)
-        conn_scroll = ttk.Scrollbar(self._tab_conn, orient="vertical",
-                                    command=conn_canvas.yview)
-        self._conn_frame = tk.Frame(conn_canvas, bg=BG2)
-        self._conn_frame.bind("<Configure>",
-            lambda e: conn_canvas.configure(scrollregion=conn_canvas.bbox("all")))
-        conn_canvas.create_window((0, 0), window=self._conn_frame, anchor="nw")
-        conn_canvas.configure(yscrollcommand=conn_scroll.set)
-        conn_canvas.grid(row=0, column=0, sticky="nsew")
-        conn_scroll.grid(row=0, column=1, sticky="ns")
-        conn_canvas.bind("<MouseWheel>",
-            lambda e: conn_canvas.yview_scroll(-1 * (e.delta // 120), "units"))
+        self._conn_frame = self._scrollable(self._tab_conn)
 
         # ── Tab 2: Pfade & Tools ─────────────────────────────────────────────
-        self._tab_paths = tk.Frame(notebook, bg=BG2)
-        notebook.add(self._tab_paths, text="  Pfade & Tools  ")
+        tab_paths_outer = tk.Frame(notebook, bg=BG2)
+        notebook.add(tab_paths_outer, text="  Pfade & Tools  ")
+        tab_paths_outer.columnconfigure(0, weight=1)
+        tab_paths_outer.rowconfigure(0, weight=1)
+        self._tab_paths = self._scrollable(tab_paths_outer)
         self._tab_paths.columnconfigure(1, weight=1)
 
         # ── Fußzeile ──────────────────────────────────────────────────────────
@@ -189,6 +181,32 @@ class ConfigEditor(tk.Toplevel):
         _mk_btn(footer, "↺  Zurücksetzen", self._reset, small=True).pack(side="right", padx=4)
         self._saved_lbl = tk.Label(footer, text="", font=FONT_SM, bg=BG2, fg=GREEN)
         self._saved_lbl.pack(side="left", padx=12)
+
+    @staticmethod
+    def _scrollable(outer: tk.Frame) -> tk.Frame:
+        """Canvas + vertikaler Scrollbalken in `outer`; gibt den inneren Frame
+        zurück, in den die Inhalte gelegt werden. Mausrad funktioniert über
+        dem gesamten Bereich (auch über Eingabefeldern), Breite folgt dem Fenster."""
+        canvas = tk.Canvas(outer, bg=BG2, highlightthickness=0)
+        vbar = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        inner = tk.Frame(canvas, bg=BG2)
+        win_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+        inner.bind("<Configure>",
+                   lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>",
+                    lambda e: canvas.itemconfigure(win_id, width=e.width))
+        canvas.configure(yscrollcommand=vbar.set)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        vbar.grid(row=0, column=1, sticky="ns")
+
+        def _wheel(e):
+            if canvas.winfo_exists():
+                canvas.yview_scroll(-1 * (e.delta // 120), "units")
+        # bind_all nur solange die Maus über diesem Bereich ist – sonst
+        # scrollen beide Tabs gleichzeitig
+        canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _wheel))
+        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+        return inner
 
     # ── Felder befüllen ───────────────────────────────────────────────────────
 
