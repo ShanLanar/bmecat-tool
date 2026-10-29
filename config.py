@@ -198,11 +198,27 @@ AVAILABILITY_FILE   = "availability-data-catalog-32WQS.csv"
 
 # ── Mercateo-Unite: Preislisten im ERP für Preis-Update im BME-1.2-Katalog ────
 MERCATEO_PRICE_LIST_NRS = [601307]
-# ── Conrad (Brickfox): Preisliste im ERP für v_price[cr_de] + Marktplatz-Flags ─
-# Preise netto aus pl_vk1, Match a_bestnr1 = p_item_number. Artikel ohne
-# ERP-Preis bekommen Preis 0 → Flags marketplace_1/_19 = 0. Leere Liste =
-# weiterhin Reiter v_attributesconrad aus Bestand_und_Preise.xlsx verwenden.
-CONRAD_PRICE_LIST_NRS = [602285]
+# ── Brickfox-Marktplatzpreise aus dem ERP (Task "Büroring – Bestand+Preis") ──
+# Je Preisspalte der Bestand_und_Preise.xlsx: Preislistennummer(n) im ERP
+# (mehrere mit Komma, niedrigster Preis gewinnt) und Modus:
+#   netto  = pl_vk1 unverändert
+#   brutto = pl_vk1 × (1 + MwSt-Satz des Artikels)
+# Leere Preisliste = Spalte kommt weiterhin aus dem Excel-Reiter (VLOOKUP).
+# Artikel ohne ERP-Preis erhalten 0 → zugehörige Marktplatz-Flags = 0.
+# ERP nicht erreichbar → Excel-Wert bleibt (Warnung im Log).
+# Pflege über Konfiguration → Pfade & Tools → "Brickfox-Preise aus ERP".
+BRICKFOX_ERP_PRICES = {
+    "cr_de_preisliste": "602285",   # Conrad (+ Portal 19)
+    "cr_de_modus":      "netto",
+    "kl_de_preisliste": "",         # Kaufland DE
+    "kl_de_modus":      "netto",
+    "kl_at_preisliste": "",         # Kaufland AT
+    "kl_at_modus":      "netto",
+    "kl_fr_preisliste": "",         # Kaufland FR
+    "kl_fr_modus":      "netto",
+    "ne_de_preisliste": "",         # Netto DE (+ Marktkauf 16)
+    "ne_de_modus":      "netto",
+}
 # Dateiname des BME-1.2-Katalogs in in_BME (Datum wechselt) – Suchmuster für Task
 MERCATEO_CATALOG_XML_PATTERN = "kaenguruh und bunte ware *.xml"
 

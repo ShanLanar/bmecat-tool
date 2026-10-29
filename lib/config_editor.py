@@ -81,6 +81,9 @@ def apply_overrides():
         config.TOOLS[key] = val
     for key, val in overrides.get("merge", {}).items():
         config.MERGE[key] = val
+    for key, val in overrides.get("brickfox_prices", {}).items():
+        if key in getattr(config, "BRICKFOX_ERP_PRICES", {}):
+            config.BRICKFOX_ERP_PRICES[key] = val
     if "base_dir" in overrides:
         config.BASE_DIR = overrides["base_dir"]
 
@@ -139,6 +142,7 @@ class ConfigEditor(tk.Toplevel):
         self._dir_vars:  dict[str, tk.StringVar] = {}
         self._tool_vars: dict[str, tk.StringVar] = {}
         self._merge_vars: dict[str, tk.StringVar] = {}
+        self._bfp_vars:   dict[str, tk.StringVar] = {}
 
         self._build()
         self._populate()
@@ -332,6 +336,47 @@ class ConfigEditor(tk.Toplevel):
                 row=r, column=1, sticky="ew", padx=(0, 8), pady=2)
             r += 1
 
+        # ── Brickfox-Preise aus ERP ───────────────────────────────────────────
+        bfp = getattr(self._cfg, "BRICKFOX_ERP_PRICES", None)
+        if bfp:
+            ttk.Separator(pf, orient="horizontal").grid(
+                row=r, column=0, columnspan=3, sticky="ew", padx=8, pady=8)
+            r += 1
+            _label(pf, "Brickfox-Preise aus ERP (Büroring – Bestand+Preis)", head=True).grid(
+                row=r, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 2))
+            r += 1
+            tk.Label(pf, text="Preisliste leer = Wert aus Excel-Reiter. Modus: netto oder brutto. "
+                              "Mehrere Preislisten mit Komma (niedrigster Preis gewinnt).",
+                     font=FONT_SM, bg=BG2, fg=FG_DIM, justify="left").grid(
+                row=r, column=0, columnspan=3, sticky="w", padx=16, pady=(0, 4))
+            r += 1
+            bfp_overrides = self._overrides.get("brickfox_prices", {})
+            bfp_labels = {
+                "cr_de": "Conrad DE (v_price[cr_de], Flags 1+19)",
+                "kl_de": "Kaufland DE (v_price[kl_de], Flag 4)",
+                "kl_at": "Kaufland AT (v_price[kl_at])",
+                "kl_fr": "Kaufland FR (v_price[kl_fr])",
+                "ne_de": "Netto DE (v_price[ne_de], Flags 13+16)",
+            }
+            for ch, title in bfp_labels.items():
+                k_list, k_mode = f"{ch}_preisliste", f"{ch}_modus"
+                if k_list not in bfp:
+                    continue
+                _label(pf, title, dim=True).grid(
+                    row=r, column=0, sticky="e", padx=(16, 6), pady=2)
+                row_f = tk.Frame(pf, bg=BG2)
+                row_f.grid(row=r, column=1, sticky="w", padx=(0, 8), pady=2)
+                v_list = tk.StringVar(value=bfp_overrides.get(k_list, bfp.get(k_list, "")))
+                v_mode = tk.StringVar(value=bfp_overrides.get(k_mode, bfp.get(k_mode, "netto")))
+                self._bfp_vars[k_list] = v_list
+                self._bfp_vars[k_mode] = v_mode
+                tk.Label(row_f, text="Preisliste", font=FONT_SM, bg=BG2, fg=FG_DIM).pack(side="left")
+                _styled_entry(row_f, textvariable=v_list, width=16).pack(side="left", padx=(4, 12))
+                tk.Label(row_f, text="Modus", font=FONT_SM, bg=BG2, fg=FG_DIM).pack(side="left")
+                ttk.Combobox(row_f, textvariable=v_mode, values=("netto", "brutto"),
+                             width=8, state="readonly").pack(side="left", padx=(4, 0))
+                r += 1
+
     # ── Datei-/Verzeichnis-Auswahl ────────────────────────────────────────────
 
     def _browse_dir(self, key: str):
@@ -416,6 +461,9 @@ class ConfigEditor(tk.Toplevel):
         for key, var in self._merge_vars.items():
             data["merge"][key] = var.get()
 
+        if self._bfp_vars:
+            data["brickfox_prices"] = {k: v.get().strip() for k, v in self._bfp_vars.items()}
+
         try:
             save_user_config(data)
             apply_overrides()
@@ -443,6 +491,7 @@ class ConfigEditor(tk.Toplevel):
         self._dir_vars.clear()
         self._tool_vars.clear()
         self._merge_vars.clear()
+        self._bfp_vars.clear()
         self._populate()
         self._saved_lbl.config(text="✓ Zurückgesetzt", fg=YELLOW)
         self.after(3000, lambda: self._saved_lbl.config(text=""))

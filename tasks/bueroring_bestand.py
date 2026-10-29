@@ -5,7 +5,8 @@
 #      → Reiter "Bestand" in Bestand_und_Preise.xlsx ersetzen
 #   2. Reiter "Master" als CSV exportieren:
 #      · v_stock aus "Bestand"
-#      · v_price[cr_de] aus ERP-Preisliste CONRAD_PRICE_LIST_NRS (Fallback: Excel-Reiter)
+#      · Marktplatzpreise (cr_de/kl_*/ne_de) aus ERP-Preislisten laut
+#        config.BRICKFOX_ERP_PRICES, netto/brutto (Fallback: Excel-Reiter)
 #      · Marktplatz-Flags = 1 wenn Preis != 0
 #   3. CSV hochladen auf:
 #      · brickfox_csv_erp      (c_abe_ftp_3) – Preise + Bestand, schnell
@@ -43,43 +44,92 @@ EXCHANGE_EXCLUDE_PREFIXES = ("v_price", "v_rrp", "v_stock", "v_third_party_stock
                              "v_delivery_time")
 
 
-def _apply_conrad_erp_prices(master, p) -> bool:
-    """v_price[cr_de] aus ERP-Preisliste(n) config.CONRAD_PRICE_LIST_NRS setzen.
-    Returns True, wenn ERP-Preise angewendet wurden."""
+def _parse_price_lists(value) -> list:
+    """'602285, 602286' → [602285, 602286]; leer → []."""
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        items = value
+    else:
+        items = str(value).replace(";", ",").split(",")
+    out = []
+    for it in items:
+        it = str(it).strip()
+        if it:
+            out.append(int(it) if it.isdigit() else it)
+    return out
+
+
+def _apply_erp_prices(master, p) -> dict:
+    """
+    Marktplatz-Preisspalten (v_price[cr_de], kl_de, kl_at, kl_fr, ne_de) aus
+    ERP-Preislisten laut config.BRICKFOX_ERP_PRICES setzen.
+    Je Spalte: Preisliste(n) + Modus netto/brutto. Leere Preisliste = Spalte
+    bleibt wie aus dem Excel-Reiter. Ohne ERP-Preis → "0" (Flags werden 0).
+    ERP nicht erreichbar → alle Spalten bleiben Excel (Warnung).
+    Returns {spalte: anzahl_preise} für die aus dem ERP gefüllten Spalten.
+    """
     import config as _cfg
-    nrs = getattr(_cfg, "CONRAD_PRICE_LIST_NRS", None) or []
-    col = "v_price[cr_de]"
-    if not nrs or col not in master.columns:
-        return False
+    settings = getattr(_cfg, "BRICKFOX_ERP_PRICES", None) or {}
+    channels = ("cr_de", "kl_de", "kl_at", "kl_fr", "ne_de")
+    wanted = {}
+    for ch in channels:
+        nrs = _parse_price_lists(settings.get(f"{ch}_preisliste", ""))
+        col = f"v_price[{ch}]"
+        if nrs and col in master.columns:
+            mode = (settings.get(f"{ch}_modus") or "netto").strip().lower()
+            wanted[ch] = (nrs, "brutto" if mode == "brutto" else "netto")
+    if not wanted:
+        return {}
+
     cfg = _cfg.CONNECTIONS.get("erp_mysql", {})
     if not cfg.get("host") or not cfg.get("user") or not cfg.get("database"):
-        p("  Conrad-ERP-Preise: erp_mysql nicht konfiguriert – Excel-Reiter bleibt.", tag="warn")
-        return False
-    try:
-        from lib.unite_price_update import fetch_price_list
-        prices = fetch_price_list(cfg, nrs, progress_cb=lambda m, **kw: None)
-    except Exception as exc:
-        p(f"  Conrad-ERP-Preise: ERP nicht erreichbar ({exc}) – Excel-Reiter bleibt.", tag="warn")
-        return False
-    if not prices:
-        p(f"  Conrad-ERP-Preise: Preisliste {nrs} leer – Excel-Reiter bleibt.", tag="warn")
-        return False
+        p("  ERP-Preise: erp_mysql nicht konfiguriert – Excel-Reiter bleiben "
+          f"({', '.join(wanted)}).", tag="warn")
+        return {}
+    from lib.unite_price_update import fetch_price_list
 
     def _fmt(v):
         try:
             return f"{float(v):.2f}"
         except (TypeError, ValueError):
             return "0"
-    price_map = {aid: _fmt(d["price_amount"]) for aid, d in prices.items()}
+
     keys = master["p_item_number"].astype(str).str.strip()
-    new_prices = keys.map(price_map).fillna("0")
-    before = (master[col].astype(str) != "0").sum()
-    master[col] = new_prices.values
-    hit = (master[col] != "0").sum()
-    nrs_str = ", ".join(str(n) for n in nrs)
-    p(f"  {col}: {hit} Preise aus ERP-Preisliste {nrs_str} ({len(price_map)} Artikel im ERP, "
-      f"vorher {before} aus Excel) – Artikel ohne ERP-Preis = 0", tag="ok")
-    return True
+    result = {}
+    cache = {}
+    for ch, (nrs, mode) in wanted.items():
+        col = f"v_price[{ch}]"
+        key = tuple(nrs)
+        if key not in cache:
+            try:
+                cache[key] = fetch_price_list(cfg, list(nrs), progress_cb=lambda m, **kw: None)
+            except Exception as exc:
+                p(f"  ERP-Preise {col}: ERP nicht erreichbar ({exc}) – Excel-Reiter bleibt.", tag="warn")
+                cache[key] = None
+        prices = cache[key]
+        nrs_str = ", ".join(str(n) for n in nrs)
+        if prices is None:
+            continue
+        if not prices:
+            p(f"  ERP-Preise {col}: Preisliste {nrs_str} leer – Excel-Reiter bleibt.", tag="warn")
+            continue
+        price_map = {}
+        for aid, d in prices.items():
+            try:
+                amount = float(d["price_amount"])
+                if mode == "brutto":
+                    amount *= 1 + float(d.get("tax") or 0)
+                price_map[aid] = _fmt(amount)
+            except (TypeError, ValueError):
+                continue
+        before = (master[col].astype(str) != "0").sum()
+        master[col] = keys.map(price_map).fillna("0").values
+        hit = (master[col] != "0").sum()
+        p(f"  {col}: {hit} Preise aus ERP-Preisliste {nrs_str} ({mode}; {len(price_map)} Artikel "
+          f"im ERP, vorher {before} aus Excel) – ohne ERP-Preis = 0", tag="ok")
+        result[col] = int(hit)
+    return result
 
 
 def _filter_erp(df):
@@ -204,11 +254,11 @@ def _patch_and_export(excel_path: str, csv_in_path: str,
         n = (master[col] != "0").sum()
         p(f"  {col}: {n} Treffer")
 
-    # Conrad-Preis aus dem ERP (Preisliste CONRAD_PRICE_LIST_NRS) statt aus dem
-    # Excel-Reiter v_attributesconrad. Netto, a_bestnr1 = p_item_number.
-    # Ohne ERP-Preis → "0" (damit Flags marketplace_1/_19 = 0). Ist das ERP
-    # nicht erreichbar, bleibt der Excel-Wert stehen (Warnung).
-    _apply_conrad_erp_prices(master, p)
+    # Marktplatzpreise aus dem ERP (config.BRICKFOX_ERP_PRICES: Preisliste +
+    # netto/brutto je Spalte) statt aus den Excel-Reitern. a_bestnr1 =
+    # p_item_number. Ohne ERP-Preis → "0" (damit die Flags 0 werden). Ist das
+    # ERP nicht erreichbar oder keine Preisliste gesetzt, bleibt der Excel-Wert.
+    _apply_erp_prices(master, p)
 
     # IF-Flags: marketplace = 1 wenn Preis != 0
     flag_map = {
