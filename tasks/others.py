@@ -197,7 +197,13 @@ def _bilder_delta(sources: list, previous: dict) -> tuple[dict, dict]:
     Größe sich geändert hat. Der Verzeichnis-Anteil im Schlüssel verhindert
     Kollisionen gleichnamiger Dateien in in/ und in_vertrieb/.
     """
-    changed, current, snapshot = {}, {}, {}
+    # Snapshot = alter Stand + aktuelle Dateien. NICHT nur die aktuellen
+    # Dateien: nach dem Upload werden die Bilder lokal gelöscht (delete_after
+    # bzw. Aufräumen unten). Ein späterer Lauf mit leerem/anderem in/ würde
+    # die Einträge der bereits hochgeladenen Bilder sonst aus dem Snapshot
+    # werfen – und beim nächsten Entpacken von br-images.zip gingen alle
+    # Büroring-Bilder wieder als "neu" komplett hoch.
+    changed, current, snapshot = {}, {}, dict(previous)
     for label, pattern, _ in sources:
         changed[label], current[label] = {}, {}
         for path in sorted(glob.glob(pattern)):
@@ -240,9 +246,23 @@ def run_bilder(progress_cb=None, file_progress_cb=None):
     n_total   = sum(len(v) for v in current.values())
     n_changed = sum(len(v) for v in changed.values())
     if previous:
+        n_new = n_resized = 0
+        examples = []
+        for label, files in changed.items():
+            for path in files:
+                key = f"{os.path.dirname(label)}/{os.path.basename(path)}"
+                if key in previous:
+                    n_resized += 1
+                    if len(examples) < 3:
+                        examples.append(f"{os.path.basename(path)} {previous[key]}→{files[path]} B")
+                else:
+                    n_new += 1
         p(f"Bilder-Upload: {n_changed} von {n_total} Datei(en) neu/geändert "
-          f"seit letztem erfolgreichen Upload (Vergleich Name+Größe, "
-          f"unabhängig vom Dateidatum).")
+          f"seit letztem erfolgreichen Upload ({n_new} nicht im Snapshot, "
+          f"{n_resized} mit geänderter Größe; Snapshot kennt {len(previous)} Dateien; "
+          f"Vergleich Name+Größe, unabhängig vom Dateidatum).")
+        if examples:
+            p("  Größe geändert z.B.: " + ", ".join(examples), tag="dim")
     else:
         p(f"Bilder-Upload: kein Snapshot vorhanden – lade alle {n_total} Datei(en) hoch.")
 

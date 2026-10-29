@@ -39,7 +39,9 @@ def _compute_delta(jpg_dir: str, previous: dict) -> tuple[list, dict]:
         changed_files: Pfade der neuen/geänderten JPGs
         new_snapshot:  aktueller Stand {filename: size}
     """
-    current = {}
+    # alter Stand + aktuelle Dateien (lokal fehlende Bilder bleiben im
+    # Snapshot, sonst würden sie beim nächsten Entpacken erneut hochgeladen)
+    current = dict(previous)
     changed = []
     for path in glob_ci(jpg_dir, "jpg"):
         bn   = os.path.basename(path)
