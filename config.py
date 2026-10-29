@@ -198,6 +198,11 @@ AVAILABILITY_FILE   = "availability-data-catalog-32WQS.csv"
 
 # ── Mercateo-Unite: Preislisten im ERP für Preis-Update im BME-1.2-Katalog ────
 MERCATEO_PRICE_LIST_NRS = [601307]
+# ── Conrad (Brickfox): Preisliste im ERP für v_price[cr_de] + Marktplatz-Flags ─
+# Preise netto aus pl_vk1, Match a_bestnr1 = p_item_number. Artikel ohne
+# ERP-Preis bekommen Preis 0 → Flags marketplace_1/_19 = 0. Leere Liste =
+# weiterhin Reiter v_attributesconrad aus Bestand_und_Preise.xlsx verwenden.
+CONRAD_PRICE_LIST_NRS = [602285]
 # Dateiname des BME-1.2-Katalogs in in_BME (Datum wechselt) – Suchmuster für Task
 MERCATEO_CATALOG_XML_PATTERN = "kaenguruh und bunte ware *.xml"
 

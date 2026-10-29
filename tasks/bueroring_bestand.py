@@ -5,7 +5,8 @@
 #      → Reiter "Bestand" in Bestand_und_Preise.xlsx ersetzen
 #   2. Reiter "Master" als CSV exportieren:
 #      · v_stock aus "Bestand"
-#      · keinerlei Preis- oder Flag-Patching
+#      · v_price[cr_de] aus ERP-Preisliste CONRAD_PRICE_LIST_NRS (Fallback: Excel-Reiter)
+#      · Marktplatz-Flags = 1 wenn Preis != 0
 #   3. CSV hochladen auf:
 #      · brickfox_csv_erp      (c_abe_ftp_3) – Preise + Bestand, schnell
 #      · brickfox_csv_exchange  (c_abe_ftp_5) – Stammdaten
@@ -40,6 +41,45 @@ ERP_FIELDS = [
 # Für CsvExchange (c_abe_ftp_5): keine Preis- und Bestandsfelder
 EXCHANGE_EXCLUDE_PREFIXES = ("v_price", "v_rrp", "v_stock", "v_third_party_stock",
                              "v_delivery_time")
+
+
+def _apply_conrad_erp_prices(master, p) -> bool:
+    """v_price[cr_de] aus ERP-Preisliste(n) config.CONRAD_PRICE_LIST_NRS setzen.
+    Returns True, wenn ERP-Preise angewendet wurden."""
+    import config as _cfg
+    nrs = getattr(_cfg, "CONRAD_PRICE_LIST_NRS", None) or []
+    col = "v_price[cr_de]"
+    if not nrs or col not in master.columns:
+        return False
+    cfg = _cfg.CONNECTIONS.get("erp_mysql", {})
+    if not cfg.get("host") or not cfg.get("user") or not cfg.get("database"):
+        p("  Conrad-ERP-Preise: erp_mysql nicht konfiguriert – Excel-Reiter bleibt.", tag="warn")
+        return False
+    try:
+        from lib.unite_price_update import fetch_price_list
+        prices = fetch_price_list(cfg, nrs, progress_cb=lambda m, **kw: None)
+    except Exception as exc:
+        p(f"  Conrad-ERP-Preise: ERP nicht erreichbar ({exc}) – Excel-Reiter bleibt.", tag="warn")
+        return False
+    if not prices:
+        p(f"  Conrad-ERP-Preise: Preisliste {nrs} leer – Excel-Reiter bleibt.", tag="warn")
+        return False
+
+    def _fmt(v):
+        try:
+            return f"{float(v):.2f}"
+        except (TypeError, ValueError):
+            return "0"
+    price_map = {aid: _fmt(d["price_amount"]) for aid, d in prices.items()}
+    keys = master["p_item_number"].astype(str).str.strip()
+    new_prices = keys.map(price_map).fillna("0")
+    before = (master[col].astype(str) != "0").sum()
+    master[col] = new_prices.values
+    hit = (master[col] != "0").sum()
+    nrs_str = ", ".join(str(n) for n in nrs)
+    p(f"  {col}: {hit} Preise aus ERP-Preisliste {nrs_str} ({len(price_map)} Artikel im ERP, "
+      f"vorher {before} aus Excel) – Artikel ohne ERP-Preis = 0", tag="ok")
+    return True
 
 
 def _filter_erp(df):
@@ -163,6 +203,12 @@ def _patch_and_export(excel_path: str, csv_in_path: str,
                                    .replace("None", "0"))
         n = (master[col] != "0").sum()
         p(f"  {col}: {n} Treffer")
+
+    # Conrad-Preis aus dem ERP (Preisliste CONRAD_PRICE_LIST_NRS) statt aus dem
+    # Excel-Reiter v_attributesconrad. Netto, a_bestnr1 = p_item_number.
+    # Ohne ERP-Preis → "0" (damit Flags marketplace_1/_19 = 0). Ist das ERP
+    # nicht erreichbar, bleibt der Excel-Wert stehen (Warnung).
+    _apply_conrad_erp_prices(master, p)
 
     # IF-Flags: marketplace = 1 wenn Preis != 0
     flag_map = {
