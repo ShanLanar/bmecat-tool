@@ -6,7 +6,13 @@
 #
 # Filter-Logik:
 #   AID in Mindest-Tabelle  → Export wenn STOCK >= Mindestmenge
-#   AID nicht in Tabelle    → Export immer (keine Mindestanforderung)
+#   AID nicht in Tabelle    → Export wenn STOCK > 0
+#
+# Regulierungs-Merkmale (GPSR-Hersteller, WEEE, Batterieverordnung,
+# Datengesetz ...): gepflegte Datei BASE_DIR/32WQS_conditions_features.csv
+# im Unite-Conditionsfile-Format (SUPPLIER_AID;FEATURE_NAME1;FEATURE_VALUE1;
+# FEATURE_UNIT1;...). Die Merkmale werden je exportierter SUPPLIER_AID
+# angehängt; Artikel ohne Eintrag bekommen leere Merkmalsspalten.
 
 import os
 import glob
@@ -17,6 +23,56 @@ log = logging.getLogger(__name__)
 
 _MINDEST_PATTERN = "Mindest-Abgleich_*.xlsx"
 _CONDITIONS_FILE = "32WQS_conditionsfile.csv"
+# Gepflegte Regulierungs-Merkmale je Artikel (GPSR-Hersteller, WEEE,
+# Batterieverordnung, Datengesetz ...) im BASE_DIR – gleiches Spaltenformat
+# wie die Unite-Conditionsfile: SUPPLIER_AID;FEATURE_NAME1;FEATURE_VALUE1;
+# FEATURE_UNIT1;... Wird je SUPPLIER_AID in die conditionsfile gemischt.
+_FEATURES_FILE = "32WQS_conditions_features.csv"
+
+
+def load_condition_features(base_dir: str, progress_cb=None) -> tuple[dict, int]:
+    """
+    Liest 32WQS_conditions_features.csv (optional).
+
+    Returns:
+        ({SUPPLIER_AID_UPPER: [(name, value, unit), ...]}, max_features)
+        max_features = Anzahl FEATURE-Tripel in der Kopfzeile (Spaltenbreite
+        der Ausgabe); (dict leer, 0) wenn die Datei fehlt.
+    """
+    p = progress_cb or (lambda m, **kw: None)
+    path = os.path.join(base_dir, _FEATURES_FILE)
+    if not os.path.exists(path):
+        return {}, 0
+    feats: dict = {}
+    max_cols = 0
+    for enc in ("utf-8-sig", "cp1252", "latin-1"):
+        try:
+            with open(path, "r", encoding=enc, newline="") as f:
+                reader = csv.reader(f, delimiter=";")
+                header = next(reader, None) or []
+                # Anzahl Tripel aus der Kopfzeile (FEATURE_NAMEn)
+                max_cols = sum(1 for h in header if h.strip().upper().startswith("FEATURE_NAME"))
+                for row in reader:
+                    if not row or not row[0].strip():
+                        continue
+                    aid = row[0].strip()
+                    triples = []
+                    for i in range(1, len(row) - 2, 3):
+                        name = row[i].strip()
+                        if not name:
+                            continue
+                        value = row[i + 1].strip() if i + 1 < len(row) else ""
+                        unit  = row[i + 2].strip() if i + 2 < len(row) else ""
+                        triples.append((name, value, unit))
+                    feats[aid.upper()] = triples
+                    max_cols = max(max_cols, len(triples))
+            break
+        except UnicodeDecodeError:
+            feats, max_cols = {}, 0
+            continue
+    p(f"Conditions-Merkmale: {len(feats)} Artikel aus {_FEATURES_FILE} "
+      f"(bis zu {max_cols} Merkmale je Artikel)")
+    return feats, max_cols
 
 
 def find_latest_mindest_xlsx(base_dir: str) -> str | None:
@@ -100,7 +156,8 @@ def load_availability(avail_csv: str) -> dict:
 
 
 def generate_conditionsfile(avail_csv: str, mindest_table: dict,
-                             out_path: str, progress_cb=None) -> dict:
+                             out_path: str, progress_cb=None,
+                             features: dict = None, max_features: int = 0) -> dict:
     """
     Abgleich Availability-CSV gegen Mindest-Tabelle → conditionsfile.
 
@@ -109,18 +166,29 @@ def generate_conditionsfile(avail_csv: str, mindest_table: dict,
     - AID nicht in Tabelle:    Export wenn STOCK > 0
     - STOCK = 0 ohne Mindest:  kein Export
 
+    features/max_features (optional, siehe load_condition_features): je
+    exportierter SUPPLIER_AID werden die Regulierungs-Merkmale als
+    FEATURE_NAMEn/FEATURE_VALUEn/FEATURE_UNITn-Spalten angehängt; Artikel
+    ohne Eintrag bekommen leere Merkmalsspalten.
+
     Returns:
-        dict: {"exported": n, "below_minimum": n, "zero_stock": n, "total": n}
+        dict: {"exported": n, "below_minimum": n, "zero_stock": n, "total": n,
+               "with_features": n}
     """
     p = progress_cb or (lambda m, **kw: None)
+    features = features or {}
+    header = ["SUPPLIER_AID"]
+    for i in range(1, max_features + 1):
+        header += [f"FEATURE_NAME{i}", f"FEATURE_VALUE{i}", f"FEATURE_UNIT{i}"]
 
     avail = load_availability(avail_csv)
     if not avail:
         p(f"Availability-CSV nicht gefunden oder leer: {avail_csv}", tag="warn")
         # Leere conditionsfile mit nur Header schreiben
         with open(out_path, "w", encoding="utf-8", newline="") as f:
-            f.write("SUPPLIER_AID\n")
-        return {"exported": 0, "below_minimum": 0, "zero_stock": 0, "total": 0}
+            f.write(";".join(header) + "\n")
+        return {"exported": 0, "below_minimum": 0, "zero_stock": 0, "total": 0,
+                "with_features": 0}
 
     exported     = []
     n_below      = 0
@@ -145,22 +213,35 @@ def generate_conditionsfile(avail_csv: str, mindest_table: dict,
                 n_zero += 1
 
     exported.sort()
+    n_feat = 0
     with open(out_path, "w", encoding="utf-8", newline="") as f:
-        f.write("SUPPLIER_AID\n")
+        w = csv.writer(f, delimiter=";", lineterminator="\n",
+                       quoting=csv.QUOTE_MINIMAL)
+        w.writerow(header)
         for aid in exported:
-            f.write(aid + "\n")
+            row = [aid]
+            triples = features.get(aid.upper(), [])
+            if triples:
+                n_feat += 1
+            for name, value, unit in triples[:max_features]:
+                row += [name, value, unit]
+            row += [""] * (len(header) - len(row))
+            w.writerow(row)
 
     stats = {
         "exported":      len(exported),
         "below_minimum": n_below,
         "zero_stock":    n_zero,
         "total":         len(avail),
+        "with_features": n_feat,
     }
 
     p(f"Conditionsfile: {len(exported)} Artikel exportiert "
       f"({n_below} unter Mindestmenge, "
-      f"{n_zero} ohne Mindest und Bestand=0) "
-      f"→ {os.path.basename(out_path)}")
+      f"{n_zero} ohne Mindest und Bestand=0"
+      + (f", {n_feat} mit Regulierungs-Merkmalen, {len(exported) - n_feat} ohne"
+         if max_features else "")
+      + f") → {os.path.basename(out_path)}")
 
     return stats
 
@@ -209,6 +290,13 @@ def run_mindest_abgleich(avail_csv: str, base_dir: str = None,
     out_dir  = os.path.dirname(avail_csv)
     out_path = os.path.join(out_dir, _CONDITIONS_FILE)
 
-    # 4. Generieren
+    # 4. Regulierungs-Merkmale (optional, BASE_DIR/32WQS_conditions_features.csv)
+    features, max_features = load_condition_features(base_dir, progress_cb=p)
+    if not features:
+        p(f"Keine {_FEATURES_FILE} in {base_dir} – conditionsfile ohne "
+          f"Regulierungs-Merkmale.", tag="dim")
+
+    # 5. Generieren
     return generate_conditionsfile(avail_csv, mindest_table, out_path,
-                                    progress_cb=p)
+                                    progress_cb=p, features=features,
+                                    max_features=max_features)

@@ -115,6 +115,7 @@ def run(progress_cb=None):
         ("fusage_3_features.csv",           "FUSAGE-Varianten-Features"),
         ("postprocess_features.csv",        "Zusatz-Features (Maße/Gewicht)"),
         ("green_catalog_features.csv",      "Green-Katalog-Regeln (Standard: Be Green / Umweltfreundliches Merkmal)"),
+        ("32WQS_conditions_features.csv",   "Unite-Conditionsfile: Regulierungs-Merkmale (GPSR/WEEE/Batterie)"),
         ("supplier_priority.csv",           "EAN-Dedup Prioritäten"),
         ("channel_category_mapping.csv",    "Kanal-Mapping (Lieferanten-Codes)"),
         ("eclass_channel_mapping.csv",      "Kanal-Mapping (ECLASS)"),
