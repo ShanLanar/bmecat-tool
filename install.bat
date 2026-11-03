@@ -139,6 +139,11 @@ echo  - PyYAML (Lieferanten-Konfiguration)...
 !PYTHON! -m pip install "PyYAML>=6.0" --quiet
 if errorlevel 1 ( echo    FEHLER! & set DEPS_OK=0 ) else ( echo    OK )
 
+:: Pillow – Bildkonvertierung (Bilder vorbereiten, Softcarrier Bild-Patch)
+echo  - Pillow (Bildverarbeitung)...
+!PYTHON! -m pip install "Pillow>=10.0" --quiet
+if errorlevel 1 ( echo    FEHLER! & set DEPS_OK=0 ) else ( echo    OK )
+
 :: pywin32 – Windows-Integration
 echo  - pywin32 (Windows-Scheduler)...
 !PYTHON! -m pip install "pywin32>=306" --quiet

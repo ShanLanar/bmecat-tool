@@ -569,6 +569,12 @@ class App(tk.Tk):
         supplier_btn.pack(side="right", padx=4)
         ToolTip(supplier_btn, "Lieferanten-Statistik öffnen: Artikelzahl je Lieferant "
                               "(online/offline) + Verlauf über die letzten Läufe.")
+        bilder_prep_btn = self._mk_btn(footer, "🖼 Bilder vorbereiten", self._open_bilder_vorbereiten,
+                                       small=True)
+        bilder_prep_btn.pack(side="right", padx=4)
+        ToolTip(bilder_prep_btn, "Getrennt gelieferte Lieferantenbilder (Ordner/ZIP entpackt) "
+                                 "übernehmen: nur in der DB referenzierte Bilder, als JPG mit "
+                                 "Kürzel-Präfix nach in/ – danach Bilder-Upload.")
         single_export_btn = self._mk_btn(footer, "🎯 Artikel-Export", self._open_single_article_export,
                                          small=True)
         single_export_btn.pack(side="right", padx=4)
@@ -883,6 +889,15 @@ class App(tk.Tk):
             open_single_article_export_dialog(self)
         except Exception as e:
             self._append_log(f"⚠ Einzelartikel-Export konnte nicht geöffnet werden: {e}",
+                             tag="warn")
+
+    def _open_bilder_vorbereiten(self):
+        """Dialog: Lieferantenbilder aus Quellordner als JPG mit Präfix nach in/ übernehmen."""
+        try:
+            from lib.bilder_vorbereiten_dialog import open_bilder_vorbereiten_dialog
+            open_bilder_vorbereiten_dialog(self)
+        except Exception as e:
+            self._append_log(f"⚠ 'Bilder vorbereiten' konnte nicht geöffnet werden: {e}",
                              tag="warn")
 
     # ── Tutorial ──────────────────────────────────────────────────────────────
