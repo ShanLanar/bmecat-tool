@@ -222,6 +222,17 @@ BRICKFOX_ERP_PRICES = {
 # Dateiname des BME-1.2-Katalogs in in_BME (Datum wechselt) – Suchmuster für Task
 MERCATEO_CATALOG_XML_PATTERN = "kaenguruh und bunte ware *.xml"
 
+# ── Manueller Import ("BMEcat laden"): Lieferantenkürzel (Präfix) ─────────────
+# Beim manuellen Import eines freien Katalogs wird das Kürzel vor die
+# Artikelnummer gesetzt (product_id = Kürzel + SUPPLIER_AID). Export, Bildnamen
+# und Katalog-IDs leiten das Präfix daraus ab – genau wie bei BRG/SOC/NDW.
+# Schlüssel = SUPPLIER_NAME aus der Datei (Groß-/Kleinschreibung egal).
+# Im Dialog wird das Kürzel vorgeschlagen und kann geändert werden; die
+# Auswahl wird in config_user.json (manual_import_prefixes) gemerkt.
+MANUAL_IMPORT_PREFIXES = {
+    "W.Söhngen GmbH": "SOG",
+}
+
 # ── BMEcat-Merge ──────────────────────────────────────────────────────────────
 MERGE = {
     "udx_src":   r"bueroring.xml",           # ABE-Datei (UDX + ECLASS-Features)

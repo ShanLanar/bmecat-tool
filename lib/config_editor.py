@@ -81,6 +81,8 @@ def apply_overrides():
         config.TOOLS[key] = val
     for key, val in overrides.get("merge", {}).items():
         config.MERGE[key] = val
+    for key, val in overrides.get("manual_import_prefixes", {}).items():
+        getattr(config, "MANUAL_IMPORT_PREFIXES", {})[key] = val
     for key, val in overrides.get("brickfox_prices", {}).items():
         if key in getattr(config, "BRICKFOX_ERP_PRICES", {}):
             config.BRICKFOX_ERP_PRICES[key] = val

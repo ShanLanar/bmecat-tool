@@ -691,8 +691,11 @@ class App(tk.Tk):
     def _open_manual_import(self):
         """Lokale BMEcat-1.2-Datei ohne Download direkt in die DB importieren.
         Lieferantenname wird aus SUPPLIER_NAME vorgeschlagen, per Dialog bestätigt
-        oder angepasst. Rest der Import-Mechanik ist unverändert (kein Prefix,
-        kein Postprocessing – das läuft wie gehabt erst beim Export)."""
+        oder angepasst. Danach wird das Lieferantenkürzel (Präfix, z.B. SOG)
+        abgefragt – Vorschlag aus config.MANUAL_IMPORT_PREFIXES bzw. der zuletzt
+        für diesen Lieferanten gewählten Angabe. product_id = Kürzel +
+        SUPPLIER_AID; Export leitet daraus Bild-/Katalogpräfix ab. Postprocessing
+        läuft wie gehabt erst beim Export."""
         if self._running:
             messagebox.showwarning("Lauf aktiv",
                                    "Es läuft bereits ein Vorgang. Bitte warten.", parent=self)
@@ -727,6 +730,41 @@ class App(tk.Tk):
                                    parent=self)
             return
 
+        # Lieferantenkürzel (Präfix) – Vorschlag aus Konfiguration / Merkliste
+        prefixes = getattr(config, "MANUAL_IMPORT_PREFIXES", {}) or {}
+        suggested_prefix = next(
+            (v for k, v in prefixes.items() if k.strip().lower() == supplier_name.lower()), "")
+        if not suggested_prefix:
+            suggested_prefix = next(
+                (v for k, v in prefixes.items()
+                 if k.strip().lower() in supplier_name.lower()
+                 or supplier_name.lower() in k.strip().lower()), "")
+        prefix = askstring(
+            "Lieferantenkürzel (Präfix)",
+            f"Kürzel für '{supplier_name}', das vor Artikelnummern gesetzt wird\n"
+            f"(z.B. SOG → SOG12345; Bildnamen und Katalog-IDs beim Export ebenso).\n"
+            f"Leer lassen = kein Präfix.",
+            initialvalue=suggested_prefix,
+            parent=self,
+        )
+        if prefix is None:
+            return
+        prefix = prefix.strip().upper()
+        if prefix and not prefix.isalnum():
+            messagebox.showwarning("Ungültiges Kürzel",
+                                   "Das Kürzel darf nur Buchstaben und Ziffern enthalten.",
+                                   parent=self)
+            return
+        # Auswahl merken (config_user.json → manual_import_prefixes)
+        try:
+            from lib.config_editor import load_user_config, save_user_config
+            user_cfg = load_user_config()
+            user_cfg.setdefault("manual_import_prefixes", {})[supplier_name] = prefix
+            save_user_config(user_cfg)
+            prefixes[supplier_name] = prefix
+        except Exception as exc:
+            self._append_log(f"Kürzel konnte nicht gemerkt werden: {exc}", tag="warn")
+
         self._running = True
         import_btn = self._widget_refs.get("manual_import_btn")
         if import_btn:
@@ -743,11 +781,12 @@ class App(tk.Tk):
                     base_dir=config.BASE_DIR,
                     progress_cb=self._append_log,
                     supplier_name=supplier_name,
+                    prefix=prefix,
                 )
                 total = stats['new'] + stats['updated'] + stats['unchanged']
                 self._append_log(
                     f"Manueller Import abgeschlossen: {total} Artikel "
-                    f"(Lieferant: {supplier_name})", tag="ok")
+                    f"(Lieferant: {supplier_name}, Kürzel: {prefix or '–'})", tag="ok")
             except Exception as exc:
                 self._append_log(f"Manueller Import fehlgeschlagen: {exc}", tag="err")
             finally:
