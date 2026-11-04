@@ -40,13 +40,16 @@ def run(progress_cb=None):
         import subprocess
         branch = subprocess.check_output(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=BASE_DIR, stderr=subprocess.DEVNULL, text=True).strip()
+            cwd=BASE_DIR, stderr=subprocess.DEVNULL, text=True,
+            encoding="utf-8", errors="replace").strip()
         commit = subprocess.check_output(
             ["git", "log", "-1", "--format=%h %s"],
-            cwd=BASE_DIR, stderr=subprocess.DEVNULL, text=True).strip()
+            cwd=BASE_DIR, stderr=subprocess.DEVNULL, text=True,
+            encoding="utf-8", errors="replace").strip()
         remote = subprocess.check_output(
             ["git", "remote", "get-url", "origin"],
-            cwd=BASE_DIR, stderr=subprocess.DEVNULL, text=True).strip()
+            cwd=BASE_DIR, stderr=subprocess.DEVNULL, text=True,
+            encoding="utf-8", errors="replace").strip()
         p(f"  Branch:  {branch}", tag="ok")
         p(f"  Commit:  {commit}")
         p(f"  Remote:  {remote}")
