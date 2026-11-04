@@ -209,7 +209,7 @@ MERCATEO_PRICE_LIST_NRS = [601307]
 # Pflege über Konfiguration → Pfade & Tools → "Brickfox-Preise aus ERP".
 BRICKFOX_ERP_PRICES = {
     "cr_de_preisliste": "602285",   # Conrad (+ Portal 19)
-    "cr_de_modus":      "netto",
+    "cr_de_modus":      "brutto",   # laut Vertrieb brutto
     "kl_de_preisliste": "",         # Kaufland DE
     "kl_de_modus":      "netto",
     "kl_at_preisliste": "",         # Kaufland AT
