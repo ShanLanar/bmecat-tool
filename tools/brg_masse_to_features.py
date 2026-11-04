@@ -14,7 +14,10 @@
 #     BRGAIR2899555003;AIR2899555003;Gewicht;0.253;kg
 #
 # Werte werden normalisiert: Tausenderpunkt entfernt ("1.010 mm" → 1010),
-# Dezimalkomma → Punkt ("0,253 kg" → 0.253), Einheit nach FUNIT.
+# Dezimalkomma → Punkt ("0,253 kg" → 0.253), Einheit nach FUNIT. Einheiten
+# werden auf die Zieleinheit der Spalte umgerechnet (cm/m → mm, g → kg),
+# weil Brickfox/Conrad nur den Zahlenwert übernehmen (Verkaufsverpackung in
+# mm, Gewicht in kg); mit --keep-units bleiben die Originaleinheiten.
 #
 # Aufruf im BASE_DIR:
 #   python tools/brg_masse_to_features.py "BRG-Artikelmaße.csv"
@@ -45,6 +48,28 @@ COLUMN_MAP = {
 }
 
 FIELDS = ["product_id", "supplier_pid", "fname", "fvalue", "funit"]
+
+# Umrechnung auf die Zieleinheit der Spalte: (von, nach) → Faktor
+_UNIT_FACTORS = {
+    ("cm", "mm"): 10.0, ("m", "mm"): 1000.0, ("dm", "mm"): 100.0,
+    ("g", "kg"): 0.001, ("mg", "kg"): 0.000001, ("t", "kg"): 1000.0,
+    ("mm", "cm"): 0.1, ("kg", "g"): 1000.0,
+}
+
+
+def convert_unit(num: str, unit: str, target: str) -> tuple:
+    """("5", "cm", "mm") → ("50", "mm"); unbekannte Kombination bleibt unverändert."""
+    if not unit or unit.lower() == target.lower():
+        return num, unit or target
+    factor = _UNIT_FACTORS.get((unit.lower(), target.lower()))
+    if factor is None:
+        return num, unit
+    try:
+        val = float(num.replace(",", ".")) * factor
+    except ValueError:
+        return num, unit
+    out = f"{val:.6f}".rstrip("0").rstrip(".") or "0"
+    return out, target
 
 _NUM_RE = re.compile(r"^\s*([-+]?[\d.,]+)\s*([A-Za-zµ%²³]*)\s*$")
 
@@ -105,6 +130,8 @@ def main():
     ap.add_argument("--prefix", default="BRG", help="Lieferantenpräfix für product_id")
     ap.add_argument("--out", default=str(ROOT / "postprocess_features.csv"))
     ap.add_argument("--decimal", choices=("point", "comma"), default="point")
+    ap.add_argument("--keep-units", action="store_true",
+                    help="Einheiten nicht auf mm/kg umrechnen (Original behalten)")
     args = ap.parse_args()
 
     src = read_brg(args.input)
@@ -118,9 +145,13 @@ def main():
         for col, (fname, unit) in COLUMN_MAP.items():
             if col not in r:
                 continue
-            val, funit = parse_value(r[col], unit, args.decimal)
+            val, funit = parse_value(r[col], unit, "point")
             if not val:
                 continue
+            if not args.keep_units:
+                val, funit = convert_unit(val, funit, unit)
+            if args.decimal == "comma":
+                val = val.replace(".", ",")
             new_rows.append({"product_id": pid, "supplier_pid": artnr,
                              "fname": fname, "fvalue": val, "funit": funit})
 

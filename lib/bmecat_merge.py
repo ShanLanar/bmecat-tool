@@ -170,9 +170,32 @@ def _copy_basis(basis_src: str, out_file: str, progress_cb):
 _HAS_FEATURE = re.compile(r'(?is)<feature[\s>]')
 
 
+_FVALUE_PAT = re.compile(r'(?is)<FVALUE>.*?</FVALUE>')
+_FUNIT_PAT  = re.compile(r'(?is)<FUNIT>.*?</FUNIT>')
+
+
+def _extra_feature_xml(fname: str, fvalue: str, funit: str) -> str:
+    unit = f"\n\t\t\t\t<FUNIT>{_xml_escape(funit)}</FUNIT>" if funit else ""
+    return (f"\t\t\t<FEATURE>\n"
+            f"\t\t\t\t<FNAME>{_xml_escape(fname)}</FNAME>\n"
+            f"\t\t\t\t<FVALUE>{_xml_escape(fvalue)}</FVALUE>{unit}\n"
+            f"\t\t\t</FEATURE>")
+
+
+def _set_feature_value(feature_xml: str, fvalue: str, funit: str) -> str:
+    """FVALUE (und FUNIT) eines vorhandenen <FEATURE>-Blocks ersetzen."""
+    new = _FVALUE_PAT.sub(lambda m: f"<FVALUE>{_xml_escape(fvalue)}</FVALUE>", feature_xml, count=1)
+    if funit:
+        if _FUNIT_PAT.search(new):
+            new = _FUNIT_PAT.sub(lambda m: f"<FUNIT>{_xml_escape(funit)}</FUNIT>", new, count=1)
+        else:
+            new = re.sub(r'(?is)(</FVALUE>)', lambda m: m.group(1) + f"\n\t\t\t\t<FUNIT>{_xml_escape(funit)}</FUNIT>", new, count=1)
+    return new
+
+
 def _merge_phase2(out_file: str, temp_file: str,
                   eclass_feats: dict, udx_blocks: dict,
-                  progress_cb) -> int:
+                  progress_cb, extra_features: dict = None) -> int:
     """
     Liest out_file (Basisdatei-Kopie) zeilenweise, schreibt nach temp_file.
 
@@ -193,6 +216,9 @@ def _merge_phase2(out_file: str, temp_file: str,
     inserted_udx   = 0
     renamed_91     = 0
     filled_empty   = 0
+    extra_features = extra_features or {}
+    extra_added = extra_replaced = extra_articles = extra_new_blocks = 0
+    brj_refsys_seen = ""
 
     with open(out_file, encoding="utf-8", errors="replace") as reader, \
          open(temp_file, "w", encoding="utf-8") as writer:
@@ -201,6 +227,7 @@ def _merge_phase2(out_file: str, temp_file: str,
         current_aid = ""
         udx_done    = False
         seen_fnames = set()
+        extra_done  = False
 
         in_af     = False
         af_buf    = []
@@ -208,6 +235,7 @@ def _merge_phase2(out_file: str, temp_file: str,
 
         def flush_af_buf():
             nonlocal renamed_91, filled_empty, inserted_feats
+            nonlocal extra_added, extra_replaced, extra_articles, extra_done, brj_refsys_seen
             if not af_buf:
                 return
             block_str  = "".join(af_buf)
@@ -218,10 +246,17 @@ def _merge_phase2(out_file: str, temp_file: str,
             aid        = current_aid
 
             if is_udf_brj:
+                brj_refsys_seen = af_refsys
+                # Zusatz-Features (postprocess_features.csv, z.B. Maße/Gewicht):
+                # gleichnamige Features im Block bekommen den neuen Wert,
+                # fehlende werden unten angehängt – wie beim DB-Import.
+                extras = {fn.strip().lower(): (fn, fv, fu)
+                          for fn, fv, fu in extra_features.get(aid, [])}
                 # udf_BRjCat-Block aus Basisdatei:
                 # 1. Vorhandene Features behalten (dedup)
                 # 2. Fehlende Features aus ABE ergänzen
                 def _dedup_base(m):
+                    nonlocal extra_replaced
                     fn_m = _FNAME_PAT.search(m.group())
                     if not fn_m:
                         return m.group()
@@ -229,6 +264,10 @@ def _merge_phase2(out_file: str, temp_file: str,
                     if key in seen_fnames:
                         return ""
                     seen_fnames.add(key)
+                    if key in extras:
+                        _, fv, fu = extras.pop(key)
+                        extra_replaced += 1
+                        return _set_feature_value(m.group(), fv, fu)
                     return m.group()
                 new_block = _FEATURE_PAT.sub(_dedup_base, block_str)
 
@@ -253,6 +292,23 @@ def _merge_phase2(out_file: str, temp_file: str,
                                      + new_block[idx:])
                     inserted_feats += len(to_add)
                     filled_empty   += 1
+
+                # Restliche Zusatz-Features (im Block noch nicht vorhanden) anhängen
+                if extras and not extra_done:
+                    to_add_x = []
+                    for key, (fn, fv, fu) in extras.items():
+                        if key not in seen_fnames and (fv or "").strip():
+                            seen_fnames.add(key)
+                            to_add_x.append(_extra_feature_xml(fn, fv, fu))
+                    if to_add_x:
+                        idx = new_block.lower().rfind("</article_features>")
+                        if idx >= 0:
+                            new_block = (new_block[:idx] + "\n".join(to_add_x) + "\n"
+                                         + new_block[idx:])
+                            extra_added += len(to_add_x)
+                if extras or extra_replaced:
+                    extra_done = True
+                    extra_articles += 1
 
                 writer.write(new_block)
 
@@ -330,6 +386,7 @@ def _merge_phase2(out_file: str, temp_file: str,
                 current_aid = ""
                 udx_done    = False
                 seen_fnames = set()
+                extra_done  = False
 
             if in_art and not current_aid:
                 aid_m = _AID_LINE.search(line)
@@ -341,6 +398,23 @@ def _merge_phase2(out_file: str, temp_file: str,
 
             if in_art and _ART_END.search(clean):
                 flush_af_buf()
+                # Artikel ohne udf_BRjCat-Block: Zusatz-Features als eigener Block
+                if not extra_done and current_aid in extra_features:
+                    feats = [(fn, fv, fu) for fn, fv, fu in extra_features[current_aid]
+                             if (fv or "").strip() and fn.strip().lower() not in seen_fnames]
+                    if feats:
+                        refsys = brj_refsys_seen or "udf_BRjCat-1.0"
+                        writer.write("\t\t<ARTICLE_FEATURES>\n"
+                                     f"\t\t\t<REFERENCE_FEATURE_SYSTEM_NAME>{_xml_escape(refsys)}"
+                                     "</REFERENCE_FEATURE_SYSTEM_NAME>\n"
+                                     + "\n".join(_extra_feature_xml(*f) for f in feats)
+                                     + "\n\t\t</ARTICLE_FEATURES>\n")
+                        for fn, _fv, _fu in feats:
+                            seen_fnames.add(fn.strip().lower())
+                        extra_added += len(feats)
+                        extra_articles += 1
+                        extra_new_blocks += 1
+                    extra_done = True
                 if not udx_done and current_aid in udx_blocks:
                     udx_xml = udx_blocks[current_aid]
                     writer.write(udx_xml)
@@ -369,14 +443,17 @@ def _merge_phase2(out_file: str, temp_file: str,
     p(f"  Leere ECLASS-Bloecke gefuellt:  {filled_empty}")
     p(f"  ECLASS-9.1 umbenannt:           {renamed_91} Bloecke")
     p(f"  UDX eingefuegt:                 {inserted_udx} Artikel")
-    return inserted_udx + inserted_feats + renamed_91
+    if extra_features:
+        p(f"  Zusatz-Features (postprocess_features.csv): {extra_articles} Artikel, "
+          f"{extra_added} ergaenzt, {extra_replaced} ersetzt, {extra_new_blocks} neue Bloecke")
+    return inserted_udx + inserted_feats + renamed_91 + extra_added + extra_replaced
 
 
 
 # ── Hauptfunktion ─────────────────────────────────────────────────────────────
 
 def merge(udx_src: str, basis_src: str, out_file: str,
-          progress_cb=None) -> dict:
+          progress_cb=None, extra_features: dict = None) -> dict:
     """
     Führt den vollständigen Merge durch.
 
@@ -385,6 +462,11 @@ def merge(udx_src: str, basis_src: str, out_file: str,
         basis_src  Pfad zur Büroring-Basis-Datei (Hauptkatalog)
         out_file   Zielpfad für bueroring_merged.xml
         progress_cb  Callable(msg, tag="") für GUI-Log
+        extra_features  {supplier_aid_lower: [(fname, fvalue, funit), ...]} aus
+                   postprocess_features.csv – werden je Artikel in den
+                   udf_BRjCat-Block eingetragen (gleichnamige ersetzt, fehlende
+                   angehängt), damit auch Brickfox (bekommt die Merge-XML
+                   direkt) z.B. Maße/Gewicht erhält.
 
     Rückgabe:
         dict mit Statistiken
@@ -407,7 +489,8 @@ def merge(udx_src: str, basis_src: str, out_file: str,
 
     # Phase 2: Features + UDX einfügen
     total_inserted = _merge_phase2(out_file, temp_file,
-                                   eclass_feats, udx_blocks, p)
+                                   eclass_feats, udx_blocks, p,
+                                   extra_features=extra_features)
 
     # temp → out ersetzen
     p("Ersetze Ausgabedatei …")

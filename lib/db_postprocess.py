@@ -251,6 +251,31 @@ def _load_extra_features(base_dir: str) -> tuple[dict, dict]:
     return by_pid, by_spid
 
 
+def load_extra_features_by_spid(base_dir: str, prefix: str = "") -> dict:
+    """
+    postprocess_features.csv als {supplier_pid_lower: [(fname, fvalue, funit), ...]}
+    – für Textstufen ohne DB (BMEcat-Merge), Schlüssel = native Artikelnummer.
+    Fehlt supplier_pid, wird product_id ohne das übergebene Präfix verwendet.
+    """
+    rows = _read_csv(os.path.join(base_dir, 'postprocess_features.csv'))
+    out: dict = {}
+    pre = (prefix or "").lower()
+    for row in rows:
+        fname = row.get('fname', '')
+        if not fname or fname.startswith('#'):
+            continue
+        spid = (row.get('supplier_pid') or '').strip().lower()
+        if not spid:
+            pid = (row.get('product_id') or '').strip().lower()
+            if pre and pid.startswith(pre):
+                pid = pid[len(pre):]
+            spid = pid
+        if not spid:
+            continue
+        out.setdefault(spid, []).append((fname, row.get('fvalue', ''), row.get('funit', '')))
+    return out
+
+
 def _apply_extra_features(features: list, extra: list) -> list:
     """
     Fügt Zusatz-Features an. Existiert bereits ein Feature mit gleichem FNAME

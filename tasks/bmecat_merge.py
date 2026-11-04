@@ -77,6 +77,7 @@ def run(progress_cb=None, file_progress_cb=None):
             ("kw",             kw_file),
             ("fname_renames",  fname_csv),
             ("fvalue_renames", fvalue_csv),
+            ("extra_features", os.path.join(_cfg.BASE_DIR, "postprocess_features.csv")),
             # Merge-Code selbst mit einbeziehen: sonst bleibt eine bereits
             # gemergte Datei nach einer Logikänderung (z.B. Rename-Regeln)
             # ewig gecacht, weil Merge-Skip nur die Quelldateien vergleicht.
@@ -98,7 +99,17 @@ def run(progress_cb=None, file_progress_cb=None):
         log.debug("Merge-Hash-Vergleich übersprungen: %s", e)
 
     if not skip_merge:
-        stats = merge(udx_src, basis_src, out_file, progress_cb=p)
+        # Zusatz-Features (z.B. Büroring-Maße aus postprocess_features.csv) in die
+        # Merge-XML – Brickfox bekommt diese Datei direkt, nicht den DB-Export.
+        extra = {}
+        try:
+            from lib.db_postprocess import load_extra_features_by_spid
+            extra = load_extra_features_by_spid(_cfg.BASE_DIR, prefix="BRG")
+            if extra:
+                p(f"Zusatz-Features: {len(extra)} Artikel aus postprocess_features.csv")
+        except Exception as e:
+            p(f"Zusatz-Features übersprungen: {e}", tag="warn")
+        stats = merge(udx_src, basis_src, out_file, progress_cb=p, extra_features=extra)
 
         # Keywords injizieren
         if os.path.exists(kw_file):
