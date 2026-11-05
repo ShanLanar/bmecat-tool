@@ -222,6 +222,20 @@ BRICKFOX_ERP_PRICES = {
 # Dateiname des BME-1.2-Katalogs in in_BME (Datum wechselt) – Suchmuster für Task
 MERCATEO_CATALOG_XML_PATTERN = "kaenguruh und bunte ware *.xml"
 
+# ── Zusatz-Features (postprocess_features.csv): Zieleinheiten ─────────────────
+# Beim Einlesen werden Maße/Gewichte auf diese Einheiten umgerechnet, weil
+# Brickfox/Marktplätze nur den Zahlenwert übernehmen. Schlüssel = FNAME
+# (Groß-/Kleinschreibung egal). Erlaubt: mm, cm, m (Maße) und g, kg (Gewicht).
+# Gewicht-Einheit bei Conrad/Brickfox bitte prüfen (kg oder g) und hier setzen.
+FEATURE_TARGET_UNITS = {
+    "Länge":       "mm",
+    "Breite":      "mm",
+    "Höhe":        "mm",
+    "Tiefe":       "mm",
+    "Durchmesser": "mm",
+    "Gewicht":     "kg",
+}
+
 # ── Manueller Import ("BMEcat laden"): Lieferantenkürzel (Präfix) ─────────────
 # Beim manuellen Import eines freien Katalogs wird das Kürzel vor die
 # Artikelnummer gesetzt (product_id = Kürzel + SUPPLIER_AID). Export, Bildnamen

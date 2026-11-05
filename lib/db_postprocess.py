@@ -215,14 +215,27 @@ def _apply_fname_blacklist(features: list, blacklist: list) -> list:
 #   · Zahlen ohne überflüssige Nachkommastellen ("78.0" → "78", "0,360" → "0.36")
 #   · Einheiten auf die Zieleinheit des Merkmals umrechnen (Shops/Brickfox
 #     übernehmen nur den Zahlenwert): Maße → mm, Gewicht → kg
-_FEATURE_TARGET_UNITS = {
+_FEATURE_TARGET_UNITS_DEFAULT = {
     "länge": "mm", "laenge": "mm", "breite": "mm", "höhe": "mm", "hoehe": "mm",
     "tiefe": "mm", "durchmesser": "mm", "gewicht": "kg",
 }
-_UNIT_FACTORS = {
-    ("cm", "mm"): 10.0, ("m", "mm"): 1000.0, ("dm", "mm"): 100.0,
-    ("g", "kg"): 0.001, ("mg", "kg"): 0.000001, ("t", "kg"): 1000.0,
-}
+# Umrechnung in Basiseinheiten (mm bzw. g), daraus beliebige Zieleinheit
+_TO_BASE = {"mm": 1.0, "cm": 10.0, "dm": 100.0, "m": 1000.0,
+            "mg": 0.001, "g": 1.0, "kg": 1000.0, "t": 1000000.0}
+_LENGTH_UNITS = {"mm", "cm", "dm", "m"}
+_WEIGHT_UNITS = {"mg", "g", "kg", "t"}
+
+
+def _target_units() -> dict:
+    """Zieleinheiten aus config.FEATURE_TARGET_UNITS (FNAME lower → Einheit), sonst Standard."""
+    try:
+        import config as _cfg
+        cfg = getattr(_cfg, "FEATURE_TARGET_UNITS", None)
+        if cfg:
+            return {str(k).strip().lower(): str(v).strip().lower() for k, v in cfg.items()}
+    except Exception:
+        pass
+    return dict(_FEATURE_TARGET_UNITS_DEFAULT)
 
 
 def _fmt_number(val: float) -> str:
@@ -246,11 +259,13 @@ def normalize_feature_value(fname: str, fvalue: str, funit: str) -> tuple:
         val = float(num_s.replace(",", "."))
     except ValueError:
         return raw, unit
-    target = _FEATURE_TARGET_UNITS.get((fname or "").strip().lower())
+    target = _target_units().get((fname or "").strip().lower())
     if target and unit and unit.lower() != target:
-        factor = _UNIT_FACTORS.get((unit.lower(), target))
-        if factor is not None:
-            val *= factor
+        u, t = unit.lower(), target
+        same_kind = ((u in _LENGTH_UNITS and t in _LENGTH_UNITS)
+                     or (u in _WEIGHT_UNITS and t in _WEIGHT_UNITS))
+        if same_kind:
+            val = val * _TO_BASE[u] / _TO_BASE[t]
             unit = target
     elif target and not unit:
         unit = target
