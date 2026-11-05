@@ -211,6 +211,52 @@ def _apply_fname_blacklist(features: list, blacklist: list) -> list:
 
 # ── Zusätzliche Features (postprocess_features.csv) ──────────────────────────
 
+# Bereinigung beim Einlesen (gilt für DB-Import, DB-Task, Merge und Export):
+#   · Zahlen ohne überflüssige Nachkommastellen ("78.0" → "78", "0,360" → "0.36")
+#   · Einheiten auf die Zieleinheit des Merkmals umrechnen (Shops/Brickfox
+#     übernehmen nur den Zahlenwert): Maße → mm, Gewicht → kg
+_FEATURE_TARGET_UNITS = {
+    "länge": "mm", "laenge": "mm", "breite": "mm", "höhe": "mm", "hoehe": "mm",
+    "tiefe": "mm", "durchmesser": "mm", "gewicht": "kg",
+}
+_UNIT_FACTORS = {
+    ("cm", "mm"): 10.0, ("m", "mm"): 1000.0, ("dm", "mm"): 100.0,
+    ("g", "kg"): 0.001, ("mg", "kg"): 0.000001, ("t", "kg"): 1000.0,
+}
+
+
+def _fmt_number(val: float) -> str:
+    return f"{val:.6f}".rstrip("0").rstrip(".") or "0"
+
+
+def normalize_feature_value(fname: str, fvalue: str, funit: str) -> tuple:
+    """
+    ("Gewicht", "360", "g") → ("0.36", "kg"); ("Länge", "78.0", "mm") → ("78", "mm");
+    ("Höhe", "6,5 cm", "") → ("65", "mm"). Nicht-numerische Werte bleiben unverändert.
+    """
+    raw = (fvalue or "").strip()
+    unit = (funit or "").strip()
+    m = re.match(r"^([-+]?\d+(?:[.,]\d+)?)\s*([A-Za-zµ]*)$", raw)
+    if not m:
+        return raw, unit
+    num_s, unit_in_value = m.group(1), m.group(2)
+    if unit_in_value and not unit:
+        unit = unit_in_value
+    try:
+        val = float(num_s.replace(",", "."))
+    except ValueError:
+        return raw, unit
+    target = _FEATURE_TARGET_UNITS.get((fname or "").strip().lower())
+    if target and unit and unit.lower() != target:
+        factor = _UNIT_FACTORS.get((unit.lower(), target))
+        if factor is not None:
+            val *= factor
+            unit = target
+    elif target and not unit:
+        unit = target
+    return _fmt_number(val), unit
+
+
 def _load_extra_features(base_dir: str) -> tuple[dict, dict]:
     """
     Liest postprocess_features.csv:
@@ -226,10 +272,11 @@ def _load_extra_features(base_dir: str) -> tuple[dict, dict]:
         fname = row.get('fname', '')
         if not fname or fname.startswith('#'):
             continue
+        fvalue, funit = normalize_feature_value(fname, row.get('fvalue', ''), row.get('funit', ''))
         feat = {
             'fname':       fname,
-            'fvalue':      row.get('fvalue', ''),
-            'funit':       row.get('funit', ''),
+            'fvalue':      fvalue,
+            'funit':       funit,
             'fusage':      1,
             'forder':      0,
             'fsearchable': 1,
@@ -272,7 +319,8 @@ def load_extra_features_by_spid(base_dir: str, prefix: str = "") -> dict:
             spid = pid
         if not spid:
             continue
-        out.setdefault(spid, []).append((fname, row.get('fvalue', ''), row.get('funit', '')))
+        fvalue, funit = normalize_feature_value(fname, row.get('fvalue', ''), row.get('funit', ''))
+        out.setdefault(spid, []).append((fname, fvalue, funit))
     return out
 
 
