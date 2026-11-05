@@ -174,12 +174,27 @@ _FVALUE_PAT = re.compile(r'(?is)<FVALUE>.*?</FVALUE>')
 _FUNIT_PAT  = re.compile(r'(?is)<FUNIT>.*?</FUNIT>')
 
 
-def _extra_feature_xml(fname: str, fvalue: str, funit: str) -> str:
-    unit = f"\n\t\t\t\t<FUNIT>{_xml_escape(funit)}</FUNIT>" if funit else ""
-    return (f"\t\t\t<FEATURE>\n"
-            f"\t\t\t\t<FNAME>{_xml_escape(fname)}</FNAME>\n"
-            f"\t\t\t\t<FVALUE>{_xml_escape(fvalue)}</FVALUE>{unit}\n"
-            f"\t\t\t</FEATURE>")
+_FEAT_INDENT_PAT = re.compile(r'(?im)^([ \t]*)<FEATURE[\s>]')
+_FNAME_INDENT_PAT = re.compile(r'(?im)^([ \t]*)<FNAME>')
+
+
+def _detect_indent(block: str, default_outer: str = "        ") -> tuple:
+    """(Einrückung von <FEATURE>, Einrückung von <FNAME>) aus einem vorhandenen
+    Block übernehmen, damit eingefügte Features wie die Büroring-Features aussehen."""
+    m_o = _FEAT_INDENT_PAT.search(block)
+    outer = m_o.group(1) if m_o else default_outer
+    m_i = _FNAME_INDENT_PAT.search(block)
+    inner = m_i.group(1) if m_i else outer + "  "
+    return outer, inner
+
+
+def _extra_feature_xml(fname: str, fvalue: str, funit: str,
+                       outer: str = "        ", inner: str = "          ") -> str:
+    unit = f"\n{inner}<FUNIT>{_xml_escape(funit)}</FUNIT>" if funit else ""
+    return (f"{outer}<FEATURE>\n"
+            f"{inner}<FNAME>{_xml_escape(fname)}</FNAME>\n"
+            f"{inner}<FVALUE>{_xml_escape(fvalue)}</FVALUE>{unit}\n"
+            f"{outer}</FEATURE>")
 
 
 def _set_feature_value(feature_xml: str, fvalue: str, funit: str) -> str:
@@ -189,7 +204,8 @@ def _set_feature_value(feature_xml: str, fvalue: str, funit: str) -> str:
         if _FUNIT_PAT.search(new):
             new = _FUNIT_PAT.sub(lambda m: f"<FUNIT>{_xml_escape(funit)}</FUNIT>", new, count=1)
         else:
-            new = re.sub(r'(?is)(</FVALUE>)', lambda m: m.group(1) + f"\n\t\t\t\t<FUNIT>{_xml_escape(funit)}</FUNIT>", new, count=1)
+            _o, inner = _detect_indent(feature_xml, "        ")
+            new = re.sub(r'(?is)(</FVALUE>)', lambda m: m.group(1) + f"\n{inner}<FUNIT>{_xml_escape(funit)}</FUNIT>", new, count=1)
     return new
 
 
@@ -295,16 +311,22 @@ def _merge_phase2(out_file: str, temp_file: str,
 
                 # Restliche Zusatz-Features (im Block noch nicht vorhanden) anhängen
                 if extras and not extra_done:
+                    outer, inner = _detect_indent(new_block)
                     to_add_x = []
                     for key, (fn, fv, fu) in extras.items():
                         if key not in seen_fnames and (fv or "").strip():
                             seen_fnames.add(key)
-                            to_add_x.append(_extra_feature_xml(fn, fv, fu))
+                            to_add_x.append(_extra_feature_xml(fn, fv, fu, outer, inner))
                     if to_add_x:
                         idx = new_block.lower().rfind("</article_features>")
                         if idx >= 0:
-                            new_block = (new_block[:idx] + "\n".join(to_add_x) + "\n"
-                                         + new_block[idx:])
+                            # vor der Einrückung des schließenden Tags einfügen,
+                            # damit Einrückung und Zeilenumbrüche sauber bleiben
+                            ws = idx
+                            while ws > 0 and new_block[ws - 1] in " \t":
+                                ws -= 1
+                            new_block = (new_block[:ws] + "\n".join(to_add_x) + "\n"
+                                         + new_block[ws:])
                             extra_added += len(to_add_x)
                 if extras or extra_replaced:
                     extra_done = True
@@ -404,11 +426,15 @@ def _merge_phase2(out_file: str, temp_file: str,
                              if (fv or "").strip() and fn.strip().lower() not in seen_fnames]
                     if feats:
                         refsys = brj_refsys_seen or "udf_BRjCat-1.0"
-                        writer.write("\t\t<ARTICLE_FEATURES>\n"
-                                     f"\t\t\t<REFERENCE_FEATURE_SYSTEM_NAME>{_xml_escape(refsys)}"
+                        # Einrückung wie in der Basisdatei (Büroring: 6/8/10 Leerzeichen)
+                        ind_m = re.match(r'[ \t]*', line)
+                        base = (ind_m.group(0) if ind_m else "    ") + "  "
+                        outer, inner = base + "  ", base + "    "
+                        writer.write(f"{base}<ARTICLE_FEATURES>\n"
+                                     f"{outer}<REFERENCE_FEATURE_SYSTEM_NAME>{_xml_escape(refsys)}"
                                      "</REFERENCE_FEATURE_SYSTEM_NAME>\n"
-                                     + "\n".join(_extra_feature_xml(*f) for f in feats)
-                                     + "\n\t\t</ARTICLE_FEATURES>\n")
+                                     + "\n".join(_extra_feature_xml(*f, outer, inner) for f in feats)
+                                     + f"\n{base}</ARTICLE_FEATURES>\n")
                         for fn, _fv, _fu in feats:
                             seen_fnames.add(fn.strip().lower())
                         extra_added += len(feats)

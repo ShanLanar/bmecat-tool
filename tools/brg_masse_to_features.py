@@ -71,6 +71,15 @@ def convert_unit(num: str, unit: str, target: str) -> tuple:
     out = f"{val:.6f}".rstrip("0").rstrip(".") or "0"
     return out, target
 
+
+def clean_number(num: str) -> str:
+    """'78.0' → '78', '0.360' → '0.36'; Nicht-Zahlen unverändert."""
+    try:
+        f = float(num.replace(",", "."))
+    except (ValueError, AttributeError):
+        return num
+    return f"{f:.6f}".rstrip("0").rstrip(".") or "0"
+
 _NUM_RE = re.compile(r"^\s*([-+]?[\d.,]+)\s*([A-Za-zµ%²³]*)\s*$")
 
 
@@ -150,6 +159,7 @@ def main():
                 continue
             if not args.keep_units:
                 val, funit = convert_unit(val, funit, unit)
+            val = clean_number(val)
             if args.decimal == "comma":
                 val = val.replace(".", ",")
             new_rows.append({"product_id": pid, "supplier_pid": artnr,
