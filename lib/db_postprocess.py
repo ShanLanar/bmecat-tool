@@ -339,6 +339,55 @@ def load_extra_features_by_spid(base_dir: str, prefix: str = "") -> dict:
     return out
 
 
+# ── Abgeleitete Features (Ursprungsregion aus Ursprungsland) ─────────────────
+
+_ORIGIN_FNAME = "ursprungsland"
+_REGION_FNAME = "Ursprungsregion"
+
+
+def _origin_region_defaults() -> dict:
+    try:
+        import config as _cfg
+        d = getattr(_cfg, "ORIGIN_REGION_DEFAULTS", None)
+        if d is not None:
+            return {str(k).strip().lower(): str(v).strip() for k, v in d.items() if str(v).strip()}
+    except Exception:
+        pass
+    return {"de": "05", "deutschland": "05"}
+
+
+def derive_origin_region(features: list) -> str | None:
+    """
+    Liefert die zu ergänzende Ursprungsregion (z.B. "05") für eine Feature-Liste
+    [{fname, fvalue, ...}] – oder None, wenn kein Ursprungsland mit Vorgabe
+    vorhanden ist oder bereits eine Ursprungsregion existiert.
+    """
+    defaults = _origin_region_defaults()
+    if not defaults:
+        return None
+    region = None
+    for f in features:
+        name = (f.get("fname") or "").strip().lower()
+        if name == _REGION_FNAME.lower() and (f.get("fvalue") or "").strip():
+            return None
+        if name == _ORIGIN_FNAME and region is None:
+            region = defaults.get((f.get("fvalue") or "").strip().lower())
+    return region
+
+
+def apply_derived_features(features: list) -> list:
+    """Ergänzt abgeleitete Features (derzeit: Ursprungsregion). Liefert neue Liste."""
+    region = derive_origin_region(features)
+    if not region:
+        return features
+    result = [dict(f) for f in features]
+    max_order = max((int(f.get("forder") or 0) for f in result), default=0)
+    result.append({"fname": _REGION_FNAME, "fvalue": region, "funit": "", "fusage": 1,
+                   "forder": max_order + 1, "fsearchable": 1, "fselectable": 0,
+                   "value_index": 0})
+    return result
+
+
 def _apply_extra_features(features: list, extra: list) -> list:
     """
     Fügt Zusatz-Features an. Existiert bereits ein Feature mit gleichem FNAME
@@ -796,6 +845,8 @@ class PostProcessor:
                  or self._extra_by_spid.get((art.get('supplier_pid') or '').upper()))
         if extra:
             art['features'] = _apply_extra_features(art.get('features', []), extra)
+        # ── Abgeleitete Features (Ursprungsregion aus Ursprungsland) ─────────
+        art['features'] = apply_derived_features(art.get('features', []))
 
         # ── FNAME-Blacklist ──────────────────────────────────────────────────
         art['features'] = _apply_fname_blacklist(art.get('features', []), self._fname_blacklist)

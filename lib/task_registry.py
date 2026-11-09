@@ -185,7 +185,7 @@ TASKS = [
     {
         "id":      "extra_features_db",
         "name":    "Zusatz-Features in DB einspielen",
-        "desc":    "postprocess_features.csv (z.B. Büroring-Maße: Länge/Breite/Höhe/Gewicht) in die Artikel-DB übernehmen – gleichnamige Features ersetzen, neue anhängen. Beim DB-Import passiert das automatisch; dieser Task aktualisiert die bereits vorhandenen Artikel",
+        "desc":    "postprocess_features.csv (z.B. Büroring-Maße: Länge/Breite/Höhe/Gewicht) in die Artikel-DB übernehmen – gleichnamige Features ersetzen, neue anhängen; außerdem Ursprungsregion (z.B. 05 bei Ursprungsland DE, config.ORIGIN_REGION_DEFAULTS) ergänzen. Beim DB-Import passiert beides automatisch; dieser Task aktualisiert die bereits vorhandenen Artikel",
         "fn":      "tasks.extra_features:run",
         "default": False,
         "group":   "Extras",

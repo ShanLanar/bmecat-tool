@@ -14,7 +14,8 @@ from typing import Callable
 
 import config as _cfg
 from lib.article_db import open_db, transaction, _now
-from lib.db_postprocess import _load_extra_features, _apply_extra_features
+from lib.db_postprocess import (_load_extra_features, _apply_extra_features,
+                                apply_derived_features, _ORIGIN_FNAME)
 
 _FEAT_COLS = ("fname", "fvalue", "funit", "fusage", "forder",
               "fsearchable", "fselectable", "value_index")
@@ -31,26 +32,33 @@ def run(progress_cb: Callable = None, file_progress_cb: Callable = None) -> dict
     p = progress_cb or (lambda m, **kw: None)
 
     path = os.path.join(_cfg.BASE_DIR, "postprocess_features.csv")
-    if not os.path.exists(path):
-        p(f"Zusatz-Features: {path} nicht gefunden – nichts zu tun.", tag="warn")
-        return {}
-    by_pid, by_spid = _load_extra_features(_cfg.BASE_DIR)
-    if not by_pid and not by_spid:
-        p("Zusatz-Features: postprocess_features.csv enthält keine gültigen Zeilen.", tag="warn")
-        return {}
-    p(f"Zusatz-Features: {len(by_pid) + len(by_spid)} Artikel in postprocess_features.csv")
+    by_pid, by_spid = ({}, {})
+    if os.path.exists(path):
+        by_pid, by_spid = _load_extra_features(_cfg.BASE_DIR)
+        p(f"Zusatz-Features: {len(by_pid) + len(by_spid)} Artikel in postprocess_features.csv")
+    else:
+        p(f"Zusatz-Features: {path} nicht gefunden – nur abgeleitete Features "
+          f"(Ursprungsregion).", tag="dim")
 
     con = open_db(_cfg.DB_PATH)
     try:
         arts = con.execute(
             "SELECT id, product_id, supplier_pid FROM articles").fetchall()
+        # Artikel mit Ursprungsland → Kandidaten für die Ursprungsregion
+        origin_ids = {r[0] for r in con.execute(
+            "SELECT DISTINCT article_id FROM article_features WHERE LOWER(fname)=?",
+            (_ORIGIN_FNAME,))}
         targets = []
+        matched_keys = set()
         for a in arts:
-            extra = (by_pid.get((a["product_id"] or "").upper())
-                     or by_spid.get((a["supplier_pid"] or "").upper()))
+            k_pid, k_spid = (a["product_id"] or "").upper(), (a["supplier_pid"] or "").upper()
+            extra = by_pid.get(k_pid) or by_spid.get(k_spid)
             if extra:
-                targets.append((a["id"], a["product_id"], extra))
-        p(f"Zusatz-Features: {len(targets)} von {len(arts)} DB-Artikeln betroffen")
+                matched_keys.add(k_pid if k_pid in by_pid else k_spid)
+            if extra or a["id"] in origin_ids:
+                targets.append((a["id"], a["product_id"], extra or []))
+        p(f"Zusatz-Features: {len(targets)} von {len(arts)} DB-Artikeln zu prüfen "
+          f"({len(origin_ids)} mit Ursprungsland)")
 
         changed = unchanged = 0
         now = _now()
@@ -63,7 +71,8 @@ def run(progress_cb: Callable = None, file_progress_cb: Callable = None) -> dict
                         "SELECT fname, fvalue, funit, fusage, forder, fsearchable, "
                         "fselectable, value_index FROM article_features "
                         "WHERE article_id=? ORDER BY forder, id", (art_id,))]
-                    new = _apply_extra_features(cur, extra)
+                    new = _apply_extra_features(cur, extra) if extra else cur
+                    new = apply_derived_features(new)
                     if _norm(new) == _norm(cur):
                         unchanged += 1
                         continue
@@ -87,7 +96,7 @@ def run(progress_cb: Callable = None, file_progress_cb: Callable = None) -> dict
     finally:
         con.close()
 
-    not_in_db = len(by_pid) + len(by_spid) - len(targets)
+    not_in_db = sum(1 for k in list(by_pid) + list(by_spid) if k not in matched_keys)
     p(f"Zusatz-Features: {changed} Artikel aktualisiert, {unchanged} bereits aktuell"
       + (f", {not_in_db} CSV-Artikel nicht in der DB" if not_in_db > 0 else ""), tag="ok")
     return {"changed": changed, "unchanged": unchanged, "not_in_db": max(not_in_db, 0)}

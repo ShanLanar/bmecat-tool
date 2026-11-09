@@ -234,6 +234,7 @@ def _merge_phase2(out_file: str, temp_file: str,
     filled_empty   = 0
     extra_features = extra_features or {}
     extra_added = extra_replaced = extra_articles = extra_new_blocks = 0
+    derived_regions = 0
     brj_refsys_seen = ""
 
     with open(out_file, encoding="utf-8", errors="replace") as reader, \
@@ -252,6 +253,7 @@ def _merge_phase2(out_file: str, temp_file: str,
         def flush_af_buf():
             nonlocal renamed_91, filled_empty, inserted_feats
             nonlocal extra_added, extra_replaced, extra_articles, extra_done, brj_refsys_seen
+            nonlocal derived_regions
             if not af_buf:
                 return
             block_str  = "".join(af_buf)
@@ -308,6 +310,22 @@ def _merge_phase2(out_file: str, temp_file: str,
                                      + new_block[idx:])
                     inserted_feats += len(to_add)
                     filled_empty   += 1
+
+                # Abgeleitete Features: Ursprungsregion aus Ursprungsland (config)
+                if "ursprungsregion" not in seen_fnames:
+                    try:
+                        from lib.db_postprocess import _origin_region_defaults
+                        defaults = _origin_region_defaults()
+                    except Exception:
+                        defaults = {}
+                    if defaults:
+                        o_m = re.search(r'(?is)<FNAME>\s*Ursprungsland\s*</FNAME>\s*<FVALUE>(.*?)</FVALUE>',
+                                        new_block)
+                        if o_m:
+                            region = defaults.get(o_m.group(1).strip().lower())
+                            if region:
+                                extras["ursprungsregion"] = ("Ursprungsregion", region, "")
+                                derived_regions += 1
 
                 # Restliche Zusatz-Features (im Block noch nicht vorhanden) anhängen
                 if extras and not extra_done:
@@ -472,6 +490,8 @@ def _merge_phase2(out_file: str, temp_file: str,
     if extra_features:
         p(f"  Zusatz-Features (postprocess_features.csv): {extra_articles} Artikel, "
           f"{extra_added} ergaenzt, {extra_replaced} ersetzt, {extra_new_blocks} neue Bloecke")
+    if derived_regions:
+        p(f"  Ursprungsregion ergaenzt (aus Ursprungsland): {derived_regions} Artikel")
     return inserted_udx + inserted_feats + renamed_91 + extra_added + extra_replaced
 
 

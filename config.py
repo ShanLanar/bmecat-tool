@@ -236,6 +236,16 @@ FEATURE_TARGET_UNITS = {
     "Gewicht":     "kg",
 }
 
+# ── Abgeleitete Features ──────────────────────────────────────────────────────
+# Ursprungsregion ergänzen, wenn das Feature "Ursprungsland" einen dieser Werte
+# hat und noch keine "Ursprungsregion" vorhanden ist (Groß-/Kleinschreibung
+# egal). Gilt für DB-Import, Export, Merge (Brickfox-XML) und den Task
+# "Zusatz-Features in DB einspielen". Leer = keine Ableitung.
+ORIGIN_REGION_DEFAULTS = {
+    "DE":          "05",
+    "Deutschland": "05",
+}
+
 # ── Manueller Import ("BMEcat laden"): Lieferantenkürzel (Präfix) ─────────────
 # Beim manuellen Import eines freien Katalogs wird das Kürzel vor die
 # Artikelnummer gesetzt (product_id = Kürzel + SUPPLIER_AID). Export, Bildnamen

@@ -610,9 +610,11 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
     # Zusatz-Features (postprocess_features.csv, z.B. Büroring-Maße) schon
     # beim Import in die DB übernehmen – damit sie im Viewer/Excel/PIM-Export
     # sichtbar sind und der content_hash stabil bleibt.
-    from lib.db_postprocess import _load_extra_features, _apply_extra_features
+    from lib.db_postprocess import (_load_extra_features, _apply_extra_features,
+                                    apply_derived_features)
     extra_by_pid, extra_by_spid = _load_extra_features(base_dir)
     extra_applied = 0
+    derived_applied = 0
 
     con = open_db(db_path)
     import_start = _now()   # Zeitstempel für Stale-Cleanup
@@ -720,6 +722,11 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
                 if extra:
                     art['features'] = _apply_extra_features(art.get('features', []), extra)
                     extra_applied += 1
+            # Abgeleitete Features (z.B. Ursprungsregion 05 bei Ursprungsland DE)
+            n_before = len(art.get('features', []))
+            art['features'] = apply_derived_features(art.get('features', []))
+            if len(art['features']) > n_before:
+                derived_applied += 1
             batch.append(art)
             if len(batch) >= batch_size:
                 _flush(batch)
@@ -740,6 +747,9 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
     if extra_applied:
         p(f"DB-Import [{sup_name}]: Zusatz-Features (postprocess_features.csv) "
           f"bei {extra_applied} Artikeln übernommen")
+    if derived_applied:
+        p(f"DB-Import [{sup_name}]: Ursprungsregion bei {derived_applied} Artikeln ergänzt "
+          f"(aus Ursprungsland, config.ORIGIN_REGION_DEFAULTS)")
 
     # Stale-Cleanup (Soft-Delete): Artikel dieses Lieferanten die in diesem Lauf
     # nicht angefasst wurden (last_seen < import_start) → im BMEcat nicht mehr
