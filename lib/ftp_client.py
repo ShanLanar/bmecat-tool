@@ -16,6 +16,10 @@ import logging
 from pathlib import Path
 
 log = logging.getLogger(__name__)
+# paramiko schreibt bei Verbindungsfehlern (z.B. "Error reading SSH protocol
+# banner") den kompletten Traceback seines Transport-Threads ins Log – der
+# eigentliche Fehler wird ohnehin von connect() gemeldet und wiederholt.
+logging.getLogger("paramiko.transport").setLevel(logging.CRITICAL)
 
 try:
     from lib.credentials import decrypt as _decrypt_pw
@@ -409,7 +413,7 @@ class SFTPClient:
         self._ssh     = None
         self._sftp    = None
 
-    def connect(self, retries: int = 3, retry_delay: int = 30):
+    def connect(self, retries: int = 4, retry_delay: int = 30):
         breaker = _get_breaker(self.host)
         if not breaker.allow_request():
             raise ConnectionError(
@@ -424,11 +428,15 @@ class SFTPClient:
                 sock = socket.create_connection((self.host, self.port), timeout=30)
                 _tune_socket(sock)
 
+                # banner_timeout: paramiko wartet standardmäßig nur 15 s auf den
+                # SSH-Banner – AWS-SFTP-Endpunkte (sftp.unite.services) brauchen
+                # unter Last gelegentlich länger ("Error reading SSH protocol banner").
                 self._ssh.connect(
                     self.host, port=self.port,
                     username=self.user, password=self.password,
                     sock=sock,
-                    timeout=30, look_for_keys=False, allow_agent=False,
+                    timeout=30, banner_timeout=60, auth_timeout=60,
+                    look_for_keys=False, allow_agent=False,
                 )
 
                 t = self._ssh.get_transport()
