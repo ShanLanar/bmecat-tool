@@ -236,6 +236,16 @@ FEATURE_TARGET_UNITS = {
     "Gewicht":     "kg",
 }
 
+# ── Brickfox-Textregeln (nur Brickfox-Kopie der Merge-XML) ────────────────────
+# Marktplatz-Anforderungen (Netto): werden bei jedem Merge-Lauf auf eine Kopie
+# bueroring_merged_brickfox.xml angewendet, die als bueroring.xml nach Brickfox
+# geht. DB/Viewer/VENDOSYS-Export bleiben unverändert. Details: lib/brickfox_textfix.py
+BRICKFOX_TEXT_RULES = {
+    "beschreibung_absaetze":   True,   # Absätze aus "Langbeschreibung (Online)" (Leerzeilen)
+    "satzzeichen_leerzeichen": True,   # "Vögel.Der" → "Vögel. Der"
+    "titel_menge":             True,   # Feature "Inhalt" (≠ 1) an den Titel anhängen
+}
+
 # ── Abgeleitete Features ──────────────────────────────────────────────────────
 # Ursprungsregion ergänzen, wenn das Feature "Ursprungsland" einen dieser Werte
 # hat und noch keine "Ursprungsregion" vorhanden ist (Groß-/Kleinschreibung

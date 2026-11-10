@@ -330,12 +330,22 @@ def run(progress_cb=None, file_progress_cb=None):
     # automatisch mit – eigenständiger Task tasks.bueroring_bestand:run(),
     # damit Preis-/Bestandsupdates ohne XML-Download/-Merge/-Upload laufen können.
 
-    # ── Brickfox-Upload: bueroring_merged.xml als bueroring.xml ──────────────
+    # ── Brickfox-Upload: Kopie mit Brickfox-Textregeln als bueroring.xml ─────
+    # (Absätze aus "Langbeschreibung (Online)", Satzzeichen-Leerzeichen,
+    # Inhaltsmenge im Titel – nur für Brickfox, nicht für DB/Shops).
+    # Bei jedem Lauf aus der aktuellen bueroring_merged.xml neu erzeugt.
     from tasks.others import upload_bmecat_xmls
-    upload_bmecat_xmls(
-        [os.path.join(in_bme, MERGE["out_file"])],
-        progress_cb=p, file_progress_cb=fp
-    )
+    merged_path = os.path.join(in_bme, MERGE["out_file"])
+    upload_path = merged_path
+    try:
+        from lib.brickfox_textfix import apply_text_rules
+        bf_path = os.path.join(in_bme, "bueroring_merged_brickfox.xml")
+        apply_text_rules(merged_path, bf_path, logs_dir=DIRS.get("logs", "logs"), progress_cb=p)
+        upload_path = bf_path
+    except Exception as e:
+        p(f"Brickfox-Textregeln übersprungen ({e}) – lade bueroring_merged.xml unverändert hoch.",
+          tag="warn")
+    upload_bmecat_xmls([upload_path], progress_cb=p, file_progress_cb=fp)
 
     try:
         import config as _cfg

@@ -29,8 +29,9 @@ def upload_bmecat_xmls(xml_paths: list, progress_cb=None, file_progress_cb=None)
 
     # Umbenennungsregeln: lokaler Dateiname → Zieldateiname auf Server
     rename_map = {
-        "bueroring_merged.xml":   "bueroring.xml",
-        "soft-carrier_merge.xml": "soft-carrier.xml",
+        "bueroring_merged.xml":          "bueroring.xml",
+        "bueroring_merged_brickfox.xml": "bueroring.xml",   # Kopie mit Brickfox-Textregeln
+        "soft-carrier_merge.xml":        "soft-carrier.xml",
     }
 
     existing = [f for f in xml_paths if os.path.exists(f)]
