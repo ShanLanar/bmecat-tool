@@ -692,11 +692,53 @@ def load_supplier_priority(base_dir: str) -> dict:
     return result
 
 
-def apply_ean_dedup(articles: list, priority: dict) -> list:
+def ean_losers_in_db(con, priority: dict, online_override: dict = None) -> set:
+    """
+    IDs aller aktiven Artikel, deren EAN auch ein aktiver+online Artikel eines
+    Lieferanten mit höherer Priorität (niedrigere Zahl) führt – DB-weit,
+    unabhängig vom aktuellen Exportumfang. online_override: {id: 0|1} aus dem
+    Status-Sync (Blacklist/Offline-Liste), überstimmt den DB-Wert.
+    """
+    if not priority or con is None:
+        return set()
+    # Gewinner müssen aktiv+online sein; Verlierer sind alle aktiven Artikel
+    # (auch bereits offline gesetzte – sonst würden sie beim nächsten Sync
+    # wieder online geschaltet).
+    rows = con.execute("""
+        SELECT a.id, a.ean, a.online, s.supplier_name
+        FROM articles a JOIN suppliers s ON s.id = a.supplier_id
+        WHERE a.active = 1 AND a.ean <> '' AND a.ean <> '0'
+          AND a.ean IN (SELECT ean FROM articles WHERE active = 1
+                        GROUP BY ean HAVING COUNT(DISTINCT supplier_id) > 1)
+    """).fetchall()
+    online_override = online_override or {}
+    best: dict = {}
+    for r in rows:
+        # Online-Zustand nach Blacklist/Offline-Liste (Sync-Ergebnis) hat Vorrang
+        # vor dem gespeicherten DB-Wert.
+        if not online_override.get(r["id"], r["online"]):
+            continue
+        prio = priority.get(r["supplier_name"], 999)
+        if r["ean"] not in best or prio < best[r["ean"]]:
+            best[r["ean"]] = prio
+    return {r["id"] for r in rows
+            if r["ean"] in best and priority.get(r["supplier_name"], 999) > best[r["ean"]]}
+
+
+def apply_ean_dedup(articles: list, priority: dict, con=None,
+                    mark_offline: bool = True) -> list:
     """
     EAN-Crosslieferant-Deduplizierung.
-    Bei mehreren Lieferanten mit derselben EAN gewinnt der mit niedrigster Priority.
-    Artikel ohne EAN oder mit EAN='0' werden nicht berührt.
+    Bei mehreren Lieferanten mit derselben EAN gewinnt der mit niedrigster Priority
+    (supplier_priority.csv). Artikel ohne EAN oder mit EAN='0' werden nicht berührt.
+
+    con:          wenn gesetzt, zählen auch aktive+online Artikel in der DB mit,
+                  die NICHT im aktuellen Exportumfang sind – sonst gewinnt z.B.
+                  ein Softcarrier-Artikel, nur weil der Büroring-Artikel gerade
+                  nicht mit exportiert wird.
+    mark_offline: True = unterlegene Artikel bleiben im Export, aber mit
+                  online=0 (damit der Shop sie abschaltet, falls sie früher
+                  online waren); False = sie werden weggelassen.
     """
     if not priority:
         return articles
@@ -704,30 +746,48 @@ def apply_ean_dedup(articles: list, priority: dict) -> list:
     # EAN → niedrigste Priority unter allen Artikeln mit dieser EAN ermitteln
     ean_min_prio: dict[str, int] = {}
     for art in articles:
-        ean = art.get('ean', '').strip()
+        ean = (art.get('ean') or '').strip()
         if not ean or ean == '0':
             continue
-        sup  = art.get('supplier_name', '')
-        prio = priority.get(sup, 999)
+        prio = priority.get(art.get('supplier_name', ''), 999)
         if ean not in ean_min_prio or prio < ean_min_prio[ean]:
             ean_min_prio[ean] = prio
 
+    # DB-weit: aktive+online Artikel anderer Lieferanten mit diesen EANs
+    if con is not None and ean_min_prio:
+        eans = list(ean_min_prio)
+        for i in range(0, len(eans), 500):
+            chunk = eans[i:i + 500]
+            ph = ','.join('?' * len(chunk))
+            for r in con.execute(f"""
+                SELECT a.ean, s.supplier_name
+                FROM articles a JOIN suppliers s ON s.id = a.supplier_id
+                WHERE a.active = 1 AND a.online = 1 AND a.ean IN ({ph})""", chunk):
+                prio = priority.get(r["supplier_name"], 999)
+                if prio < ean_min_prio.get(r["ean"], 999):
+                    ean_min_prio[r["ean"]] = prio
+
     filtered = []
-    skipped  = 0
+    losers = 0
     for art in articles:
-        ean = art.get('ean', '').strip()
+        ean = (art.get('ean') or '').strip()
         if not ean or ean == '0':
             filtered.append(art)
             continue
-        sup  = art.get('supplier_name', '')
-        prio = priority.get(sup, 999)
+        prio = priority.get(art.get('supplier_name', ''), 999)
         if prio <= ean_min_prio[ean]:
             filtered.append(art)
         else:
-            skipped += 1
+            losers += 1
+            if mark_offline:
+                art = dict(art)
+                art['online'] = 0
+                art['_ean_dedup'] = True
+                filtered.append(art)
 
-    if skipped:
-        log.info(f"EAN-Dedup: {skipped} Artikel übersprungen (EAN-Konflikt, niedrigere Priorität)")
+    if losers:
+        log.info(f"EAN-Dedup: {losers} Artikel unterlegen (EAN-Konflikt, niedrigere Priorität)"
+                 + (" – mit ONLINE=0 exportiert" if mark_offline else " – übersprungen"))
     return filtered
 
 

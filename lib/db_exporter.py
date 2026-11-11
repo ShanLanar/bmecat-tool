@@ -583,6 +583,22 @@ def sync_online_status(con, post: PostProcessor, progress_cb: Callable = None) -
         offline = post.is_blacklisted(art) or post.is_forced_offline(art)
         updates[r["id"]] = 0 if offline else 1
 
+    # EAN-Dubletten: unterlegener Lieferant (supplier_priority.csv) → offline,
+    # damit Viewer/Statistik den tatsächlichen Zustand zeigen.
+    try:
+        from lib.db_postprocess import ean_losers_in_db, load_supplier_priority
+        import config as _cfg
+        losers = ean_losers_in_db(con, load_supplier_priority(_cfg.BASE_DIR),
+                                  online_override=updates)
+        for art_id in losers:
+            updates[art_id] = 0
+        if losers:
+            (progress_cb or (lambda m, **kw: None))(
+                f"DB-Export: {len(losers)} EAN-Dubletten unterlegener Lieferanten auf offline gesetzt",
+                tag='dim')
+    except Exception as e:
+        log.warning(f"EAN-Dubletten-Sync übersprungen: {e}")
+
     return update_online_status(con, updates)
 
 
@@ -625,12 +641,17 @@ def export_changed(db_path: str, base_dir: str, export_dir: str,
         art['_catalog_node_id'] = row['catalog_node_id'] if row else None
     p(f"DB-Export: {len(articles)} Artikel geladen")
 
-    # EAN-Crosslieferant-Deduplizierung
+    # EAN-Crosslieferant-Deduplizierung – DB-weit (auch gegen Artikel, die
+    # nicht im Exportumfang sind); unterlegene Artikel gehen mit ONLINE=0 raus.
     priority = load_supplier_priority(base_dir)
-    articles  = apply_ean_dedup(articles, priority)
-    p(f"DB-Export: {len(articles)} Artikel nach EAN-Dedup")
+    articles  = apply_ean_dedup(articles, priority, con=con, mark_offline=True)
+    n_ean_off = sum(1 for a in articles if a.get('_ean_dedup'))
+    p(f"DB-Export: {len(articles)} Artikel nach EAN-Dedup"
+      + (f" ({n_ean_off} EAN-Dubletten mit ONLINE=0, Vorrang laut supplier_priority.csv)"
+         if n_ean_off else ""))
 
-    stats        = {'exported': 0, 'blacklisted': 0, 'offline': 0, 'errors': 0}
+    stats        = {'exported': 0, 'blacklisted': 0, 'offline': 0, 'errors': 0,
+                    'ean_dedup': n_ean_off}
     exported_pids: list[tuple] = []   # (product_id, price_amount)
 
     total_articles = len(articles)
