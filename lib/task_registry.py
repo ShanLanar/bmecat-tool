@@ -191,6 +191,14 @@ TASKS = [
         "group":   "Extras",
     },
     {
+        "id":      "vendosys_vollexport",
+        "name":    "VENDOSYS – Vollexport (alle Artikel)",
+        "desc":    "Alle Artikel der Datenbank als VENDOSYS-XML nach export_vendosys exportieren, mit dem DB-weit berechneten Online/Offline-Status: EAN-Dubletten unterlegener Lieferanten (supplier_priority.csv), Blacklist, Offline-Liste und inaktive Artikel gehen mit ONLINE=0 raus. Einmalig zum kompletten Abgleich der Shops; danach reicht der Zeitraum-Export im Viewer",
+        "fn":      "tasks.db_export:run_full",
+        "default": False,
+        "group":   "Extras",
+    },
+    {
         "id":      "fname_analyse",
         "name":    "FNAME-Analyse",
         "desc":    "Alle FNAMEs aus XMLs extrahieren, Kollisionen prüfen, fname_alle.csv erzeugen",

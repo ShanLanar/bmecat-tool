@@ -65,6 +65,21 @@ def run(date_from: str = None, date_to: str = None,
     return result
 
 
+def run_full(progress_cb: Callable = None, file_progress_cb: Callable = None, **kw):
+    """
+    Vollexport: ALLE Artikel der DB (aktiv und inaktiv) als VENDOSYS-XML mit
+    dem tatsächlichen Online/Offline-Status – EAN-Dubletten unterlegener
+    Lieferanten, Blacklist/Offline-Liste und inaktive Artikel gehen mit
+    ONLINE=0 raus. Einmalig sinnvoll, um die Shops komplett abzugleichen.
+    """
+    p = progress_cb or (lambda m, **kw: None)
+    p("VENDOSYS-Vollexport: alle Artikel der Datenbank (Online/Offline-Status wird "
+      "DB-weit berechnet – EAN-Dubletten, Blacklist, Offline-Liste, inaktive Artikel → ONLINE=0)")
+    return run(date_from="1970-01-01T00:00:00+00:00",
+               date_to="2100-01-01T00:00:00+00:00",
+               progress_cb=progress_cb, file_progress_cb=file_progress_cb)
+
+
 def run_today(progress_cb: Callable = None, **kw):
     """Exportiert alle heute geänderten Artikel."""
     today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
