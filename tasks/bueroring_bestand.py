@@ -115,19 +115,31 @@ def _apply_erp_prices(master, p) -> dict:
             p(f"  ERP-Preise {col}: Preisliste {nrs_str} leer – Excel-Reiter bleibt.", tag="warn")
             continue
         price_map = {}
+        zero = 0
         for aid, d in prices.items():
             try:
                 amount = float(d["price_amount"])
                 if mode == "brutto":
                     amount *= 1 + float(d.get("tax") or 0)
-                price_map[aid] = _fmt(amount)
             except (TypeError, ValueError):
                 continue
-        before = (master[col].astype(str) != "0").sum()
+            if amount <= 0:
+                zero += 1          # Nullpreis im ERP = kein Preis (Flag bleibt 0)
+                continue
+            price_map[aid] = _fmt(amount)
+        old = master[col].astype(str)
+        before = (old != "0").sum()
         master[col] = keys.map(price_map).fillna("0").values
         hit = (master[col] != "0").sum()
+        lost = int(((old != "0") & (master[col] == "0")).sum())
+        not_in_master = len(set(price_map) - set(keys))
         p(f"  {col}: {hit} Preise aus ERP-Preisliste {nrs_str} ({mode}; {len(price_map)} Artikel "
-          f"im ERP, vorher {before} aus Excel) – ohne ERP-Preis = 0", tag="ok")
+          f"mit Preis im ERP, vorher {before} aus Excel) – ohne ERP-Preis = 0", tag="ok")
+        if lost or zero or not_in_master:
+            p(f"    {lost} Artikel hatten im Excel einen Preis, fehlen aber in der Preisliste → 0; "
+              f"{zero} ERP-Einträge mit Preis 0 ignoriert; "
+              f"{not_in_master} ERP-Artikel nicht im Master",
+              tag="warn" if lost > hit else "dim")
         result[col] = int(hit)
     return result
 
