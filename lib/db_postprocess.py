@@ -327,8 +327,12 @@ def load_extra_features_by_spid(base_dir: str, prefix: str = "") -> dict:
         if not fname or fname.startswith('#'):
             continue
         spid = (row.get('supplier_pid') or '').strip().lower()
+        pid = (row.get('product_id') or '').strip().lower()
+        # Zeilen mit Kürzel eines anderen Lieferanten (z.B. SOC… beim BRG-Merge)
+        # überspringen – gleiche native Nummern dürfen sich nicht vermischen.
+        if pre and pid and not pid.startswith(pre):
+            continue
         if not spid:
-            pid = (row.get('product_id') or '').strip().lower()
             if pre and pid.startswith(pre):
                 pid = pid[len(pre):]
             spid = pid
