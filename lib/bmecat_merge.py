@@ -211,7 +211,8 @@ def _set_feature_value(feature_xml: str, fvalue: str, funit: str) -> str:
 
 def _merge_phase2(out_file: str, temp_file: str,
                   eclass_feats: dict, udx_blocks: dict,
-                  progress_cb, extra_features: dict = None) -> int:
+                  progress_cb, extra_features: dict = None,
+                  brand_rules: list = None) -> int:
     """
     Liest out_file (Basisdatei-Kopie) zeilenweise, schreibt nach temp_file.
 
@@ -233,7 +234,12 @@ def _merge_phase2(out_file: str, temp_file: str,
     renamed_91     = 0
     filled_empty   = 0
     extra_features = extra_features or {}
+    brand_rules = brand_rules or []
+    brand_prefix = "BRG"
+    brands_renamed = 0
     extra_added = extra_replaced = extra_articles = extra_new_blocks = 0
+    if brand_rules:
+        from lib.db_postprocess import rename_brands_xml
     derived_regions = 0
     brj_refsys_seen = ""
 
@@ -253,10 +259,14 @@ def _merge_phase2(out_file: str, temp_file: str,
         def flush_af_buf():
             nonlocal renamed_91, filled_empty, inserted_feats
             nonlocal extra_added, extra_replaced, extra_articles, extra_done, brj_refsys_seen
-            nonlocal derived_regions
+            nonlocal derived_regions, brands_renamed
             if not af_buf:
                 return
             block_str  = "".join(af_buf)
+            if brand_rules:
+                # Marken umbenennen (postprocess_brands.csv): Features Marke/Hersteller
+                block_str, nb = rename_brands_xml(block_str, brand_prefix + current_aid, brand_rules)
+                brands_renamed += nb
             is_udf_brj = "udf_brjcat" in af_refsys.lower()
             is_udf     = "udf_" in af_refsys.lower()
             is_91      = bool(_ECLASS91_PAT.search(af_refsys))
@@ -436,6 +446,10 @@ def _merge_phase2(out_file: str, temp_file: str,
             if in_art and not udx_done and _UDX_END.search(clean):
                 udx_done = True
 
+            if brand_rules and in_art and "<manufacturer_name>" in clean:
+                line, nb = rename_brands_xml(line, brand_prefix + current_aid, brand_rules)
+                brands_renamed += nb
+
             if in_art and _ART_END.search(clean):
                 flush_af_buf()
                 # Artikel ohne udf_BRjCat-Block: Zusatz-Features als eigener Block
@@ -492,6 +506,8 @@ def _merge_phase2(out_file: str, temp_file: str,
           f"{extra_added} ergaenzt, {extra_replaced} ersetzt, {extra_new_blocks} neue Bloecke")
     if derived_regions:
         p(f"  Ursprungsregion ergaenzt (aus Ursprungsland): {derived_regions} Artikel")
+    if brand_rules:
+        p(f"  Marken umbenannt (postprocess_brands.csv): {brands_renamed} Stellen")
     return inserted_udx + inserted_feats + renamed_91 + extra_added + extra_replaced
 
 
@@ -499,7 +515,8 @@ def _merge_phase2(out_file: str, temp_file: str,
 # ── Hauptfunktion ─────────────────────────────────────────────────────────────
 
 def merge(udx_src: str, basis_src: str, out_file: str,
-          progress_cb=None, extra_features: dict = None) -> dict:
+          progress_cb=None, extra_features: dict = None,
+          brand_rules: list = None) -> dict:
     """
     Führt den vollständigen Merge durch.
 
@@ -513,6 +530,8 @@ def merge(udx_src: str, basis_src: str, out_file: str,
                    udf_BRjCat-Block eingetragen (gleichnamige ersetzt, fehlende
                    angehängt), damit auch Brickfox (bekommt die Merge-XML
                    direkt) z.B. Maße/Gewicht erhält.
+        brand_rules  Marken-Regeln aus postprocess_brands.csv (lib.db_postprocess
+                   ._load_brand_rules) – MANUFACTURER_NAME + Features Marke/Hersteller
 
     Rückgabe:
         dict mit Statistiken
@@ -536,7 +555,8 @@ def merge(udx_src: str, basis_src: str, out_file: str,
     # Phase 2: Features + UDX einfügen
     total_inserted = _merge_phase2(out_file, temp_file,
                                    eclass_feats, udx_blocks, p,
-                                   extra_features=extra_features)
+                                   extra_features=extra_features,
+                                   brand_rules=brand_rules)
 
     # temp → out ersetzen
     p("Ersetze Ausgabedatei …")

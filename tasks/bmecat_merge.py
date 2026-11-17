@@ -78,6 +78,7 @@ def run(progress_cb=None, file_progress_cb=None):
             ("fname_renames",  fname_csv),
             ("fvalue_renames", fvalue_csv),
             ("extra_features", os.path.join(_cfg.BASE_DIR, "postprocess_features.csv")),
+            ("brands",         os.path.join(_cfg.BASE_DIR, "postprocess_brands.csv")),
             # Merge-Code selbst mit einbeziehen: sonst bleibt eine bereits
             # gemergte Datei nach einer Logikänderung (z.B. Rename-Regeln)
             # ewig gecacht, weil Merge-Skip nur die Quelldateien vergleicht.
@@ -109,7 +110,16 @@ def run(progress_cb=None, file_progress_cb=None):
                 p(f"Zusatz-Features: {len(extra)} Artikel aus postprocess_features.csv")
         except Exception as e:
             p(f"Zusatz-Features übersprungen: {e}", tag="warn")
-        stats = merge(udx_src, basis_src, out_file, progress_cb=p, extra_features=extra)
+        brand_rules = []
+        try:
+            from lib.db_postprocess import _load_brand_rules
+            brand_rules = _load_brand_rules(_cfg.BASE_DIR)
+            if brand_rules:
+                p(f"Marken-Regeln: {len(brand_rules)} aus postprocess_brands.csv")
+        except Exception as e:
+            p(f"Marken-Regeln übersprungen: {e}", tag="warn")
+        stats = merge(udx_src, basis_src, out_file, progress_cb=p, extra_features=extra,
+                      brand_rules=brand_rules)
 
         # Keywords injizieren
         if os.path.exists(kw_file):

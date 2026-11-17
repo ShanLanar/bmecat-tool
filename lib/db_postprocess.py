@@ -11,6 +11,8 @@
 #                                     wird nur als nicht verkäuflich markiert)
 #   postprocess_fname_blacklist.csv– FNAME-Werte die nicht exportiert werden (Wildcards: *Marke*)
 #   postprocess_features.csv       – Zusätzliche Features pro Artikel (z.B. Maße/Gewicht vom Lieferanten)
+#   postprocess_brands.csv         – Marken umbenennen: alt;neu;kuerzel (MANUFACTURER_NAME +
+#                                     Features Marke/Hersteller; Wildcards; kuerzel optional)
 #   postprocess_prices.csv         – Preisformeln pro Lieferant/Artikelmuster
 #   postprocess_price_types.csv    – Preis-Typ-Konvertierung (net_list→nrp etc.)
 #   postprocess_suffixes.csv       – AID-Suffix pro Lieferant
@@ -341,6 +343,108 @@ def load_extra_features_by_spid(base_dir: str, prefix: str = "") -> dict:
         fvalue, funit = normalize_feature_value(fname, row.get('fvalue', ''), row.get('funit', ''))
         out.setdefault(spid, []).append((fname, fvalue, funit))
     return out
+
+
+# ── Marken umbenennen (postprocess_brands.csv) ───────────────────────────────
+#
+# Gilt für MANUFACTURER_NAME und die Feature-Werte Marke/Hersteller – an allen
+# Stellen: DB-Import, Task "Zusatz-Features & Marken in DB einspielen",
+# VENDOSYS-Export und Büroring-Merge (Brickfox-XML).
+#   alt      Markenname wie geliefert (Groß-/Kleinschreibung egal, Wildcards: Soenn*)
+#   neu      Zielname
+#   kuerzel  optional: nur Artikel dieses Lieferanten (Präfix der product_id, z.B. BRG)
+
+_BRAND_FNAMES = ("marke", "hersteller")
+
+
+def _load_brand_rules(base_dir: str) -> list:
+    """[(alt_lower, neu, kuerzel_upper), ...] – Reihenfolge = Priorität."""
+    rows = _read_csv(os.path.join(base_dir, 'postprocess_brands.csv'))
+    rules = []
+    for row in rows:
+        alt = (row.get('alt') or row.get('old') or '').strip()
+        neu = (row.get('neu') or row.get('new') or '').strip()
+        if not alt or alt.startswith('#') or not neu:
+            continue
+        pfx = (row.get('kuerzel') or row.get('prefix') or row.get('supplier') or '').strip().upper()
+        rules.append((alt.lower(), neu, pfx))
+    if rules:
+        log.info(f"postprocess_brands.csv: {len(rules)} Marken-Regeln geladen")
+    return rules
+
+
+def rename_brand(name: str, product_id: str, rules: list) -> str | None:
+    """Neuer Markenname laut Regeln oder None, wenn keine Regel passt / nichts ändert."""
+    if not rules or not name:
+        return None
+    key = name.strip().lower()
+    pid = (product_id or '').upper()
+    for alt, neu, pfx in rules:
+        if pfx and not pid.startswith(pfx):
+            continue
+        hit = fnmatch.fnmatchcase(key, alt) if any(c in alt for c in '*?[') else key == alt
+        if hit:
+            return neu if neu != name.strip() else None
+    return None
+
+
+def apply_brand_rules(article: dict, rules: list) -> bool:
+    """MANUFACTURER_NAME und Features Marke/Hersteller im Artikel-Dict umbenennen."""
+    if not rules:
+        return False
+    pid = article.get('product_id', '')
+    changed = False
+    new = rename_brand(article.get('manufacturer_name') or '', pid, rules)
+    if new is not None:
+        article['manufacturer_name'] = new
+        changed = True
+    for f in article.get('features') or []:
+        if (f.get('fname') or '').strip().lower() in _BRAND_FNAMES:
+            nv = rename_brand(f.get('fvalue') or '', pid, rules)
+            if nv is not None:
+                f['fvalue'] = nv
+                changed = True
+    return changed
+
+
+_BRAND_FEAT_XML_PAT = re.compile(
+    r'(?is)(<FNAME>\s*(?:Marke|Hersteller)\s*</FNAME>\s*<FVALUE>)(.*?)(</FVALUE>)')
+_MANUF_XML_PAT = re.compile(r'(?is)(<MANUFACTURER_NAME>)(.*?)(</MANUFACTURER_NAME>)')
+
+
+def rename_brands_xml(text: str, product_id: str, rules: list) -> tuple[str, int]:
+    """
+    MANUFACTURER_NAME und Marke/Hersteller-FVALUEs in einem XML-Textstück
+    (Zeile oder Block) umbenennen; CDATA bleibt erhalten. Returns (text, anzahl).
+    """
+    if not rules:
+        return text, 0
+    n = 0
+
+    def _sub(m):
+        nonlocal n
+        inner = m.group(2)
+        cd = re.match(r'(?s)^\s*<!\[CDATA\[(.*)\]\]>\s*$', inner)
+        raw = cd.group(1) if cd else inner
+        new = rename_brand(_xml_unescape(raw), product_id, rules)
+        if new is None:
+            return m.group(0)
+        n += 1
+        body = f"<![CDATA[{new}]]>" if cd else _xml_escape_min(new)
+        return m.group(1) + body + m.group(3)
+
+    text = _MANUF_XML_PAT.sub(_sub, text)
+    text = _BRAND_FEAT_XML_PAT.sub(_sub, text)
+    return text, n
+
+
+def _xml_unescape(s: str) -> str:
+    import html
+    return html.unescape(s).strip()
+
+
+def _xml_escape_min(s: str) -> str:
+    return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 
 # ── Abgeleitete Features (Ursprungsregion aus Ursprungsland) ─────────────────
@@ -865,6 +969,7 @@ class PostProcessor:
         self._fname_blacklist = _load_fname_blacklist(base_dir)
         self._fusage3      = _load_fusage3(base_dir)
         self._extra_by_pid, self._extra_by_spid = _load_extra_features(base_dir)
+        self._brand_rules  = _load_brand_rules(base_dir)
         self._price_rules  = _load_price_rules(base_dir)
         self._price_rule_exact, self._price_rule_wildcard = build_price_rule_index(self._price_rules)
         self._price_warnings: list[str] = _check_price_expiry(self._price_rules)
@@ -911,6 +1016,10 @@ class PostProcessor:
             art['features'] = _apply_extra_features(art.get('features', []), extra)
         # ── Abgeleitete Features (Ursprungsregion aus Ursprungsland) ─────────
         art['features'] = apply_derived_features(art.get('features', []))
+        # ── Marken umbenennen (postprocess_brands.csv) ───────────────────────
+        if self._brand_rules:
+            art['features'] = [dict(f) for f in art.get('features', [])]
+            apply_brand_rules(art, self._brand_rules)
 
         # ── FNAME-Blacklist ──────────────────────────────────────────────────
         art['features'] = _apply_fname_blacklist(art.get('features', []), self._fname_blacklist)

@@ -117,6 +117,7 @@ def run(progress_cb=None):
         ("postprocess_media_global.csv",    "MIME/Referenz-Korrekturen"),
         ("fusage_3_features.csv",           "FUSAGE-Varianten-Features"),
         ("postprocess_features.csv",        "Zusatz-Features (Maße/Gewicht)"),
+        ("postprocess_brands.csv",          "Marken umbenennen (alt;neu;kuerzel)"),
         ("green_catalog_features.csv",      "Green-Katalog-Regeln (Standard: Be Green / Umweltfreundliches Merkmal)"),
         ("32WQS_conditions_features.csv",   "Unite-Conditionsfile: Regulierungs-Merkmale (GPSR/WEEE/Batterie)"),
         ("supplier_priority.csv",           "EAN-Dedup Prioritäten"),

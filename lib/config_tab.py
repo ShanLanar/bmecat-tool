@@ -372,6 +372,35 @@ Die Zeilen werden in diese Datei gemischt; andere Einträge bleiben.
     ),
     (
         """\
+postprocess_brands.csv""",
+        """\
+Marken umbenennen""",
+        """\
+Features (FNAME/FVALUE)""",
+        """\
+Benennt Marken um – MANUFACTURER_NAME und die Feature-Werte „Marke“ /
+„Hersteller“. Greift überall: DB-Import, Task „Zusatz-Features & Marken in
+DB einspielen“ (vorhandene Artikel), VENDOSYS-Export und Büroring-Merge
+(bueroring_merged.xml für Brickfox).
+
+Spalten (Semikolon, UTF-8):
+  alt       – Markenname wie geliefert (Groß-/Kleinschreibung egal,
+              Wildcards erlaubt: Soenn*)
+  neu       – Zielname
+  kuerzel   – optional: nur Artikel dieses Lieferanten (BRG, SOC, SOG …);
+              leer = alle Lieferanten
+
+Beispiel:
+  alt;neu;kuerzel
+  Soennecken;SOENNECKEN;
+  W. Söhngen GmbH;Söhngen;SOG
+  Pelikan*;Pelikan;BRG
+
+Die erste passende Zeile gewinnt. Kommentarzeilen beginnen mit #.
+"""
+    ),
+    (
+        """\
 postprocess_fname_blacklist.csv""",
         """\
 FNAME-Blacklist (Feature-Filter)""",

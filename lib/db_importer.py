@@ -611,10 +611,13 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
     # beim Import in die DB übernehmen – damit sie im Viewer/Excel/PIM-Export
     # sichtbar sind und der content_hash stabil bleibt.
     from lib.db_postprocess import (_load_extra_features, _apply_extra_features,
-                                    apply_derived_features)
+                                    apply_derived_features, _load_brand_rules,
+                                    apply_brand_rules)
     extra_by_pid, extra_by_spid = _load_extra_features(base_dir)
+    brand_rules = _load_brand_rules(base_dir)
     extra_applied = 0
     derived_applied = 0
+    brands_applied = 0
 
     con = open_db(db_path)
     import_start = _now()   # Zeitstempel für Stale-Cleanup
@@ -727,6 +730,9 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
             art['features'] = apply_derived_features(art.get('features', []))
             if len(art['features']) > n_before:
                 derived_applied += 1
+            # Marken umbenennen (postprocess_brands.csv)
+            if brand_rules and apply_brand_rules(art, brand_rules):
+                brands_applied += 1
             batch.append(art)
             if len(batch) >= batch_size:
                 _flush(batch)
@@ -750,6 +756,9 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
     if derived_applied:
         p(f"DB-Import [{sup_name}]: Ursprungsregion bei {derived_applied} Artikeln ergänzt "
           f"(aus Ursprungsland, config.ORIGIN_REGION_DEFAULTS)")
+    if brands_applied:
+        p(f"DB-Import [{sup_name}]: Marke (postprocess_brands.csv) bei {brands_applied} "
+          f"Artikeln umbenannt")
 
     # Stale-Cleanup (Soft-Delete): Artikel dieses Lieferanten die in diesem Lauf
     # nicht angefasst wurden (last_seen < import_start) → im BMEcat nicht mehr
