@@ -19,7 +19,9 @@ import config as _cfg
 from lib.article_db import open_db, transaction, _now
 from lib.db_postprocess import (_load_extra_features, _apply_extra_features,
                                 apply_derived_features, _ORIGIN_FNAME,
-                                _load_brand_rules, rename_brand, _BRAND_FNAMES)
+                                _load_brand_rules, rename_brand, _BRAND_FNAMES,
+                                _target_units)
+from lib.dimension_normalize import normalize_dimension_features, _carriers
 
 _FEAT_COLS = ("fname", "fvalue", "funit", "fusage", "forder",
               "fsearchable", "fselectable", "value_index")
@@ -62,6 +64,19 @@ def run(progress_cb: Callable = None, file_progress_cb: Callable = None) -> dict
             brand_feat_ids = {r[0] for r in con.execute(
                 f"SELECT DISTINCT article_id FROM article_features WHERE LOWER(fname) IN ({ph})",
                 _BRAND_FNAMES)}
+        # Artikel mit Maß-Features ohne Einheit, Nullwert oder Träger-Feature
+        # (Maßeinheit/Gewichtseinheit) → Kandidaten für die Maß-Normalisierung
+        dim_names = tuple(_target_units())
+        ph = ",".join("?" * len(dim_names))
+        dim_ids = {r[0] for r in con.execute(
+            f"SELECT DISTINCT article_id FROM article_features WHERE LOWER(TRIM(fname)) IN ({ph}) "
+            f"AND (TRIM(COALESCE(funit,''))='' OR fvalue LIKE '%,%' OR TRIM(fvalue) IN ('0','0.0','0,000','0.000'))",
+            dim_names)}
+        car_names = tuple(_carriers())
+        ph = ",".join("?" * len(car_names))
+        dim_ids |= {r[0] for r in con.execute(
+            f"SELECT DISTINCT article_id FROM article_features WHERE LOWER(TRIM(fname)) IN ({ph})",
+            car_names)}
         targets = []
         matched_keys = set()
         for a in arts:
@@ -71,10 +86,11 @@ def run(progress_cb: Callable = None, file_progress_cb: Callable = None) -> dict
                 matched_keys.add(k_pid if k_pid in by_pid else k_spid)
             new_brand = rename_brand(a["manufacturer_name"] or "", a["product_id"], brand_rules) \
                 if brand_rules else None
-            if extra or a["id"] in origin_ids or new_brand is not None or a["id"] in brand_feat_ids:
+            if (extra or a["id"] in origin_ids or new_brand is not None
+                    or a["id"] in brand_feat_ids or a["id"] in dim_ids):
                 targets.append((a["id"], a["product_id"], extra or [], new_brand))
         p(f"Zusatz-Features: {len(targets)} von {len(arts)} DB-Artikeln zu prüfen "
-          f"({len(origin_ids)} mit Ursprungsland"
+          f"({len(origin_ids)} mit Ursprungsland, {len(dim_ids)} mit Maßen zum Vereinheitlichen"
           + (f", {len(brand_feat_ids)} mit Marke/Hersteller-Feature" if brand_rules else "") + ")")
 
         changed = unchanged = brands = 0
@@ -88,7 +104,8 @@ def run(progress_cb: Callable = None, file_progress_cb: Callable = None) -> dict
                         "SELECT fname, fvalue, funit, fusage, forder, fsearchable, "
                         "fselectable, value_index FROM article_features "
                         "WHERE article_id=? ORDER BY forder, id", (art_id,))]
-                    new = _apply_extra_features(cur, extra) if extra else cur
+                    new, _ = normalize_dimension_features(cur)
+                    new = _apply_extra_features(new, extra) if extra else new
                     new = apply_derived_features(new)
                     if brand_rules:
                         new = [dict(f) for f in new]

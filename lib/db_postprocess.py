@@ -1014,6 +1014,9 @@ class PostProcessor:
                  or self._extra_by_spid.get((art.get('supplier_pid') or '').upper()))
         if extra:
             art['features'] = _apply_extra_features(art.get('features', []), extra)
+        # ── Maße/Gewicht vereinheitlichen (lib/dimension_normalize) ──────────
+        from lib.dimension_normalize import normalize_dimension_features
+        art['features'], _ = normalize_dimension_features(art.get('features', []))
         # ── Abgeleitete Features (Ursprungsregion aus Ursprungsland) ─────────
         art['features'] = apply_derived_features(art.get('features', []))
         # ── Marken umbenennen (postprocess_brands.csv) ───────────────────────

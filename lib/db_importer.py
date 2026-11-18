@@ -614,7 +614,9 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
                                     apply_derived_features, _load_brand_rules,
                                     apply_brand_rules)
     extra_by_pid, extra_by_spid = _load_extra_features(base_dir)
+    from lib.dimension_normalize import normalize_dimension_features
     brand_rules = _load_brand_rules(base_dir)
+    dims_applied = 0
     extra_applied = 0
     derived_applied = 0
     brands_applied = 0
@@ -719,6 +721,11 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
                 _apply_description_regex(art, desc_regex_rules)
             if udx_inject_map:
                 _apply_udx_inject(art, udx_inject_map)
+            # Maße/Gewicht vereinheitlichen (Einheit aus Maßeinheit/Gewichtseinheit,
+            # "140,000" → 140 mm, Nullwerte raus) – lib/dimension_normalize.py
+            art['features'], _dst = normalize_dimension_features(art.get('features', []))
+            if _dst and any(_dst.values()):
+                dims_applied += 1
             if extra_by_pid or extra_by_spid:
                 extra = (extra_by_pid.get((art.get('product_id') or '').upper())
                          or extra_by_spid.get(pid.upper()))
@@ -759,6 +766,9 @@ def import_xml(db_path: str, xml_path: str, base_dir: str,
     if brands_applied:
         p(f"DB-Import [{sup_name}]: Marke (postprocess_brands.csv) bei {brands_applied} "
           f"Artikeln umbenannt")
+    if dims_applied:
+        p(f"DB-Import [{sup_name}]: Maße/Gewicht bei {dims_applied} Artikeln vereinheitlicht "
+          f"(Einheit, Dezimalkomma, Nullwerte entfernt)")
 
     # Stale-Cleanup (Soft-Delete): Artikel dieses Lieferanten die in diesem Lauf
     # nicht angefasst wurden (last_seen < import_start) → im BMEcat nicht mehr

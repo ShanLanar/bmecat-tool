@@ -66,6 +66,14 @@ def run(progress_cb=None, file_progress_cb=None):
         if os.path.exists(xml_path):
             apply_fname_transforms(xml_path, _cfg.BASE_DIR, progress_cb=p)
 
+    # Maße/Gewicht vereinheitlichen (udf_NDW: "140,000" + Maßeinheit/Gewichtseinheit
+    # → 140 mm / 0.355 kg, Nullwerte raus) – die XMLs gehen direkt an Brickfox
+    from lib.dimension_normalize import normalize_xml
+    for _, _, xml_out in NDW_CATALOGS:
+        xml_path = os.path.join(in_bme, xml_out)
+        if os.path.exists(xml_path):
+            normalize_xml(xml_path, progress_cb=p)
+
     # Deduplizierung
     from tasks.others import dedup_xmls
     dedup_xmls([os.path.join(in_bme, xml_out) for _, _, xml_out in NDW_CATALOGS],

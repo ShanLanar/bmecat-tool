@@ -256,6 +256,20 @@ ORIGIN_REGION_DEFAULTS = {
     "Deutschland": "05",
 }
 
+# ── Maße/Gewicht vereinheitlichen (lib/dimension_normalize.py) ────────────────
+# Maß-Features (FEATURE_TARGET_UNITS) ohne FUNIT bekommen die Einheit aus einem
+# Träger-Feature des Artikels (Nordwest: "Maßeinheit" = MM/CM/M für Längen,
+# "Gewichtseinheit" = G/KG für Gewicht); die Träger werden danach entfernt.
+DIMENSION_UNIT_CARRIERS = {
+    "Maßeinheit":      ["Länge", "Breite", "Höhe", "Tiefe", "Durchmesser"],
+    "Gewichtseinheit": ["Gewicht"],
+}
+# Ohne FUNIT und ohne Träger: angenommene Einheit (Gewicht absichtlich nicht –
+# g oder kg ist ohne Angabe nicht zu raten, der Wert bleibt dann ohne Einheit).
+DIMENSION_DEFAULT_UNITS = {
+    "Länge": "mm", "Breite": "mm", "Höhe": "mm", "Tiefe": "mm", "Durchmesser": "mm",
+}
+
 # ── Datenlücken je Marke (Task "Datenlücken je Marke auswerten") ──────────────
 # Feature-Namen (FNAME, wie in der DB), deren Fehlen je Artikel gezählt wird.
 # Bild und Langbeschreibung werden immer zusätzlich geprüft.
