@@ -169,6 +169,18 @@ def run(progress_cb: Callable = None, file_progress_cb: Callable = None) -> dict
         m, fl = total_missing[c], total_fillable[c]
         p(f"  {c:<18} fehlt bei {m:>7}   davon per EAN aus eigenem Katalog füllbar: {fl:>6}"
           + (f" ({fl * 100 // m} %)" if m else ""))
+    # Je Lieferant: Artikel, davon mit Lücke, fehlende Maße (alle vier) und füllbar
+    per_sup = defaultdict(lambda: {"artikel": 0, "luecke": 0, "masse": 0, "masse_fuellbar": 0})
+    dims = [c for c in ("Länge", "Breite", "Höhe", "Gewicht") if c in checks]
+    for (brand, sup), r in summary.items():
+        per_sup[sup]["artikel"] += r["artikel"]
+        per_sup[sup]["luecke"] += gaps_per_key.get((brand, sup), 0)
+        per_sup[sup]["masse"] += max((r[f"fehlt_{c}"] for c in dims), default=0)
+        per_sup[sup]["masse_fuellbar"] += max((r[f"fuellbar_{c}"] for c in dims), default=0)
+    p("  Je Lieferant (Maße = Artikel ohne mind. ein Maß/Gewicht):")
+    for sup, r in sorted(per_sup.items(), key=lambda kv: -kv[1]["luecke"]):
+        p(f"    {sup:<28} {r['artikel']:>7} Artikel, {r['luecke']:>7} mit Lücke, "
+          f"{r['masse']:>7} ohne Maße, davon füllbar {r['masse_fuellbar']:>6}", tag="dim")
     top = sorted(gaps_per_key.items(), key=lambda kv: -kv[1])[:15]
     if top:
         p("  Marken mit den meisten Lückenartikeln:")
