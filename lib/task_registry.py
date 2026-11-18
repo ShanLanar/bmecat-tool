@@ -199,6 +199,14 @@ TASKS = [
         "group":   "Extras",
     },
     {
+        "id":      "datenluecken",
+        "name":    "Datenlücken je Marke auswerten",
+        "desc":    "Für alle aktiven Artikel zählen, welche Werte fehlen (config.GAP_CHECK_FEATURES: Länge/Breite/Höhe/Gewicht/Ursprungsland, dazu Bild und Langbeschreibung), gruppiert nach Marke und Lieferant – inkl. wie viele Lücken ein anderer eigener Katalog per EAN füllen könnte. CSV-Reports in logs/",
+        "fn":      "tasks.datenluecken:run",
+        "default": False,
+        "group":   "Extras",
+    },
+    {
         "id":      "fname_analyse",
         "name":    "FNAME-Analyse",
         "desc":    "Alle FNAMEs aus XMLs extrahieren, Kollisionen prüfen, fname_alle.csv erzeugen",

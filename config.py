@@ -256,6 +256,11 @@ ORIGIN_REGION_DEFAULTS = {
     "Deutschland": "05",
 }
 
+# ── Datenlücken je Marke (Task "Datenlücken je Marke auswerten") ──────────────
+# Feature-Namen (FNAME, wie in der DB), deren Fehlen je Artikel gezählt wird.
+# Bild und Langbeschreibung werden immer zusätzlich geprüft.
+GAP_CHECK_FEATURES = ["Länge", "Breite", "Höhe", "Gewicht", "Ursprungsland"]
+
 # ── Manueller Import ("BMEcat laden"): Lieferantenkürzel (Präfix) ─────────────
 # Beim manuellen Import eines freien Katalogs wird das Kürzel vor die
 # Artikelnummer gesetzt (product_id = Kürzel + SUPPLIER_AID). Export, Bildnamen
