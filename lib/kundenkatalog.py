@@ -232,26 +232,29 @@ def resolve_articles(db_path: str, base_dir: str, prof: dict, prices: dict, p: C
         chosen, missing = [], []
         how = {"artnr": 0, "bestnr": 0, "ean": 0}
         for nr, pr in prices.items():
-            cands, via = None, ""
-            for m in match_order:
+            # Alle Treffer über alle Abgleicharten sammeln; dann entscheidet der
+            # Lieferantenvorrang (Profil-Reihenfolge bzw. supplier_priority.csv),
+            # die Abgleichart ist nur Stichentscheid (match_order).
+            found = []            # (lieferant_rang, abgleich_rang, article_id, product_id, via)
+            for rank, m in enumerate(match_order):
+                hits = []
                 if m == "artnr" and pr.get("artnr"):
-                    cands = by_pid.get(pr["artnr"].lower())
+                    hits = by_pid.get(pr["artnr"].lower()) or []
                 elif m == "bestnr":
                     for b in pr.get("bestnr") or []:
-                        cands = by_pid.get(b.lower())
-                        if cands:
-                            break
+                        hits += by_pid.get(b.lower()) or []
                 elif m == "ean" and pr.get("ean"):
-                    cands = by_ean.get(pr["ean"].strip().lstrip("0"))
-                if cands:
-                    via = m
-                    break
-            if not cands:
+                    hits = by_ean.get(pr["ean"].strip().lstrip("0")) or []
+                for sup_rank, art_id, prod_id in hits:
+                    found.append((sup_rank, rank, art_id, prod_id, m))
+            if not found:
                 missing.append(pr)
                 continue
-            cands.sort()
-            how[via] += 1
-            chosen.append((cands[0][1], pr))
+            found.sort()
+            seen_ids = set()
+            best = found[0]
+            how[best[4]] += 1
+            chosen.append((best[2], pr))
         p(f"Artikel-DB: {len(chosen)} von {len(prices)} Preislisten-Artikeln gefunden "
           f"(über A_ARTNR {how['artnr']}, Bestellnummer {how['bestnr']}, EAN {how['ean']}), "
           f"{len(missing)} nicht in der DB")
