@@ -623,6 +623,19 @@ def generate(prof: dict, progress_cb: Callable = None, file_progress_cb: Callabl
         p(f"{len(missing)} Preislisten-Artikel weder in der Artikel-DB noch im OBS gefunden → "
           f"{os.path.basename(mpath)}", tag="warn")
 
+    no_cat = [a for a in arts if not a.get("kk_group")]
+    if no_cat:
+        npath = os.path.join(out_dir, f"{cid}_{ts}_ohne_kategorie.csv")
+        with open(npath, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.writer(f, delimiter=";")
+            w.writerow(["supplier_aid", "quelle", "bezeichnung", "obs_wgr", "obs_wgru", "db_lieferant"])
+            for a in no_cat:
+                w.writerow([_aid(a, prof), a.get("kk_source", ""), a.get("description_short", ""),
+                            a.get("obs_wgr", ""), a.get("obs_wgru", ""),
+                            a.get("supplier_name", "") if a.get("kk_source") == "db" else ""])
+        p(f"{len(no_cat)} Artikel ohne Kategorie → {os.path.basename(npath)} "
+          f"(OBS: Warengruppe in user_catmapping ergänzen)", tag="warn")
+
     diff = compare_with_previous(prof, out_path)
     if diff:
         p(f"Vergleich mit {os.path.basename(diff['previous'])}: {len(diff['added'])} neu, "

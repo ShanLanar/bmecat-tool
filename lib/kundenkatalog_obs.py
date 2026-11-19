@@ -76,6 +76,27 @@ def _plain(text) -> str:
     return s.strip()
 
 
+# BMEcat-Einheit aus s_einh (SE_NR = artikel.A_EINHEIT → SE_EDIFAKT); "St" ist in
+# OBS der Stück-Code, BMEcat/Vorlage nutzen C62.
+_EDIFAKT_FIX = {"ST": "C62", "PCE": "C62", "": "C62"}
+
+
+def load_units(cur, warn: Callable) -> dict:
+    rows = _q(cur, "SELECT SE_NR, SE_EDIFAKT FROM s_einh", (), "s_einh", warn)
+    out = {}
+    for r in rows:
+        nr = (r.get("SE_NR") or "").strip()
+        edi = (r.get("SE_EDIFAKT") or "").strip().upper()
+        if nr:
+            out[nr] = _EDIFAKT_FIX.get(edi, edi)
+    return out
+
+
+# eClass-/UDF-codierte Merkmalsnamen (BAF302003, AAO847002 …) – ohne Klartext
+# für den Kunden wertlos, Klartext-Varianten kommen aus p_merkmale.
+_CODE_NAME = re.compile(r"^[A-Z]{3}\d{6}$")
+
+
 def load_catmapping(cur, warn: Callable) -> dict:
     """{(MP_WGR, MP_UWGR): (MP_CATCODE, MP_BEZ)}"""
     rows = _q(cur, "SELECT MP_WGR, MP_UWGR, MP_CATCODE, MP_BEZ FROM user_catmapping", (), "user_catmapping", warn)
@@ -102,6 +123,7 @@ def fetch_obs_articles(cfg: dict, aids: list, progress_cb: Callable = None) -> t
     try:
         cur = con.cursor()
         catmap = load_catmapping(cur, warn)
+        units = load_units(cur, warn)
 
         # 1) Stammdaten
         for chunk in _chunks(aids):
@@ -126,12 +148,16 @@ def fetch_obs_articles(cfg: dict, aids: list, progress_cb: Callable = None) -> t
                     "obs_liefnr": (r.get("A_LIEFER1") or "").strip(),
                     "supplier_name": "OBS",
                     "description_short": short,
-                    "description_long": _plain(r.get("A_SUCHTEXT")) or "",
+                    "description_long": "",
+                    "obs_suchtext": re.sub(r"\s*\n\s*", "\n", _plain(r.get("A_SUCHTEXT")) or "").strip(),
                     "ean": (r.get("A_EAN") or "").strip(),
                     "manufacturer_aid": (r.get("A_HERSTELLERNR") or "").strip(),
                     "manufacturer_name": (r.get("A_HERSTELLERNAME") or "").strip(),
                     "delivery_time": "",
-                    "order_unit": "C62", "content_unit": "C62", "no_cu_per_ou": "1",
+                    "order_unit": units.get((r.get("A_EINHEIT") or "").strip(), "C62"),
+                    "content_unit": units.get((r.get("A_EINHEIT") or "").strip(), "C62"),
+                    "no_cu_per_ou": "1",
+                    "obs_wgr": (r.get("A_WGR") or "").strip(), "obs_wgru": (r.get("A_WGRU") or "").strip(),
                     "price_quantity": str(int(r["A_MENGEINH"])) if r.get("A_MENGEINH") else "1",
                     "quantity_min": "1", "quantity_interval": "1",
                     "reference_feature_system": "udf_OBS-1.0", "reference_feature_group_id": "",
@@ -165,12 +191,15 @@ def fetch_obs_articles(cfg: dict, aids: list, progress_cb: Callable = None) -> t
             rows = _q(cur, f"""
                 SELECT NR, LIEFNR, BEZ1, BEZ2, LANGTEXT, EAN, HERSTARTNR, GEWICHT, VERPAMENGE
                 FROM p_arti WHERE NR IN ({ph})""", tuple(a["supplier_pid"] for a in chunk), "p_arti", warn)
+            # Zeile des Hauptlieferanten (A_LIEFER1) bevorzugen, sonst irgendeine
+            rows.sort(key=lambda r: 0 if (r.get("LIEFNR") or "").strip() == (arts.get((r.get("NR") or "").strip().lower()) or {}).get("obs_liefnr") else 1)
+            done = set()
             for r in rows:
-                a = arts.get((r.get("NR") or "").strip().lower())
-                if not a:
+                key = (r.get("NR") or "").strip().lower()
+                a = arts.get(key)
+                if not a or key in done:
                     continue
-                if a["obs_liefnr"] and (r.get("LIEFNR") or "").strip() not in ("", a["obs_liefnr"]):
-                    continue
+                done.add(key)
                 stats["p_arti"] += 1
                 lt = _plain(r.get("LANGTEXT"))
                 if lt:
@@ -229,6 +258,9 @@ def fetch_obs_articles(cfg: dict, aids: list, progress_cb: Callable = None) -> t
                     if not a["ean"]:
                         a["ean"] = val
                     continue              # EAN steht im EAN-Feld, nicht als Merkmal
+                if _CODE_NAME.match(name):
+                    stats["codes_skipped"] = stats.get("codes_skipped", 0) + 1
+                    continue
                 if any(f["fname"].lower() == name.lower() for f in a["features"]):
                     continue
                 a["features"].append({"fname": name, "fvalue": val, "funit": ""})
@@ -289,12 +321,17 @@ def fetch_obs_articles(cfg: dict, aids: list, progress_cb: Callable = None) -> t
                                        "mime_desc": "", "mime_alt": "", "mime_order": i})
                     stats["p_bilder"] += 1
         for a in keys:
+            if not a["description_long"]:
+                a["description_long"] = a.get("obs_suchtext") or ""
+                if a["description_long"]:
+                    stats["suchtext"] = stats.get("suchtext", 0) + 1
             for f in a["features"]:
                 f.setdefault("funit", "")
                 f.setdefault("forder", 0)
         p(f"  OBS Zusatzdaten: {stats['p_arti']} p_arti, {stats['p_merkmale']} p_merkmale-Features, "
           f"{stats['artikel_merkmale']} OBS-Merkmale, {stats['ean']} EANs, {stats['exttext']} Texte, "
-          f"{stats['p_bilder']} Bilder", tag="dim")
+          f"{stats['p_bilder']} Bilder, {stats.get('codes_skipped', 0)} codierte Merkmale übersprungen, "
+          f"{stats.get('suchtext', 0)} Langtexte nur aus Suchtext", tag="dim")
     finally:
         con.close()
     return list(arts.values()), stats
