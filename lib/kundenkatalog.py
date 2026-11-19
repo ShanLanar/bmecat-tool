@@ -32,7 +32,16 @@ import re
 from datetime import datetime
 from typing import Callable
 
-from lib.utils import xml_escape
+from lib.utils import xml_escape as _xml_escape_raw
+
+# Zeichen, die in XML 1.0 nicht erlaubt sind (Steuerzeichen außer Tab/LF/CR):
+# kommen aus DB-/OBS-Texten (RTF-Reste, Trennzeichen) und lassen den Import
+# beim Kunden mit "kein XML-Dokument … referenced at line …" abbrechen.
+_XML_INVALID = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
+
+
+def xml_escape(s) -> str:
+    return _xml_escape_raw(_XML_INVALID.sub("", "" if s is None else str(s)))
 
 PROFILE_DIRNAME = "kundenkataloge"
 EXPORT_DIRNAME = "export_kundenkataloge"
