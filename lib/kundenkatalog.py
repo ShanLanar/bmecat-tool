@@ -251,10 +251,21 @@ def resolve_articles(db_path: str, base_dir: str, prof: dict, prices: dict, p: C
                 missing.append(pr)
                 continue
             found.sort()
-            seen_ids = set()
             best = found[0]
             how[best[4]] += 1
             chosen.append((best[2], pr))
+        # Mehrere Preislisten-Artikel auf demselben DB-Artikel (z.B. zwei ERP-
+        # Artikel mit gleicher A_ARTNR): niedrigster Preis gewinnt
+        by_id: dict = {}
+        for art_id, pr in chosen:
+            cur = by_id.get(art_id)
+            if cur is None or pr["price"] < cur["price"]:
+                by_id[art_id] = pr
+        multi = len(chosen) - len(by_id)
+        chosen = list(by_id.items())
+        if multi:
+            p(f"  {multi} Preislisten-Artikel treffen einen bereits zugeordneten DB-Artikel "
+              f"(gleiche Nummer/EAN) – niedrigster Preis übernommen", tag="dim")
         p(f"Artikel-DB: {len(chosen)} von {len(prices)} Preislisten-Artikeln gefunden "
           f"(über A_ARTNR {how['artnr']}, Bestellnummer {how['bestnr']}, EAN {how['ean']}), "
           f"{len(missing)} nicht in der DB")
