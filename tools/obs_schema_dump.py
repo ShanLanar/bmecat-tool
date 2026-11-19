@@ -32,6 +32,8 @@ def main():
     args = ap.parse_args()
 
     import config as _cfg
+    from lib.config_editor import apply_overrides
+    apply_overrides()          # config_user.json (Konfig-Editor) wie beim App-Start einlesen
     import pymysql
     cfg = _cfg.CONNECTIONS.get("erp_mysql", {})
     if not cfg.get("host"):
