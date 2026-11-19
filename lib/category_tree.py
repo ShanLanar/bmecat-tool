@@ -278,3 +278,38 @@ def diff_rows(old_rows: list, new_rows: list) -> dict:
 def changed_targets(old_rows: list, new_rows: list) -> list:
     """Nur die Ziel-Änderungen (für den Export-Hinweis)."""
     return diff_rows(old_rows, new_rows)["target_changed"]
+
+
+def is_descendant(nodes: dict, code: str, ancestor: str) -> bool:
+    """True, wenn code unterhalb von ancestor liegt (oder gleich ist)."""
+    k, a, seen = (code or "").upper(), (ancestor or "").upper(), set()
+    while k and k in nodes and k not in seen:
+        if k == a:
+            return True
+        seen.add(k)
+        k = nodes[k].parent.upper()
+    return False
+
+
+def move_node(nodes: dict, roots: list, code: str, new_parent: str) -> str:
+    """
+    Knoten (mit Unterbaum) unter new_parent hängen. Returns Fehlertext oder "".
+    Ändert Node.parent, row["parent"] und die children-Listen.
+    """
+    n = nodes.get((code or "").upper())
+    t = nodes.get((new_parent or "").upper())
+    if not n or not t:
+        return "Knoten nicht gefunden."
+    if n is t or is_descendant(nodes, t.code, n.code):
+        return "Eine Kategorie kann nicht unter sich selbst oder einen eigenen Unterknoten verschoben werden."
+    if n.parent.upper() == t.key:
+        return ""
+    old = nodes.get(n.parent.upper())
+    if old and n in old.children:
+        old.children.remove(n)
+    elif n in roots:
+        roots.remove(n)
+    n.parent = t.code
+    n.row["parent"] = t.code
+    t.children.append(n)
+    return ""
