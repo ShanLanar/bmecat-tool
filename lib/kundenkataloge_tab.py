@@ -23,6 +23,7 @@ _FIELDS = [
     ("price_lists",     "PL-Nummer(n)",       20, "ERP-Preisliste(n), Komma-getrennt – Artikelmenge + Preis (nrp)"),
     ("price_mode",      "Preis",              10, "netto | brutto"),
     ("suppliers",       "Lieferanten",        40, "Reihenfolge der Stammdaten-Quelle (Namen, Komma); leer = supplier_priority.csv"),
+    ("sources",         "Datenquellen",       12, "db,obs – Artikel-DB zuerst, OBS nur für Artikel, die die DB nicht hat"),
     ("aid_mode",        "Artikelnummer",      12, "native (ohne Präfix) | product_id (mit Präfix)"),
     ("root_code",       "Zentralshop-Wurzel", 10, "Code in custom_categories.csv (Standard 1)"),
     ("group_system_id", "GROUP_SYSTEM_ID",    20, ""),

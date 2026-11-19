@@ -49,6 +49,7 @@ DEFAULT_PROFILE = {
     "price_type":       "nrp",
     "price_mode":       "netto",       # netto | brutto (Preis in der XML)
     "suppliers":        "",            # Lieferanten-Reihenfolge (Namen, Komma); leer = supplier_priority.csv
+    "sources":          "db,obs",      # Datenquellen in Reihenfolge: db (Artikel-DB), obs (ERP, nur was die DB nicht hat)
     "aid_mode":         "native",      # native (supplier_pid) | product_id (mit Präfix)
     "root_code":        "1",           # Zentralshop-Wurzel in custom_categories.csv
     "group_system_id":  "ZENTRALSHOP",
@@ -569,7 +570,27 @@ def generate(prof: dict, progress_cb: Callable = None, file_progress_cb: Callabl
     p(f"Kundenkatalog '{prof.get('name')}' ({label}) …")
 
     prices = load_prices(prof, p)
-    arts, missing = resolve_articles(_cfg.DB_PATH, _cfg.BASE_DIR, prof, prices, p)
+    sources = [s.strip().lower() for s in (prof.get("sources") or "db").split(",") if s.strip()]
+    arts, missing = [], list(pr["aid"] for pr in prices.values())
+    if "db" in sources:
+        arts, missing = resolve_articles(_cfg.DB_PATH, _cfg.BASE_DIR, prof, prices, p)
+        for a in arts:
+            a["kk_source"] = "db"
+    obs_stats = {}
+    if "obs" in sources and missing:
+        p(f"OBS-Quelle: {len(missing)} Artikel aus dem ERP laden …")
+        try:
+            from lib.kundenkatalog_obs import fetch_obs_articles
+            obs_arts, obs_stats = fetch_obs_articles(_cfg.CONNECTIONS.get("erp_mysql", {}), missing, progress_cb=p)
+        except Exception as exc:
+            p(f"OBS-Quelle fehlgeschlagen: {exc}", tag="warn")
+            obs_arts = []
+        found = {a["supplier_pid"].lower() for a in obs_arts}
+        for a in obs_arts:
+            a["kk_price"] = prices[a["supplier_pid"].lower()]
+        arts.extend(obs_arts)
+        missing = [m for m in missing if m.lower() not in found]
+        p(f"OBS-Quelle: {len(obs_arts)} Artikel übernommen, {len(missing)} bleiben ohne Daten")
     arts.sort(key=lambda a: _aid(a, prof))
     tree = TreeBuilder(_cfg.BASE_DIR, prof.get("root_code"), p)
 
@@ -590,8 +611,8 @@ def generate(prof: dict, progress_cb: Callable = None, file_progress_cb: Callabl
             w.writerow(["a_bestnr1", "preis"])
             for aid in missing:
                 w.writerow([aid, prices[aid.lower()]["price"]])
-        p(f"{len(missing)} Preislisten-Artikel nicht in der Artikel-DB → {os.path.basename(mpath)} "
-          f"(Kandidaten für die OBS-Quelle)", tag="warn")
+        p(f"{len(missing)} Preislisten-Artikel weder in der Artikel-DB noch im OBS gefunden → "
+          f"{os.path.basename(mpath)}", tag="warn")
 
     diff = compare_with_previous(prof, out_path)
     if diff:
@@ -606,4 +627,6 @@ def generate(prof: dict, progress_cb: Callable = None, file_progress_cb: Callabl
         save_profile(_cfg.BASE_DIR, prof)
     except Exception:
         pass
+    stats["obs"] = sum(1 for a in arts if a.get("kk_source") == "obs")
+    stats["obs_stats"] = obs_stats
     return {"file": out_path, "missing": len(missing), "diff": diff, **stats}
