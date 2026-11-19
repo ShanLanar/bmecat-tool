@@ -61,18 +61,21 @@ class TreePane:
         frm.grid(row=1, column=0, sticky="nsew")
         frm.columnconfigure(0, weight=1)
         frm.rowconfigure(0, weight=1)
-        cols = ("code", "total", "mapped", "online", "target")
+        cols = ("code", "total", "mapped", "online", "moved", "target")
         self.tree = ttk.Treeview(frm, columns=cols, show="tree headings", selectmode="browse",
                                  style="KAT.Treeview")
         self.tree.heading("#0", text="Kategorie")
         self.tree.column("#0", width=260, minwidth=140, stretch=True)
         for key, head, w, anchor in (("code", "Code", 100, "w"), ("total", "Artikel", 60, "e"),
                                      ("mapped", "→hier", 55, "e"), ("online", "On", 32, "center"),
-                                     ("target", "Ziel", 170, "w")):
+                                     ("moved", "verschoben aus", 150, "w"), ("target", "Ziel", 170, "w")):
             self.tree.heading(key, text=head)
             self.tree.column(key, width=w, minwidth=30, stretch=(key == "target"), anchor=anchor)
         self.tree.tag_configure("offline", foreground=c.get("FG_DIM", "#888"))
         self.tree.tag_configure("mapped", foreground=c["ACCENT"])
+        self.tree.tag_configure("moved", foreground=c.get("WARN", "#c98a00"))          # im Shop schon umgehängt
+        self.tree.tag_configure("moved_now", foreground=c.get("OK", "#2e9e4f"),
+                                font=("Segoe UI Semibold", 10))                        # in dieser Sitzung verschoben
         vsb = ttk.Scrollbar(frm, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=vsb.set)
         self.tree.grid(row=0, column=0, sticky="nsew")
@@ -129,11 +132,23 @@ class TreePane:
             if n.target:
                 tp = ct.path_of(nodes, n.target)
                 tgt_txt = f"{n.target}  {tp}" if tp else f"{n.target} (?)"
+            moved_txt = ""
+            moved_now = n.key in self.tab._moved_keys
+            moved_before = bool(n.original_parent) and n.original_parent.upper() != n.parent.upper()
+            if moved_now or moved_before:
+                op = n.original_parent.upper()
+                src_name = nodes[op].name if op in nodes else (n.original_parent or "?")
+                moved_txt = ("↪ " if moved_now else "") + src_name
             tags = (["offline"] if not n.online else []) + (["mapped"] if n.target else [])
-            iid = self.tree.insert(parent_iid, "end", text=n.name or n.code,
+            if moved_now:
+                tags.append("moved_now")
+            elif moved_before:
+                tags.append("moved")
+            text = ("↪ " if moved_now else "") + (n.name or n.code)
+            iid = self.tree.insert(parent_iid, "end", text=text,
                                    open=open_ or (n.key in open_keys),
                                    values=(n.code, n.total or "", n.mapped_in or "",
-                                           "✓" if n.online else "–", tgt_txt), tags=tuple(tags))
+                                           "✓" if n.online else "–", moved_txt, tgt_txt), tags=tuple(tags))
             self.iid_to_code[iid] = n.key
             self.code_to_iid[n.key] = iid
             for ch in n.children:
@@ -218,6 +233,7 @@ class KategorienTab:
         self._dirty = False
         self._loaded = False
         self._active_pane = None
+        self._moved_keys: set = set()        # in dieser Sitzung verschobene Knoten
         self._build()
 
     # ── Aufbau ────────────────────────────────────────────────────────────────
@@ -287,8 +303,9 @@ class KategorienTab:
                           cursor="hand2", font=FONT_UI_SM, padx=8, state="disabled")
             b.pack(side="left", padx=(0, 6))
             self._btns[key] = b
-        tk.Label(btns, text="Drag & Drop: Knoten auf Ziel ziehen → Verschieben (Unterbaum umhängen) "
-                            "oder Verschmelzen (Artikel ins Ziel mappen). Änderungen erst mit Speichern.",
+        tk.Label(btns, text="Drag & Drop: Knoten auf Ziel ziehen → Verschieben oder Verschmelzen. "
+                            "Grün ↪ = in dieser Sitzung verschoben, orange = im Shop bereits umgehängt "
+                            "(Spalte 'verschoben aus'). Änderungen erst mit Speichern.",
                  bg=c["BG2"], fg=c.get("FG_DIM", c["FG"]), font=FONT_UI_SM).pack(side="left", padx=(12, 0))
 
     def status(self, text: str):
@@ -343,6 +360,7 @@ class KategorienTab:
         self._rows_loaded = copy.deepcopy(rows)
         self._nodes, self._roots, self._counts = nodes, roots, counts
         self._dirty = False
+        self._moved_keys = set()
         self._save_btn.config(state="disabled")
         self._loaded = True
         # links Zentralshop, rechts der erste Lieferantenbaum
@@ -492,6 +510,7 @@ class KategorienTab:
             messagebox.showwarning("Verschieben nicht möglich", err, parent=self._parent)
             return
         self._mark_dirty()
+        self._moved_keys.add(src.key)
         self._refresh(src.key, self._pane_showing(dst.key) or self._active_pane)
         self.status(f"Verschoben: {src.code} → unter {dst.code} ({dst.name})  (ungespeichert)")
 
