@@ -29,6 +29,7 @@ BACKUP_PREFIX = "bmecat_backup_"
 _EXCLUDE_DIRS = {
     "logs", "in_BME", "in", "in2", "in_vertrieb", "unzip", "export_vendosys",
     "backups", "brickfox", "eBay", "__pycache__", ".git", "restore_review",
+    "export_kundenkataloge",   # Archiv der Kundenkataloge (groß, jederzeit neu erzeugbar); Profile in kundenkataloge/ bleiben drin
 }
 
 # Dateien aus ausgeschlossenen Ordnern, die trotzdem mitmüssen: die Upload-

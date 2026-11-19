@@ -527,6 +527,11 @@ class App(tk.Tk):
         from lib.kategorien_tab import KategorienTab
         self._kategorien_tab = KategorienTab(_tab_kat, self, THEMES[self._theme])
 
+        _tab_kk = tk.Frame(self._notebook, bg=_T("BG"))
+        self._notebook.add(_tab_kk, text="  Kundenkataloge  ")
+        from lib.kundenkataloge_tab import KundenkatalogeTab
+        self._kundenkataloge_tab = KundenkatalogeTab(_tab_kk, self, THEMES[self._theme])
+
         _tab3 = tk.Frame(self._notebook, bg=_T("BG"))
         self._notebook.add(_tab3, text="  Konfiguration  ")
         from lib.config_tab import ConfigTab
