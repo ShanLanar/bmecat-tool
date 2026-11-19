@@ -50,7 +50,11 @@ class Node:
 
 def load_rows(base_dir: str) -> tuple:
     """Returns (rows, fieldnames, encoding). Fehlt die Datei → ([], [], 'cp1252')."""
-    path = os.path.join(base_dir, _FILE)
+    return load_file(os.path.join(base_dir, _FILE))
+
+
+def load_file(path: str) -> tuple:
+    """Beliebige Kategorien-Datei im Shop-Format lesen → (rows, fieldnames, encoding)."""
     if not os.path.exists(path):
         return [], [], "cp1252"
     for enc in _ENCODINGS:
@@ -70,13 +74,19 @@ def load_rows(base_dir: str) -> tuple:
 def save_rows(base_dir: str, rows: list, fieldnames: list, encoding: str,
               logs_dir: str = None) -> str:
     """Schreibt die Datei zurück (gleiche Spalten/Kodierung); Backup nach logs/."""
-    path = os.path.join(base_dir, _FILE)
+    return write_file(os.path.join(base_dir, _FILE), rows, fieldnames, encoding, logs_dir)
+
+
+def write_file(path: str, rows: list, fieldnames: list, encoding: str,
+               logs_dir: str = None) -> str:
+    """Kategorien-Datei im Shop-Format schreiben (Quoting/Zeilenende wie Shop-Export)."""
     if logs_dir and os.path.exists(path):
         os.makedirs(logs_dir, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         shutil.copy2(path, os.path.join(logs_dir, f"custom_categories_backup_{ts}.csv"))
     # Zeilenende wie in der Originaldatei (Shop-Export: LF)
     nl = "\n"
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     if os.path.exists(path):
         with open(path, "rb") as f:
             head = f.read(65536)
@@ -237,3 +247,34 @@ def articles_in(db_path: str, code: str, limit: int = 500) -> list:
     finally:
         con.close()
     return out
+
+
+def diff_rows(old_rows: list, new_rows: list) -> dict:
+    """
+    Vergleich zweier Kategorien-Dateien (Shop-Format) nach category_code:
+    {"added": [codes], "removed": [codes], "target_changed": [(code, alt, neu)],
+     "renamed": [(code, alt, neu)], "moved": [(code, alt, neu)]}
+    """
+    def _idx(rows):
+        out = {}
+        for r in rows:
+            c = (r.get("category_code") or "").strip()
+            if c and not c.startswith("#"):
+                out.setdefault(c.upper(), r)
+        return out
+    a, b = _idx(old_rows), _idx(new_rows)
+    res = {"added": sorted(set(b) - set(a)), "removed": sorted(set(a) - set(b)),
+           "target_changed": [], "renamed": [], "moved": []}
+    for k in sorted(set(a) & set(b)):
+        ra, rb = a[k], b[k]
+        for col, key in (("product_category_code", "target_changed"), ("name", "renamed"),
+                         ("parent", "moved")):
+            va, vb = (ra.get(col) or "").strip(), (rb.get(col) or "").strip()
+            if va != vb:
+                res[key].append((rb.get("category_code"), va, vb))
+    return res
+
+
+def changed_targets(old_rows: list, new_rows: list) -> list:
+    """Nur die Ziel-Änderungen (für den Export-Hinweis)."""
+    return diff_rows(old_rows, new_rows)["target_changed"]

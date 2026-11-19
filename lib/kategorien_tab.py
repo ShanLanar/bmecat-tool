@@ -11,7 +11,9 @@
 import os
 import threading
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
+import copy
+from datetime import datetime
 
 from lib.design import FONT_UI, FONT_UI_SM, FONT_HEAD
 from lib import category_tree as ct
@@ -69,6 +71,10 @@ class KategorienTab:
         self._save_btn.pack(side="right", padx=4)
         tk.Button(bar, text="↻ Neu laden", command=lambda: self.load(force=True), bg=c["BG3"],
                   fg=c["FG"], relief="flat", cursor="hand2", font=FONT_UI, padx=8).pack(side="right")
+        tk.Button(bar, text="⬆ Für Shop exportieren …", command=self._export, bg=c["BG3"],
+                  fg=c["FG"], relief="flat", cursor="hand2", font=FONT_UI, padx=8).pack(side="right", padx=4)
+        tk.Button(bar, text="⬇ Shop-Export importieren …", command=self._import, bg=c["BG3"],
+                  fg=c["FG"], relief="flat", cursor="hand2", font=FONT_UI, padx=8).pack(side="right", padx=4)
         self._status = tk.Label(bar, text="", bg=c["BG2"], fg=c.get("FG_DIM", c["FG"]), font=FONT_UI_SM)
         self._status.pack(side="right", padx=10)
 
@@ -194,6 +200,7 @@ class KategorienTab:
 
     def _apply_loaded(self, rows, fields, enc, nodes, roots, counts, err):
         self._rows, self._fields, self._enc = rows, fields, enc
+        self._rows_loaded = copy.deepcopy(rows)
         self._nodes, self._roots, self._counts = nodes, roots, counts
         self._dirty = False
         self._save_btn.config(state="disabled")
@@ -416,6 +423,83 @@ class KategorienTab:
                 rows = [("Fehler", str(exc))]
             win.after(0, lambda: [tv.insert("", "end", values=r) for r in rows])
         threading.Thread(target=_work, daemon=True).start()
+
+    # ── Import / Export ───────────────────────────────────────────────────────
+
+    def _import(self):
+        """Neuen Kategorien-Export des Shops übernehmen (ersetzt custom_categories.csv)."""
+        if self._dirty and not messagebox.askyesno(
+                "Ungespeicherte Änderungen",
+                "Es gibt ungespeicherte Ziel-Änderungen. Trotzdem importieren und verwerfen?",
+                parent=self._parent):
+            return
+        path = filedialog.askopenfilename(
+            title="Kategorien-Export des Shops wählen", parent=self._parent,
+            filetypes=[("CSV", "*.csv"), ("Alle Dateien", "*.*")])
+        if not path:
+            return
+        try:
+            rows, fields, enc = ct.load_file(path)
+        except Exception as exc:
+            messagebox.showerror("Import fehlgeschlagen", str(exc), parent=self._parent)
+            return
+        if not rows:
+            messagebox.showwarning("Import", "Die Datei enthält keine Kategorien.", parent=self._parent)
+            return
+        d = ct.diff_rows(self._rows, rows)
+        msg = (f"{len(rows)} Kategorien in {os.path.basename(path)}.\n\n"
+               f"Gegenüber dem aktuellen Stand:\n"
+               f"  {len(d['added'])} neue Kategorien\n"
+               f"  {len(d['removed'])} entfallen\n"
+               f"  {len(d['target_changed'])} geänderte Ziele\n"
+               f"  {len(d['renamed'])} umbenannt, {len(d['moved'])} umgehängt\n\n"
+               f"custom_categories.csv ersetzen? (Backup in logs/)")
+        if not messagebox.askyesno("Shop-Export importieren", msg, parent=self._parent):
+            return
+        try:
+            ct.save_rows(self._cfg.BASE_DIR, rows, fields, enc, logs_dir=self._cfg.DIRS.get("logs"))
+        except Exception as exc:
+            messagebox.showerror("Import fehlgeschlagen", str(exc), parent=self._parent)
+            return
+        try:
+            self._app._append_log(
+                f"Kategorien: {os.path.basename(path)} importiert – {len(rows)} Kategorien, "
+                f"{len(d['added'])} neu, {len(d['removed'])} entfallen, "
+                f"{len(d['target_changed'])} Ziele geändert.", tag="ok")
+        except Exception:
+            pass
+        self._dirty = False
+        self.load(force=True)
+
+    def _export(self):
+        """Aktuellen Stand als Datei für den Shop schreiben (gleiches Format wie der Export)."""
+        if not self._rows:
+            return
+        if self._dirty:
+            if messagebox.askyesno("Ungespeichert", "Änderungen zuerst in custom_categories.csv speichern?",
+                                   parent=self._parent):
+                self._save()
+        changes = ct.changed_targets(getattr(self, "_rows_loaded", []), self._rows)
+        out_dir = self._cfg.DIRS.get("pim_export") or self._cfg.BASE_DIR
+        default = f"custom_categories_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+        path = filedialog.asksaveasfilename(
+            title="Kategorien für den Shop exportieren", parent=self._parent,
+            initialdir=out_dir if os.path.isdir(out_dir) else self._cfg.BASE_DIR,
+            initialfile=default, defaultextension=".csv", filetypes=[("CSV", "*.csv")])
+        if not path:
+            return
+        try:
+            ct.write_file(path, self._rows, self._fields, self._enc)
+        except Exception as exc:
+            messagebox.showerror("Export fehlgeschlagen", str(exc), parent=self._parent)
+            return
+        self._status.config(text=f"Exportiert: {os.path.basename(path)} ({len(self._rows)} Kategorien)")
+        try:
+            self._app._append_log(
+                f"Kategorien: {os.path.basename(path)} für den Shop geschrieben – {len(self._rows)} "
+                f"Kategorien, {len(changes)} Ziel-Änderungen seit dem letzten Laden.", tag="ok")
+        except Exception:
+            pass
 
     # ── Speichern ─────────────────────────────────────────────────────────────
 
