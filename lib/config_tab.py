@@ -236,6 +236,29 @@ akzeptiert (gleiche Systematik wie bei fehlenden Preisformeln).
 """
     ),
     (
+        "custom_categories.csv",
+        "Kategorien (Shop-Export)",
+        "Katalog & Kategorien",
+        """\
+Kategorien-Export des Shops: Zentralshop-Baum und alle Lieferantenbäume
+(BRG…, SOC…, NDW…) in einer Datei. Grundlage für den Reiter „Kategorien“
+(Baumansicht, Artikelzahlen, Ziel-Mapping), den Kategorie-Check beim
+Katalogimport und die Spalten „Alt. Kategorie“ im Viewer-Excel.
+
+Spalten (Semikolon):
+  category_code          Code; bei Lieferanten Präfix + GROUP_ID (BRG65019)
+  original_name/parent   wie vom Lieferanten geliefert
+  name/parent            aktueller Stand im Shop (umbenannt / umgehängt)
+  online                 1/0
+  product_category_code  ZIEL: Artikel dieser Kategorie werden im Shop in
+                         dieser Kategorie gezeigt (Lieferant → Zentralshop)
+  ranking, original_online  werden unverändert durchgereicht
+
+Im Reiter „Kategorien“ lässt sich das Ziel ändern; „Speichern“ schreibt
+die Datei zurück (Backup in logs/). Danach wie gewohnt in den Shop laden.
+"""
+    ),
+    (
         """\
 postprocess_categories.csv""",
         """\

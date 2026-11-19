@@ -522,6 +522,11 @@ class App(tk.Tk):
         from lib.viewer_tab import ViewerTab
         self._viewer_tab = ViewerTab(_tab2, self, THEMES[self._theme])
 
+        _tab_kat = tk.Frame(self._notebook, bg=_T("BG"))
+        self._notebook.add(_tab_kat, text="  Kategorien  ")
+        from lib.kategorien_tab import KategorienTab
+        self._kategorien_tab = KategorienTab(_tab_kat, self, THEMES[self._theme])
+
         _tab3 = tk.Frame(self._notebook, bg=_T("BG"))
         self._notebook.add(_tab3, text="  Konfiguration  ")
         from lib.config_tab import ConfigTab
@@ -590,6 +595,8 @@ class App(tk.Tk):
                 self._stop_btn.config(state="disabled")
             if idx == 1 and hasattr(self, "_viewer_tab"):
                 self._viewer_tab.on_tab_activated()
+            if idx == 2 and hasattr(self, "_kategorien_tab"):
+                self._kategorien_tab.on_tab_activated()
             if idx == 4 and hasattr(self, "_ebay_tab"):
                 self._ebay_tab.on_tab_activated()
         self._notebook.bind("<<NotebookTabChanged>>", _on_tab_change)
