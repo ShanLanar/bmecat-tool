@@ -198,6 +198,7 @@ CONNECTIONS = {
 AVAILABILITY_FILE   = "availability-data-catalog-32WQS.csv"
 
 # ── Mercateo-Unite: Preislisten im ERP für Preis-Update im BME-1.2-Katalog ────
+# Pflegbar über Konfiguration → Verbindungen → "Unite-Preisliste(n)" (config_user.json)
 MERCATEO_PRICE_LIST_NRS = [601307]
 # ── Brickfox-Marktplatzpreise aus dem ERP (Task "Büroring – Bestand+Preis") ──
 # Je Preisspalte der Bestand_und_Preise.xlsx: Preislistennummer(n) im ERP

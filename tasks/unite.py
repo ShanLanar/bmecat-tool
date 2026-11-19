@@ -17,9 +17,8 @@
 # Konfigurations-Editor in config_user.json setzen, siehe config.py).
 
 import os
-from config import (
-    BASE_DIR, CONNECTIONS, MERCATEO_PRICE_LIST_NRS, MERCATEO_CATALOG_XML_PATTERN,
-)
+import config as _cfg
+from config import BASE_DIR, CONNECTIONS, MERCATEO_CATALOG_XML_PATTERN
 
 
 def run_update_prices(progress_cb=None, file_progress_cb=None) -> dict:
@@ -47,7 +46,13 @@ def run_update_prices(progress_cb=None, file_progress_cb=None) -> dict:
         return {}
 
     p(f"Unite-Preisupdate: Katalog {os.path.basename(xml_path)}")
-    prices = fetch_price_list(cfg, MERCATEO_PRICE_LIST_NRS, progress_cb=p)
+    nrs = list(getattr(_cfg, "MERCATEO_PRICE_LIST_NRS", []) or [])
+    if not nrs:
+        p("Unite-Preisupdate: keine Preisliste konfiguriert (Konfiguration → Verbindungen → "
+          "Unite-Preisliste).", tag="warn")
+        return {}
+    p(f"Unite-Preisupdate: Preisliste(n) {', '.join(map(str, nrs))}")
+    prices = fetch_price_list(cfg, nrs, progress_cb=p)
     if not prices:
         p("Unite-Preisupdate: keine Preise aus ERP erhalten – abgebrochen.", tag="warn")
         return {}

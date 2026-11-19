@@ -86,6 +86,12 @@ def apply_overrides():
     for key, val in overrides.get("brickfox_prices", {}).items():
         if key in getattr(config, "BRICKFOX_ERP_PRICES", {}):
             config.BRICKFOX_ERP_PRICES[key] = val
+    unite_pl = overrides.get("unite", {}).get("price_lists")
+    if unite_pl is not None:
+        import re as _re
+        nrs = [int(x) for x in _re.split(r"[,\s;]+", str(unite_pl)) if x.strip().isdigit()]
+        if nrs:
+            config.MERCATEO_PRICE_LIST_NRS = nrs
     if "base_dir" in overrides:
         config.BASE_DIR = overrides["base_dir"]
 
@@ -397,6 +403,27 @@ class ConfigEditor(tk.Toplevel):
                              width=8, state="readonly").pack(side="left", padx=(4, 0))
                 r += 1
 
+        # ── Mercateo-Unite: Preisliste(n) für das Preisupdate ─────────────────
+        ttk.Separator(pf, orient="horizontal").grid(
+            row=r, column=0, columnspan=3, sticky="ew", padx=8, pady=8)
+        r += 1
+        _label(pf, "Mercateo-Unite – Preise aus ERP aktualisieren", head=True).grid(
+            row=r, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 2))
+        r += 1
+        tk.Label(pf, text="ERP-Preisliste(n) für den Unite-Katalog (net_list). "
+                          "Mehrere mit Komma, niedrigster Preis gewinnt.",
+                 font=FONT_SM, bg=BG2, fg=FG_DIM, justify="left").grid(
+            row=r, column=0, columnspan=3, sticky="w", padx=16, pady=(0, 4))
+        r += 1
+        _label(pf, "Unite-Preisliste(n)", dim=True).grid(row=r, column=0, sticky="e", padx=(16, 6), pady=2)
+        cur = self._overrides.get("unite", {}).get("price_lists")
+        if cur is None:
+            cur = ", ".join(str(n) for n in getattr(self._cfg, "MERCATEO_PRICE_LIST_NRS", []) or [])
+        self._unite_var = tk.StringVar(value=str(cur))
+        _styled_entry(pf, textvariable=self._unite_var, width=24).grid(
+            row=r, column=1, sticky="w", padx=(0, 8), pady=2)
+        r += 1
+
     # ── Datei-/Verzeichnis-Auswahl ────────────────────────────────────────────
 
     def _browse_dir(self, key: str):
@@ -483,6 +510,8 @@ class ConfigEditor(tk.Toplevel):
 
         if self._bfp_vars:
             data["brickfox_prices"] = {k: v.get().strip() for k, v in self._bfp_vars.items()}
+        if getattr(self, "_unite_var", None) is not None:
+            data.setdefault("unite", {})["price_lists"] = self._unite_var.get().strip()
 
         try:
             save_user_config(data)
