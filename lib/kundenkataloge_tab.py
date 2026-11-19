@@ -38,7 +38,8 @@ _SUPPLIER_FIELDS = [("id", "ILN/ID"), ("name", "Name"), ("name2", "Name 2"), ("c
 _BUYER_FIELDS = [("name", "Name"), ("name2", "Name 2"), ("contact", "Kontakt"), ("street", "Straße"),
                  ("zip", "PLZ"), ("city", "Ort"), ("country", "Land")]
 _FLAGS = [("include_features", "Merkmale"), ("include_mimes", "Bilder/MIME"),
-          ("include_keywords", "Keywords"), ("include_udx", "UDX")]
+          ("include_keywords", "Keywords"), ("include_udx", "UDX"),
+          ("postprocess", "Shop-Postprocessing (Blacklist, Offline, Regeln)")]
 
 
 class KundenkatalogeTab:

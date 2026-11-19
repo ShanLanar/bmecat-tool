@@ -68,6 +68,7 @@ DEFAULT_PROFILE = {
     "include_keywords": True,
     "include_udx":      False,
     "format":           "bmecat12",
+    "postprocess":      True,          # normales Shop-Postprocessing (lib/db_postprocess) auf DB-Artikel
     "supplier": {"id_type": "iln", "id": "", "name": "", "name2": "", "contact": "",
                  "street": "", "zip": "", "city": "", "country": "DE", "phone": "",
                  "fax": "", "email": "", "url": ""},
@@ -248,9 +249,11 @@ def resolve_articles(db_path: str, base_dir: str, prof: dict, prices: dict, p: C
                 continue
             if nid not in path_cache:
                 pre = _supplier_prefix(art)
-                path_cache[nid] = [(_add_prefix_if_missing(n["group_id"], pre), n["name"] or n["group_id"])
-                                   for n in get_catalog_path(con, nid)]
-            art["kk_path"] = path_cache[nid]
+                nodes_ = get_catalog_path(con, nid)
+                path_cache[nid] = ([(_add_prefix_if_missing(n["group_id"], pre), n["name"] or n["group_id"])
+                                    for n in nodes_],
+                                   bool(nodes_) and (nodes_[0].get("parent_group_id") or "") in ("", "0"))
+            art["kk_path"], art["kk_path_has_root"] = path_cache[nid]
     finally:
         con.close()
     return arts, missing
@@ -303,12 +306,18 @@ class TreeBuilder:
                 self.used[n.code] = (n.name, "")
                 return
             if not pk or pk not in self.nodes:
-                # fremde Wurzel → unter Zentralshop-Wurzel hängen
-                self.used[n.code] = (n.name, self.root.code if self.root else "")
+                # fremde Wurzel (BRG1, SOC1, NDW1 …): wird durch die Zentralwurzel
+                # ersetzt – der Knoten selbst erscheint nicht im Katalog
                 if self.root:
                     self.used[self.root.code] = (self.root.name, "")
+                if n.code in self.used:
+                    del self.used[n.code]
                 return
-            self.used[n.code] = (n.name, self.nodes[pk].code)
+            parent_node = self.nodes[pk]
+            parent_is_foreign_root = (not parent_node.parent.upper()
+                                      or parent_node.parent.upper() not in self.nodes) \
+                and not (self.root and parent_node is self.root)
+            self.used[n.code] = (n.name, self.root.code if (parent_is_foreign_root and self.root) else parent_node.code)
             k = pk
 
     def group_for(self, art: dict) -> str:
@@ -336,6 +345,8 @@ class TreeBuilder:
         parent = self.root.code if self.root else ""
         if self.root:
             self.used[self.root.code] = (self.root.name, "")
+        if len(path) > 1 and art.get("kk_path_has_root", True):
+            path = path[1:]          # Lieferanten-Wurzel durch Zentralwurzel ersetzen
         for code, name in path:
             if code not in self.used:
                 self.used[code] = (name, parent)
@@ -600,8 +611,56 @@ def generate(prof: dict, progress_cb: Callable = None, file_progress_cb: Callabl
         arts.extend(obs_arts)
         missing = [m for m in missing if m.lower() not in found]
         p(f"OBS-Quelle: {len(obs_arts)} Artikel übernommen, {len(missing)} bleiben ohne Daten")
+    # Normales Shop-Postprocessing für DB-Artikel (Blacklist, Offline-Liste,
+    # Zusatz-Features, Maße, Marken, FNAME-Blacklist, Medienregeln, Hook) –
+    # Preis kommt aus der Preisliste, Preisregeln/SOC-Preispflicht greifen nicht.
+    if prof.get("postprocess", True) and any(a.get("kk_source") == "db" for a in arts):
+        from lib.db_postprocess import PostProcessor
+        pp = PostProcessor(_cfg.BASE_DIR)
+        kept, dropped_bl, dropped_off = [], 0, 0
+        for a in arts:
+            if a.get("kk_source") != "db":
+                kept.append(a)
+                continue
+            a["_price_rule_applied"] = True
+            a.setdefault("online", 1)
+            res = pp.process(a)
+            if res is None:
+                dropped_bl += 1
+                continue
+            if not res.get("online", 1):
+                dropped_off += 1
+                continue
+            for k in ("kk_price", "kk_path", "kk_path_has_root", "kk_source"):
+                res[k] = a.get(k)
+            if res.get("catalog_sub_group_id") and res.get("catalog_sub_group_id") != a.get("catalog_sub_group_id"):
+                res["kk_path"] = [(res["catalog_sub_group_id"], res["catalog_sub_group_id"])]
+                res["kk_path_has_root"] = False
+            kept.append(res)
+        p(f"Postprocessing: {len(kept)} Artikel, {dropped_bl} per Blacklist/Hook entfernt, "
+          f"{dropped_off} per Offline-Liste entfernt")
+        arts = kept
     arts.sort(key=lambda a: _aid(a, prof))
     tree = TreeBuilder(_cfg.BASE_DIR, prof.get("root_code"), p)
+
+    # Artikel ohne Kategorie: Nachschlag im OBS (artikel.A_WGR/A_WGRU → user_catmapping,
+    # p_arti → p_wgr → BMECATWGR/OBS-Warengruppe)
+    no_path = [a for a in arts if not a.get("kk_path")]
+    if no_path and "obs" in sources:
+        try:
+            from lib.kundenkatalog_obs import lookup_categories
+            found_paths = lookup_categories(_cfg.CONNECTIONS.get("erp_mysql", {}),
+                                            [a["supplier_pid"] for a in no_path],
+                                            set(tree.nodes), progress_cb=p)
+            n_ok = 0
+            for a in no_path:
+                pth = found_paths.get((a.get("supplier_pid") or "").lower())
+                if pth:
+                    a["kk_path"], a["kk_path_has_root"] = pth, False
+                    n_ok += 1
+            p(f"Kategorie-Nachschlag im OBS: {n_ok} von {len(no_path)} Artikeln zugeordnet")
+        except Exception as exc:
+            p(f"Kategorie-Nachschlag im OBS übersprungen: {exc}", tag="warn")
 
     out_dir = export_dir(prof)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")

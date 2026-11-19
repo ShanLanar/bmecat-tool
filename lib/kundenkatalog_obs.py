@@ -335,3 +335,80 @@ def fetch_obs_articles(cfg: dict, aids: list, progress_cb: Callable = None) -> t
     finally:
         con.close()
     return list(arts.values()), stats
+
+
+# ── Kategorie-Nachschlag (für Artikel ohne Kategorie aus DB oder OBS) ────────
+
+def _resolve_code(code: str, known: set, prefixes: list) -> str:
+    """Code mit/ohne Lieferantenpräfix gegen custom_categories prüfen."""
+    c = (code or "").strip()
+    if not c:
+        return ""
+    if c.upper() in known:
+        return c
+    for pre in prefixes:
+        if (pre + c).upper() in known:
+            return pre + c
+    return ""
+
+
+def lookup_categories(cfg: dict, aids: list, known_codes: set, progress_cb: Callable = None) -> dict:
+    """
+    {aid_lower: [(code, name)]} – Kategorie je Bestellnummer aus dem OBS:
+      1. artikel.A_WGR/A_WGRU → user_catmapping.MP_CATCODE
+      2. p_arti.HWGR/WGR + LIEFNR → p_wgr.BMECATWGR (Lieferantenkategorie, mit Präfix
+         gegen custom_categories geprüft) bzw. p_wgr.OBSWGR/OBSWGRU → user_catmapping
+    """
+    p = progress_cb or (lambda m, **kw: None)
+    warn = lambda m: p(m, tag="warn")
+    if not aids:
+        return {}
+    known = {k.upper() for k in known_codes}
+    # Präfixe aus den Lieferanten-Wurzeln (BRG1 → BRG, SOC1 → SOC, NDW1 → NDW …)
+    prefixes = sorted({k[:-1] for k in known if k.endswith("1") and k[:-1].isalpha() and 2 <= len(k) - 1 <= 4})
+    out: dict = {}
+    con = _connect(cfg)
+    try:
+        cur = con.cursor()
+        catmap = load_catmapping(cur, warn)
+        info: dict = {}
+        for chunk in _chunks(aids):
+            ph = ",".join(["%s"] * len(chunk))
+            for r in _q(cur, f"SELECT A_BESTNR1, A_NR, A_LIEFER1, A_WGR, A_WGRU FROM artikel "
+                            f"WHERE A_BESTNR1 IN ({ph})", tuple(chunk), "artikel (Kategorie)", warn):
+                key = (r.get("A_BESTNR1") or "").strip().lower()
+                if key and key not in info:
+                    info[key] = r
+        for key, r in info.items():
+            wg = ((r.get("A_WGR") or "").strip(), (r.get("A_WGRU") or "").strip())
+            cm = catmap.get(wg) or catmap.get((wg[0], ""))
+            if cm and cm[0]:
+                out[key] = [(cm[0], cm[1] or cm[0])]
+        rest = [k for k in info if k not in out]
+        if rest:
+            pw: dict = {}
+            for r in _q(cur, "SELECT LIEFNR, HWGR, UWGR, OBSWGR, OBSWGRU, BMECATWGR, WGRNAME FROM p_wgr", (),
+                        "p_wgr", warn):
+                pw[((r.get("LIEFNR") or "").strip(), (r.get("HWGR") or "").strip(), (r.get("UWGR") or "").strip())] = r
+            for chunk in _chunks(rest):
+                ph = ",".join(["%s"] * len(chunk))
+                for r in _q(cur, f"SELECT NR, LIEFNR, HWGR, WGR FROM p_arti WHERE NR IN ({ph})",
+                            tuple(info[k]["A_BESTNR1"] for k in chunk), "p_arti (Kategorie)", warn):
+                    key = (r.get("NR") or "").strip().lower()
+                    if key in out or key not in info:
+                        continue
+                    lief = (r.get("LIEFNR") or "").strip()
+                    w = pw.get((lief, (r.get("HWGR") or "").strip(), (r.get("WGR") or "").strip())) \
+                        or pw.get((lief, (r.get("HWGR") or "").strip(), ""))
+                    if not w:
+                        continue
+                    code = _resolve_code(w.get("BMECATWGR"), known, prefixes)
+                    if code:
+                        out[key] = [(code, (w.get("WGRNAME") or code).strip())]
+                        continue
+                    cm = catmap.get(((w.get("OBSWGR") or "").strip(), (w.get("OBSWGRU") or "").strip()))
+                    if cm and cm[0]:
+                        out[key] = [(cm[0], cm[1] or cm[0])]
+    finally:
+        con.close()
+    return out
