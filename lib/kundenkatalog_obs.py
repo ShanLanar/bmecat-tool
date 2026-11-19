@@ -177,8 +177,8 @@ def fetch_obs_articles(cfg: dict, entries: list, progress_cb: Callable = None) -
                 e = by_entry_nr.get(nr)
                 if not e or nr.lower() in arts:
                     continue
-                aid = e.get("artnr") or (e.get("bestnr") or [""])[0] or nr
                 bestnr = (r.get("A_BESTNR1") or "").strip()
+                aid = e.get("artnr") or (e.get("bestnr") or [""])[0] or bestnr or nr
                 if (r.get("DELETED") or "0").strip() == "1":
                     continue
                 if (r.get("A_INAKTIV") or "0").strip() == "1":
