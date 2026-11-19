@@ -76,6 +76,9 @@ class TreePane:
         self.tree.tag_configure("moved", foreground=c.get("WARN", "#c98a00"))          # im Shop schon umgehängt
         self.tree.tag_configure("moved_now", foreground=c.get("OK", "#2e9e4f"),
                                 font=("Segoe UI Semibold", 10))                        # in dieser Sitzung verschoben
+        self.tree.tag_configure("incoming", foreground=c["ACCENT"], font=("Segoe UI", 10, "italic"))  # verschmolzene Quelle
+        self.tree.tag_configure("incoming_now", foreground=c.get("OK", "#2e9e4f"),
+                                font=("Segoe UI Semibold", 10, "italic"))              # in dieser Sitzung verschmolzen
         vsb = ttk.Scrollbar(frm, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=vsb.set)
         self.tree.grid(row=0, column=0, sticky="nsew")
@@ -114,6 +117,11 @@ class TreePane:
         nodes = self.tab._nodes
         q = self.search_var.get().strip().lower()
         only = self.only_art.get()
+        # Verschmolzene Quellen je Ziel (product_category_code → hierher)
+        incoming: dict = {}
+        for s_ in nodes.values():
+            if s_.target and s_.target.upper() != s_.key:
+                incoming.setdefault(s_.target.upper(), []).append(s_)
 
         def _matches(n) -> bool:
             if only and n.total == 0 and n.mapped_in == 0:
@@ -153,6 +161,17 @@ class TreePane:
             self.code_to_iid[n.key] = iid
             for ch in n.children:
                 _insert(ch, iid, bool(q))
+            # Verschmolzene Quellen aus anderen Bäumen als eingehängte Zeilen zeigen
+            for s_ in sorted(incoming.get(n.key, []), key=lambda x: -x.total):
+                if (q or only) and not _matches(s_):
+                    continue
+                r_ = ct.root_of(nodes, s_.key)
+                origin = f" (aus {r_.name})" if r_ and r_ is not self.current_root() else ""
+                tag = "incoming_now" if s_.key in self.tab._merged_keys else "incoming"
+                viid = self.tree.insert(iid, "end", text=f"⇐ {s_.name or s_.code}{origin}", open=False,
+                                        values=(s_.code, s_.total or "", "", "✓" if s_.online else "–",
+                                                "verschmolzen", f"→ {n.code}"), tags=(tag,))
+                self.iid_to_code[viid] = s_.key
 
         _insert(root, "", True)
         if sel_key and sel_key in self.code_to_iid:
@@ -234,6 +253,7 @@ class KategorienTab:
         self._loaded = False
         self._active_pane = None
         self._moved_keys: set = set()        # in dieser Sitzung verschobene Knoten
+        self._merged_keys: set = set()       # in dieser Sitzung verschmolzene Knoten
         self._build()
 
     # ── Aufbau ────────────────────────────────────────────────────────────────
@@ -304,8 +324,8 @@ class KategorienTab:
             b.pack(side="left", padx=(0, 6))
             self._btns[key] = b
         tk.Label(btns, text="Drag & Drop: Knoten auf Ziel ziehen → Verschieben oder Verschmelzen. "
-                            "Grün ↪ = in dieser Sitzung verschoben, orange = im Shop bereits umgehängt "
-                            "(Spalte 'verschoben aus'). Änderungen erst mit Speichern.",
+                            "Grün ↪ = in dieser Sitzung verschoben, orange = im Shop umgehängt, "
+                            "⇐ kursiv = verschmolzene Quelle unter ihrem Ziel. Erst mit Speichern wirksam.",
                  bg=c["BG2"], fg=c.get("FG_DIM", c["FG"]), font=FONT_UI_SM).pack(side="left", padx=(12, 0))
 
     def status(self, text: str):
@@ -361,6 +381,7 @@ class KategorienTab:
         self._nodes, self._roots, self._counts = nodes, roots, counts
         self._dirty = False
         self._moved_keys = set()
+        self._merged_keys = set()
         self._save_btn.config(state="disabled")
         self._loaded = True
         # links Zentralshop, rechts der erste Lieferantenbaum
@@ -458,6 +479,10 @@ class KategorienTab:
                 continue
             x.target = target
             x.row["product_category_code"] = target
+            if target:
+                self._merged_keys.add(x.key)
+            else:
+                self._merged_keys.discard(x.key)
         self._mark_dirty()
         return len(todo)
 
