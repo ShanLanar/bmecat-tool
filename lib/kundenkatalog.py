@@ -669,6 +669,32 @@ def generate(prof: dict, progress_cb: Callable = None, file_progress_cb: Callabl
         p(f"Postprocessing: {len(kept)} Artikel, {dropped_bl} per Blacklist/Hook entfernt, "
           f"{dropped_off} per Offline-Liste entfernt")
         arts = kept
+    # Dubletten: mehrere Preislisten-Artikel auf derselben SUPPLIER_AID (gleiche
+    # A_ARTNR im ERP, oder Nummer + EAN treffen denselben DB-Artikel). BMEcat
+    # erlaubt jede ID nur einmal → DB-Treffer vor OBS, dann niedrigster Preis.
+    by_aid: dict = {}
+    for a in arts:
+        by_aid.setdefault(_aid(a, prof), []).append(a)
+    dups = {k: v for k, v in by_aid.items() if len(v) > 1}
+    if dups:
+        keep = []
+        for k, lst in by_aid.items():
+            lst.sort(key=lambda a: (0 if a.get("kk_source") == "db" else 1, a["kk_price"]["price"]))
+            keep.append(lst[0])
+        arts = keep
+        out_dir_d = export_dir(prof)
+        dpath = os.path.join(out_dir_d, f"{_safe_name(prof.get('catalog_id') or prof.get('name'))}_"
+                                        f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_dubletten.csv")
+        with open(dpath, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.writer(f, delimiter=";")
+            w.writerow(["supplier_aid", "A_NR", "A_ARTNR", "preis", "quelle", "uebernommen"])
+            for k, lst in dups.items():
+                for i, a in enumerate(lst):
+                    pr = a["kk_price"]
+                    w.writerow([k, pr.get("nr", ""), pr.get("artnr", ""), pr["price"],
+                                a.get("kk_source", ""), "ja" if i == 0 else "nein"])
+        p(f"{sum(len(v) for v in dups.values())} Preislisten-Artikel auf {len(dups)} doppelten "
+          f"Artikelnummern – je Nummer nur einer übernommen → {os.path.basename(dpath)}", tag="warn")
     arts.sort(key=lambda a: _aid(a, prof))
     tree = TreeBuilder(_cfg.BASE_DIR, prof.get("root_code"), p)
 
