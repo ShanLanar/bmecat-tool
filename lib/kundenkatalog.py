@@ -60,6 +60,7 @@ DEFAULT_PROFILE = {
     "suppliers":        "",            # Lieferanten-Reihenfolge (Namen, Komma); leer = supplier_priority.csv
     "sources":          "db,obs",      # Datenquellen in Reihenfolge: db (Artikel-DB), obs (ERP, nur was die DB nicht hat)
     "aid_mode":         "native",      # native (supplier_pid) | product_id (mit Präfix)
+    "match_order":      "artnr,bestnr,ean",  # Abgleich Preisliste ↔ Artikel-DB: A_ARTNR, dann A_BESTNR1-5, dann EAN
     "root_code":        "1",           # Zentralshop-Wurzel in custom_categories.csv
     "group_system_id":  "ZENTRALSHOP",
     "group_system_name": "Zentralshop",
@@ -168,13 +169,13 @@ def load_prices(prof: dict, p: Callable) -> dict:
     cfg = _cfg.CONNECTIONS.get("erp_mysql", {})
     if not cfg.get("host") or not cfg.get("user") or not cfg.get("database"):
         raise ValueError("ERP-Zugang (CONNECTIONS['erp_mysql']) ist nicht konfiguriert.")
-    from lib.unite_price_update import fetch_price_list
-    raw = fetch_price_list(cfg, nrs, progress_cb=p)
+    from lib.kundenkatalog_obs import fetch_price_list_full
+    raw = fetch_price_list_full(cfg, nrs, progress_cb=p)
     out = {}
     brutto = (prof.get("price_mode") or "netto").lower() == "brutto"
-    for aid, d in raw.items():
+    for nr, d in raw.items():
         try:
-            amount = float(d["price_amount"])
+            amount = float(d["price"])
             tax = float(d.get("tax") or 0)
         except (TypeError, ValueError):
             continue
@@ -182,7 +183,10 @@ def load_prices(prof: dict, p: Callable) -> dict:
             continue
         if brutto:
             amount = amount * (1 + tax)
-        out[aid.strip().lower()] = {"aid": aid.strip(), "price": round(amount, 2), "tax": tax}
+        d = dict(d)
+        d["price"], d["tax"] = round(amount, 2), tax
+        d["aid"] = d.get("artnr") or (d.get("bestnr") or [""])[0] or nr
+        out[nr] = d
     p(f"Preisliste {', '.join(map(str, nrs))}: {len(out)} Artikel mit Preis > 0")
     return out
 
@@ -206,29 +210,50 @@ def resolve_articles(db_path: str, base_dir: str, prof: dict, prices: dict, p: C
     from lib.article_db import open_db, query_by_ids
     order = _supplier_order(prof, base_dir)
     only = {n.strip().lower() for n in (prof.get("suppliers") or "").split(",") if n.strip()}
+    match_order = [m.strip().lower() for m in (prof.get("match_order") or "artnr,bestnr,ean").split(",") if m.strip()]
     con = open_db(db_path)
     try:
         rows = con.execute("""
-            SELECT a.id, a.supplier_pid, a.product_id, s.supplier_name
+            SELECT a.id, a.supplier_pid, a.product_id, a.ean, s.supplier_name
             FROM articles a JOIN suppliers s ON s.id = a.supplier_id
             WHERE a.active = 1 AND a.supplier_pid <> ''
         """).fetchall()
         by_pid: dict = {}
+        by_ean: dict = {}
         for r in rows:
             sup = (r["supplier_name"] or "").lower()
             if only and sup not in only:
                 continue
-            by_pid.setdefault((r["supplier_pid"] or "").strip().lower(), []).append(
-                (order.get(sup, 999), r["id"], r["product_id"]))
+            cand = (order.get(sup, 999), r["id"], r["product_id"])
+            by_pid.setdefault((r["supplier_pid"] or "").strip().lower(), []).append(cand)
+            ean = (r["ean"] or "").strip().lstrip("0")
+            if len(ean) >= 8:
+                by_ean.setdefault(ean, []).append(cand)
         chosen, missing = [], []
-        for key, pr in prices.items():
-            cands = by_pid.get(key)
+        how = {"artnr": 0, "bestnr": 0, "ean": 0}
+        for nr, pr in prices.items():
+            cands, via = None, ""
+            for m in match_order:
+                if m == "artnr" and pr.get("artnr"):
+                    cands = by_pid.get(pr["artnr"].lower())
+                elif m == "bestnr":
+                    for b in pr.get("bestnr") or []:
+                        cands = by_pid.get(b.lower())
+                        if cands:
+                            break
+                elif m == "ean" and pr.get("ean"):
+                    cands = by_ean.get(pr["ean"].strip().lstrip("0"))
+                if cands:
+                    via = m
+                    break
             if not cands:
-                missing.append(pr["aid"])
+                missing.append(pr)
                 continue
             cands.sort()
+            how[via] += 1
             chosen.append((cands[0][1], pr))
-        p(f"Artikel-DB: {len(chosen)} von {len(prices)} Preislisten-Artikeln gefunden, "
+        p(f"Artikel-DB: {len(chosen)} von {len(prices)} Preislisten-Artikeln gefunden "
+          f"(über A_ARTNR {how['artnr']}, Bestellnummer {how['bestnr']}, EAN {how['ean']}), "
           f"{len(missing)} nicht in der DB")
         arts = []
         ids = [c[0] for c in chosen]
@@ -236,6 +261,7 @@ def resolve_articles(db_path: str, base_dir: str, prof: dict, prices: dict, p: C
         for i in range(0, len(ids), 500):
             for art in query_by_ids(con, ids[i:i + 500]):
                 art["kk_price"] = price_by_id[art["id"]]
+                art["kk_nr"] = art["kk_price"]["nr"]
                 arts.append(art)
             p(f"  … {min(i + 500, len(ids))}/{len(ids)} Artikel geladen", tag="dim")
         # Katalogpfad je Artikel (DB-Baum, Export-Codes mit Präfix)
@@ -591,7 +617,7 @@ def generate(prof: dict, progress_cb: Callable = None, file_progress_cb: Callabl
 
     prices = load_prices(prof, p)
     sources = [s.strip().lower() for s in (prof.get("sources") or "db").split(",") if s.strip()]
-    arts, missing = [], list(pr["aid"] for pr in prices.values())
+    arts, missing = [], list(prices.values())
     if "db" in sources:
         arts, missing = resolve_articles(_cfg.DB_PATH, _cfg.BASE_DIR, prof, prices, p)
         for a in arts:
@@ -605,11 +631,11 @@ def generate(prof: dict, progress_cb: Callable = None, file_progress_cb: Callabl
         except Exception as exc:
             p(f"OBS-Quelle fehlgeschlagen: {exc}", tag="warn")
             obs_arts = []
-        found = {a["supplier_pid"].lower() for a in obs_arts}
+        found = {a["kk_nr"] for a in obs_arts}
         for a in obs_arts:
-            a["kk_price"] = prices[a["supplier_pid"].lower()]
+            a["kk_price"] = prices[a["kk_nr"]]
         arts.extend(obs_arts)
-        missing = [m for m in missing if m.lower() not in found]
+        missing = [m for m in missing if m["nr"] not in found]
         p(f"OBS-Quelle: {len(obs_arts)} Artikel übernommen, {len(missing)} bleiben ohne Daten")
     # Normales Shop-Postprocessing für DB-Artikel (Blacklist, Offline-Liste,
     # Zusatz-Features, Maße, Marken, FNAME-Blacklist, Medienregeln, Hook) –
@@ -650,11 +676,11 @@ def generate(prof: dict, progress_cb: Callable = None, file_progress_cb: Callabl
         try:
             from lib.kundenkatalog_obs import lookup_categories
             found_paths = lookup_categories(_cfg.CONNECTIONS.get("erp_mysql", {}),
-                                            [a["supplier_pid"] for a in no_path],
+                                            [a.get("kk_nr") for a in no_path],
                                             set(tree.nodes), progress_cb=p)
             n_ok = 0
             for a in no_path:
-                pth = found_paths.get((a.get("supplier_pid") or "").lower())
+                pth = found_paths.get(a.get("kk_nr") or "")
                 if pth:
                     a["kk_path"], a["kk_path_has_root"] = pth, False
                     n_ok += 1
@@ -676,9 +702,9 @@ def generate(prof: dict, progress_cb: Callable = None, file_progress_cb: Callabl
         mpath = os.path.join(out_dir, f"{cid}_{ts}_fehlend.csv")
         with open(mpath, "w", encoding="utf-8-sig", newline="") as f:
             w = csv.writer(f, delimiter=";")
-            w.writerow(["a_bestnr1", "preis"])
-            for aid in missing:
-                w.writerow([aid, prices[aid.lower()]["price"]])
+            w.writerow(["A_NR", "A_ARTNR", "A_BESTNR1", "A_EAN", "preis"])
+            for m in missing:
+                w.writerow([m["nr"], m.get("artnr", ""), (m.get("bestnr") or [""])[0], m.get("ean", ""), m["price"]])
         p(f"{len(missing)} Preislisten-Artikel weder in der Artikel-DB noch im OBS gefunden → "
           f"{os.path.basename(mpath)}", tag="warn")
 

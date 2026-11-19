@@ -25,6 +25,7 @@ _FIELDS = [
     ("suppliers",       "Lieferanten",        40, "Reihenfolge der Stammdaten-Quelle (Namen, Komma); leer = supplier_priority.csv"),
     ("sources",         "Datenquellen",       12, "db,obs – Artikel-DB zuerst, OBS nur für Artikel, die die DB nicht hat"),
     ("aid_mode",        "Artikelnummer",      12, "native (ohne Präfix) | product_id (mit Präfix)"),
+    ("match_order",     "Abgleich",           20, "Preisliste ↔ Artikel-DB: artnr (A_ARTNR), bestnr (A_BESTNR1-5), ean – Reihenfolge"),
     ("root_code",       "Zentralshop-Wurzel", 10, "Code in custom_categories.csv (Standard 1)"),
     ("group_system_id", "GROUP_SYSTEM_ID",    20, ""),
     ("group_system_name", "GROUP_SYSTEM_NAME", 28, ""),

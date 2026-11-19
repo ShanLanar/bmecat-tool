@@ -97,6 +97,41 @@ def load_units(cur, warn: Callable) -> dict:
 _CODE_NAME = re.compile(r"^[A-Z]{3}\d{6}$")
 
 
+def fetch_price_list_full(cfg: dict, price_list_nrs: list, progress_cb: Callable = None) -> dict:
+    """
+    Preisliste(n) mit allen Artikelnummern des OBS-Artikels:
+    {A_NR: {"nr", "artnr", "bestnr": [A_BESTNR1..5], "ean", "price", "tax"}}
+    Bei mehreren Listen gewinnt je Artikel der niedrigste PL_VK1.
+    """
+    p = progress_cb or (lambda m, **kw: None)
+    ph = ", ".join(["%s"] * len(price_list_nrs))
+    sql = f"""
+        SELECT a.A_NR, a.A_ARTNR, a.A_BESTNR1, a.A_BESTNR2, a.A_BESTNR3, a.A_BESTNR4, a.A_BESTNR5,
+               a.A_EAN, mw.MW_SATZ / 100 AS tax, MIN(pl.PL_VK1) AS price
+        FROM arti_pl pl
+        JOIN artikel a ON a.A_NR = pl.PL_ARTNR
+        LEFT JOIN s_mwst mw ON mw.MW_NR = a.A_MWSTSCHL
+        WHERE pl.PL_NR IN ({ph})
+        GROUP BY a.A_NR"""
+    con = _connect(cfg)
+    out = {}
+    try:
+        cur = con.cursor()
+        cur.execute(sql, tuple(price_list_nrs))
+        for r in cur.fetchall():
+            nr = (r.get("A_NR") or "").strip()
+            if not nr:
+                continue
+            bestnr = [(r.get(f"A_BESTNR{i}") or "").strip() for i in range(1, 6)]
+            out[nr] = {"nr": nr, "artnr": (r.get("A_ARTNR") or "").strip(),
+                       "bestnr": [b for b in bestnr if b], "ean": (r.get("A_EAN") or "").strip(),
+                       "price": r.get("price"), "tax": r.get("tax")}
+    finally:
+        con.close()
+    p(f"Preisliste(n) {', '.join(map(str, price_list_nrs))}: {len(out)} Artikel im ERP")
+    return out
+
+
 def load_catmapping(cur, warn: Callable) -> dict:
     """{(MP_WGR, MP_UWGR): (MP_CATCODE, MP_BEZ)}"""
     rows = _q(cur, "SELECT MP_WGR, MP_UWGR, MP_CATCODE, MP_BEZ FROM user_catmapping", (), "user_catmapping", warn)
@@ -107,15 +142,19 @@ def load_catmapping(cur, warn: Callable) -> dict:
     return out
 
 
-def fetch_obs_articles(cfg: dict, aids: list, progress_cb: Callable = None) -> tuple:
+def fetch_obs_articles(cfg: dict, entries: list, progress_cb: Callable = None) -> tuple:
     """
-    aids: Bestellnummern (A_BESTNR1). Returns (articles, stats).
-    articles: [dict] im Format von query_by_ids (+ kk_source="obs", kk_path).
+    entries: Preislisten-Einträge (fetch_price_list_full: nr, artnr, bestnr, …).
+    Returns (articles, stats); articles im Format von query_by_ids
+    (+ kk_source="obs", kk_nr=A_NR, kk_path). SUPPLIER_AID = A_ARTNR, sonst
+    A_BESTNR1, sonst A_NR. Lieferantenkatalog-Daten (p_*) über A_BESTNR1.
     """
     p = progress_cb or (lambda m, **kw: None)
     warn = lambda m: p(m, tag="warn")
-    if not aids:
+    if not entries:
         return [], {}
+    by_entry_nr = {e["nr"]: e for e in entries}
+    aids = list(by_entry_nr)
     con = _connect(cfg)
     arts: dict = {}
     stats = {"artikel": 0, "p_arti": 0, "p_merkmale": 0, "p_bilder": 0, "artikel_merkmale": 0,
@@ -132,19 +171,22 @@ def fetch_obs_articles(cfg: dict, aids: list, progress_cb: Callable = None) -> t
                 SELECT A_NR, A_BESTNR1, A_LIEFER1, A_NAME1, A_NAME2, A_EAN, A_HERSTELLERNR,
                        A_HERSTELLERNAME, A_WGR, A_WGRU, A_EINHEIT, A_MENGEINH, A_SUCHTEXT,
                        A_LANGTEXTANSI, A_URLAND, A_AGEWICHT, A_INAKTIV, DELETED, A_MWSTSCHL
-                FROM artikel WHERE A_BESTNR1 IN ({ph})""", tuple(chunk), "artikel", warn)
+                FROM artikel WHERE A_NR IN ({ph})""", tuple(chunk), "artikel", warn)
             for r in rows:
-                aid = (r.get("A_BESTNR1") or "").strip()
-                if not aid or aid.lower() in arts:
+                nr = (r.get("A_NR") or "").strip()
+                e = by_entry_nr.get(nr)
+                if not e or nr.lower() in arts:
                     continue
+                aid = e.get("artnr") or (e.get("bestnr") or [""])[0] or nr
+                bestnr = (r.get("A_BESTNR1") or "").strip()
                 if (r.get("DELETED") or "0").strip() == "1":
                     continue
                 if (r.get("A_INAKTIV") or "0").strip() == "1":
                     stats["inaktiv"] += 1
                 short = " ".join(x for x in ((r.get("A_NAME1") or "").strip(), (r.get("A_NAME2") or "").strip()) if x)
                 art = {
-                    "id": None, "kk_source": "obs",
-                    "product_id": aid, "supplier_pid": aid, "obs_nr": (r.get("A_NR") or "").strip(),
+                    "id": None, "kk_source": "obs", "kk_nr": nr,
+                    "product_id": aid, "supplier_pid": aid, "obs_nr": nr, "obs_bestnr": bestnr,
                     "obs_liefnr": (r.get("A_LIEFER1") or "").strip(),
                     "supplier_name": "OBS",
                     "description_short": short,
@@ -175,28 +217,32 @@ def fetch_obs_articles(cfg: dict, aids: list, progress_cb: Callable = None) -> t
                 if cm and cm[0]:
                     art["kk_path"] = [(cm[0], cm[1] or cm[0])]
                     stats["catmapping"] += 1
-                arts[aid.lower()] = art
+                arts[nr.lower()] = art
         stats["artikel"] = len(arts)
-        p(f"  OBS artikel: {len(arts)} von {len(aids)} Bestellnummern gefunden "
+        p(f"  OBS artikel: {len(arts)} von {len(aids)} Artikelnummern gefunden "
           f"({stats['inaktiv']} inaktiv, {stats['catmapping']} mit Kategorie-Mapping)")
         if not arts:
             return [], stats
 
         by_nr = {a["obs_nr"]: a for a in arts.values() if a["obs_nr"]}
-        keys = list(arts.values())
+        by_best = {}
+        for a in arts.values():
+            if a["obs_bestnr"]:
+                by_best.setdefault(a["obs_bestnr"].lower(), a)
+        keys = [a for a in arts.values() if a["obs_bestnr"]]
 
         # 2) Lieferantenkatalog-Spiegel p_arti (Langtext, EAN, Hersteller-Nr, Gewicht)
         for chunk in _chunks(keys):
             ph = ",".join(["%s"] * len(chunk))
             rows = _q(cur, f"""
                 SELECT NR, LIEFNR, BEZ1, BEZ2, LANGTEXT, EAN, HERSTARTNR, GEWICHT, VERPAMENGE
-                FROM p_arti WHERE NR IN ({ph})""", tuple(a["supplier_pid"] for a in chunk), "p_arti", warn)
+                FROM p_arti WHERE NR IN ({ph})""", tuple(a["obs_bestnr"] for a in chunk), "p_arti", warn)
             # Zeile des Hauptlieferanten (A_LIEFER1) bevorzugen, sonst irgendeine
-            rows.sort(key=lambda r: 0 if (r.get("LIEFNR") or "").strip() == (arts.get((r.get("NR") or "").strip().lower()) or {}).get("obs_liefnr") else 1)
+            rows.sort(key=lambda r: 0 if (r.get("LIEFNR") or "").strip() == (by_best.get((r.get("NR") or "").strip().lower()) or {}).get("obs_liefnr") else 1)
             done = set()
             for r in rows:
                 key = (r.get("NR") or "").strip().lower()
-                a = arts.get(key)
+                a = by_best.get(key)
                 if not a or key in done:
                     continue
                 done.add(key)
@@ -220,9 +266,9 @@ def fetch_obs_articles(cfg: dict, aids: list, progress_cb: Callable = None) -> t
             rows = _q(cur, f"""
                 SELECT PM_NR, PM_LIEFNR, PM_NAME, PM_WERT, PM_UNIT, PM_LFDNR, PM_ECLASSVERSION
                 FROM p_merkmale WHERE PM_NR IN ({ph}) ORDER BY PM_NR, PM_LFDNR""",
-                tuple(a["supplier_pid"] for a in chunk), "p_merkmale", warn)
+                tuple(a["obs_bestnr"] for a in chunk), "p_merkmale", warn)
             for r in rows:
-                a = arts.get((r.get("PM_NR") or "").strip().lower())
+                a = by_best.get((r.get("PM_NR") or "").strip().lower())
                 if not a:
                     continue
                 if a["obs_liefnr"] and (r.get("PM_LIEFNR") or "").strip() not in ("", a["obs_liefnr"]):
@@ -296,19 +342,19 @@ def fetch_obs_articles(cfg: dict, aids: list, progress_cb: Callable = None) -> t
             rows = _q(cur, f"""
                 SELECT BESTNR, LIEFNR, TYP, PFAD FROM p_bilder
                 WHERE BESTNR IN ({ph}) AND TYP IN ('normal', 'detail', 'thumbnail')""",
-                tuple(a["supplier_pid"] for a in chunk), "p_bilder", warn)
+                tuple(a["obs_bestnr"] for a in chunk), "p_bilder", warn)
             rank = {"normal": 0, "detail": 1, "thumbnail": 2}
             tmp: dict = {}
             for r in rows:
-                a = arts.get((r.get("BESTNR") or "").strip().lower())
+                a = by_best.get((r.get("BESTNR") or "").strip().lower())
                 if not a:
                     continue
                 if a["obs_liefnr"] and (r.get("LIEFNR") or "").strip() not in ("", a["obs_liefnr"]):
                     continue
-                tmp.setdefault(a["supplier_pid"].lower(), []).append(
+                tmp.setdefault(a["obs_bestnr"].lower(), []).append(
                     (rank.get((r.get("TYP") or "").strip(), 9), (r.get("PFAD") or "").strip()))
             for key, lst in tmp.items():
-                a = arts[key]
+                a = by_best[key]
                 seen = set()
                 for i, (_rk, pfad) in enumerate(sorted(lst), 1):
                     if not pfad or pfad in seen:
@@ -320,7 +366,7 @@ def fetch_obs_articles(cfg: dict, aids: list, progress_cb: Callable = None) -> t
                     a["mimes"].append({"mime_type": mt, "mime_source": pfad, "mime_purpose": "normal",
                                        "mime_desc": "", "mime_alt": "", "mime_order": i})
                     stats["p_bilder"] += 1
-        for a in keys:
+        for a in arts.values():
             if not a["description_long"]:
                 a["description_long"] = a.get("obs_suchtext") or ""
                 if a["description_long"]:
@@ -352,18 +398,19 @@ def _resolve_code(code: str, known: set, prefixes: list) -> str:
     return ""
 
 
-def lookup_categories(cfg: dict, aids: list, known_codes: set, progress_cb: Callable = None) -> dict:
+def lookup_categories(cfg: dict, nrs: list, known_codes: set, progress_cb: Callable = None) -> dict:
     """
-    {aid_lower: [(code, name)]} – Kategorie je Bestellnummer aus dem OBS:
+    {A_NR: [(code, name)]} – Kategorie je OBS-Artikelnummer:
       1. artikel.A_WGR/A_WGRU → user_catmapping.MP_CATCODE
       2. p_arti.HWGR/WGR + LIEFNR → p_wgr.BMECATWGR (Lieferantenkategorie, mit Präfix
          gegen custom_categories geprüft) bzw. p_wgr.OBSWGR/OBSWGRU → user_catmapping
     """
     p = progress_cb or (lambda m, **kw: None)
     warn = lambda m: p(m, tag="warn")
-    if not aids:
+    if not nrs:
         return {}
     known = {k.upper() for k in known_codes}
+    aids = [n for n in nrs if n]
     # Präfixe aus den Lieferanten-Wurzeln (BRG1 → BRG, SOC1 → SOC, NDW1 → NDW …)
     prefixes = sorted({k[:-1] for k in known if k.endswith("1") and k[:-1].isalpha() and 2 <= len(k) - 1 <= 4})
     out: dict = {}
@@ -375,8 +422,8 @@ def lookup_categories(cfg: dict, aids: list, known_codes: set, progress_cb: Call
         for chunk in _chunks(aids):
             ph = ",".join(["%s"] * len(chunk))
             for r in _q(cur, f"SELECT A_BESTNR1, A_NR, A_LIEFER1, A_WGR, A_WGRU FROM artikel "
-                            f"WHERE A_BESTNR1 IN ({ph})", tuple(chunk), "artikel (Kategorie)", warn):
-                key = (r.get("A_BESTNR1") or "").strip().lower()
+                            f"WHERE A_NR IN ({ph})", tuple(chunk), "artikel (Kategorie)", warn):
+                key = (r.get("A_NR") or "").strip()
                 if key and key not in info:
                     info[key] = r
         for key, r in info.items():
@@ -392,10 +439,15 @@ def lookup_categories(cfg: dict, aids: list, known_codes: set, progress_cb: Call
                 pw[((r.get("LIEFNR") or "").strip(), (r.get("HWGR") or "").strip(), (r.get("UWGR") or "").strip())] = r
             for chunk in _chunks(rest):
                 ph = ",".join(["%s"] * len(chunk))
+                best2nr = {(info[k].get("A_BESTNR1") or "").strip().lower(): k for k in chunk
+                           if (info[k].get("A_BESTNR1") or "").strip()}
+                if not best2nr:
+                    continue
+                ph = ",".join(["%s"] * len(best2nr))
                 for r in _q(cur, f"SELECT NR, LIEFNR, HWGR, WGR FROM p_arti WHERE NR IN ({ph})",
-                            tuple(info[k]["A_BESTNR1"] for k in chunk), "p_arti (Kategorie)", warn):
-                    key = (r.get("NR") or "").strip().lower()
-                    if key in out or key not in info:
+                            tuple(info[k]["A_BESTNR1"] for k in best2nr.values()), "p_arti (Kategorie)", warn):
+                    key = best2nr.get((r.get("NR") or "").strip().lower())
+                    if not key or key in out:
                         continue
                     lief = (r.get("LIEFNR") or "").strip()
                     w = pw.get((lief, (r.get("HWGR") or "").strip(), (r.get("WGR") or "").strip())) \
