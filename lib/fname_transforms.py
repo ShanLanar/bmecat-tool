@@ -49,12 +49,21 @@ def load_rename_csv(path: str) -> dict:
         except csv.Error:
             dialect = csv.excel  # Fallback: Komma
         f.seek(0)
-        reader = csv.DictReader(f, dialect=dialect)
-        for row in reader:
-            src = (row.get("from") or "").strip()
-            dst = (row.get("to") or "").strip()
-            if src and dst:
-                mapping[src.upper()] = dst
+        reader = csv.reader(f, dialect=dialect)
+        rows = [r for r in reader if r and any(c.strip() for c in r)]
+    if not rows:
+        return mapping
+    # Kopfzeile "from,to" ist optional – ohne Kopfzeile gelten Spalte 1 → Spalte 2
+    first = [c.strip().lower() for c in rows[0]]
+    if len(first) >= 2 and first[0] in ("from", "alt", "old") and first[1] in ("to", "neu", "new"):
+        rows = rows[1:]
+    for r in rows:
+        if len(r) < 2:
+            continue
+        src, dst = r[0].strip(), r[1].strip()
+        if src.startswith("#") or not src or not dst:
+            continue
+        mapping[src.upper()] = dst
     return mapping
 
 

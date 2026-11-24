@@ -40,7 +40,8 @@ _BUYER_FIELDS = [("name", "Name"), ("name2", "Name 2"), ("contact", "Kontakt"), 
                  ("zip", "PLZ"), ("city", "Ort"), ("country", "Land")]
 _FLAGS = [("include_features", "Merkmale"), ("include_mimes", "Bilder/MIME"),
           ("include_keywords", "Keywords"), ("include_udx", "UDX"),
-          ("postprocess", "Shop-Postprocessing (Blacklist, Offline, Regeln)")]
+          ("postprocess", "Shop-Postprocessing (Blacklist, Offline, Regeln)"),
+          ("use_obs", "OBS-Rückgriff (aus = Artikel ohne DB-Treffer verwerfen)")]
 
 
 class KundenkatalogeTab:

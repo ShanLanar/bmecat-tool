@@ -70,6 +70,7 @@ DEFAULT_PROFILE = {
     "include_udx":      False,
     "format":           "bmecat12",
     "postprocess":      True,          # normales Shop-Postprocessing (lib/db_postprocess) auf DB-Artikel
+    "use_obs":          True,          # aus: Artikel ohne Treffer in der Artikel-DB werden verworfen (kein OBS-Rückgriff)
     "supplier": {"id_type": "iln", "id": "", "name": "", "name2": "", "contact": "",
                  "street": "", "zip": "", "city": "", "country": "DE", "phone": "",
                  "fax": "", "email": "", "url": ""},
@@ -631,6 +632,9 @@ def generate(prof: dict, progress_cb: Callable = None, file_progress_cb: Callabl
 
     prices = load_prices(prof, p)
     sources = [s.strip().lower() for s in (prof.get("sources") or "db").split(",") if s.strip()]
+    if not prof.get("use_obs", True):
+        sources = [s for s in sources if s != "obs"]
+        p("OBS-Quelle aus: Preislisten-Artikel ohne Treffer in der Artikel-DB werden verworfen.", tag="dim")
     arts, missing = [], list(prices.values())
     if "db" in sources:
         arts, missing = resolve_articles(_cfg.DB_PATH, _cfg.BASE_DIR, prof, prices, p)
@@ -745,8 +749,9 @@ def generate(prof: dict, progress_cb: Callable = None, file_progress_cb: Callabl
             w.writerow(["A_NR", "A_ARTNR", "A_BESTNR1", "A_EAN", "preis"])
             for m in missing:
                 w.writerow([m["nr"], m.get("artnr", ""), (m.get("bestnr") or [""])[0], m.get("ean", ""), m["price"]])
-        p(f"{len(missing)} Preislisten-Artikel weder in der Artikel-DB noch im OBS gefunden → "
-          f"{os.path.basename(mpath)}", tag="warn")
+        p(f"{len(missing)} Preislisten-Artikel nicht übernommen (nicht in der Artikel-DB"
+          f"{' und nicht im OBS' if 'obs' in sources else ', OBS-Quelle aus'}) → {os.path.basename(mpath)}",
+          tag="warn")
 
     no_cat = [a for a in arts if not a.get("kk_group")]
     if no_cat:
@@ -767,6 +772,9 @@ def generate(prof: dict, progress_cb: Callable = None, file_progress_cb: Callabl
           f"{len(diff['removed'])} entfallen, {len(diff['price_changed'])} Preisänderungen")
     size = os.path.getsize(out_path) / 1024 / 1024
     p(f"Kundenkatalog geschrieben: {out_path} ({stats['articles']} Artikel, {size:.1f} MB)", tag="ok")
+    reports = sorted(f for f in os.listdir(out_dir) if f.startswith(f"{cid}_{ts}") and f.endswith(".csv"))
+    if reports:
+        p(f"  Reports im Archivordner {out_dir}: {', '.join(reports)}", tag="dim")
 
     prof["last_run"] = datetime.now().strftime("%Y-%m-%d %H:%M")
     prof["last_file"] = out_path
