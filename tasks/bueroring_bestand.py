@@ -64,8 +64,9 @@ def _apply_erp_prices(master, p) -> dict:
     """
     Marktplatz-Preisspalten (v_price[cr_de], kl_de, kl_at, kl_fr, ne_de) aus
     ERP-Preislisten laut config.BRICKFOX_ERP_PRICES setzen.
-    Je Spalte: Preisliste(n) + Modus netto/brutto. Leere Preisliste = Spalte
-    bleibt wie aus dem Excel-Reiter. Ohne ERP-Preis → "0" (Flags werden 0).
+    Je Spalte: Preisliste(n) + Modus netto/brutto. KEINE Preisliste eingetragen =
+    Spalte bleibt wie aus dem Excel-Reiter. Eingetragene Preisliste ohne Artikel
+    (leer) = alle Preise 0 → Kanal leer. Ohne ERP-Preis → "0" (Flags werden 0).
     ERP nicht erreichbar → alle Spalten bleiben Excel (Warnung).
     Returns {spalte: anzahl_preise} für die aus dem ERP gefüllten Spalten.
     """
@@ -112,7 +113,13 @@ def _apply_erp_prices(master, p) -> dict:
         if prices is None:
             continue
         if not prices:
-            p(f"  ERP-Preise {col}: Preisliste {nrs_str} leer – Excel-Reiter bleibt.", tag="warn")
+            # Eingetragene, aber leere Preisliste = bewusst kein Artikel für den
+            # Kanal (Portal leer halten). Nur ein ERP-Fehler lässt Excel stehen.
+            before = (master[col].astype(str) != "0").sum()
+            master[col] = "0"
+            p(f"  {col}: Preisliste {nrs_str} ist leer → alle Preise 0, Flags 0 "
+              f"(vorher {before} aus Excel)", tag="warn")
+            result[col] = 0
             continue
         price_map = {}
         zero = 0
